@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 旧キャッシュ
+*.parquet
+
+# 一時ファイル
+_probe.xlsx
+_yshiki2.xlsx
+
+# Windows バッチファイル（ローカル専用）
+*.bat
+
+# Streamlit secrets
+.streamlit/secrets.toml

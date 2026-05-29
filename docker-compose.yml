@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  byosho:
+    build: .
+    image: byosho_tool:latest
+    container_name: byosho_app
+    ports:
+      - "8501:8501"          # ← nginxでリバースプロキシする場合は127.0.0.1:8501:8501
+    volumes:
+      - ./data:/app/data     # DuckDB ファイルをホストに永続化
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Tokyo
