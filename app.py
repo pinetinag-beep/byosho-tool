@@ -588,10 +588,13 @@ with tab3:
     ).reset_index(drop=True)
     occ_rank.index += 1
     occ_rank.index.name = "順位"
-    st.dataframe(
-        occ_rank.style.background_gradient(subset=["稼働率(%)"], cmap="RdYlGn"),
-        use_container_width=True,
-    )
+    try:
+        st.dataframe(
+            occ_rank.style.background_gradient(subset=["稼働率(%)"], cmap="RdYlGn"),
+            use_container_width=True,
+        )
+    except Exception:
+        st.dataframe(occ_rank, use_container_width=True)
 
 
 # ── TAB 4: 経年トレンド ────────────────────────────────────
@@ -708,13 +711,16 @@ with tab6:
             st.markdown('<div class="section-header">入院基本料別病床数</div>', unsafe_allow_html=True)
             bed_tbl = detail_bed_type_table(hosp_ward, hospital)
             if not bed_tbl.empty:
-                st.dataframe(
-                    bed_tbl.style
-                        .background_gradient(subset=["稼働率(%)"], cmap="RdYlGn")
-                        .format({"稼働率(%)": "{:.1f}%"}),
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                try:
+                    st.dataframe(
+                        bed_tbl.style
+                            .background_gradient(subset=["稼働率(%)"], cmap="RdYlGn")
+                            .format({"稼働率(%)": "{:.1f}%"}),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                except Exception:
+                    st.dataframe(bed_tbl, hide_index=True, use_container_width=True)
             else:
                 st.info("病棟テーブルデータがありません。")
 
