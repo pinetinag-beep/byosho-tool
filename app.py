@@ -196,6 +196,78 @@ div[data-testid="stSidebar"] .stButton button {
     /* ページブレーク制御 */
     h2, h3 { page-break-after: avoid; }
 }
+
+/* ══════════════════════════════════════════════════════
+   スマートフォン対応
+══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+    /* ── コンテンツ余白縮小 ── */
+    .main .block-container {
+        padding-left: 0.6rem !important;
+        padding-right: 0.6rem !important;
+        padding-top: 0.5rem !important;
+    }
+
+    /* ── KPI カード: 5列を小画面向けに縮小 ── */
+    .metric-card  { padding: 10px 6px !important; }
+    .metric-value { font-size: 1.1rem !important; }
+    .metric-label { font-size: 0.65rem !important; }
+    .metric-sub   { font-size: 0.6rem  !important; }
+
+    /* ── セクションヘッダー ── */
+    .section-header { font-size: 0.92rem !important; }
+
+    /* ── ページ見出し ── */
+    h2 { font-size: 1.2rem !important; }
+
+    /* ── タブ: 横スクロール（6タブがはみ出ないように） ── */
+    .stTabs [role="tablist"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+    .stTabs [role="tablist"]::-webkit-scrollbar { display: none; }
+    .stTabs [role="tab"] {
+        font-size: 0.7rem !important;
+        padding: 6px 10px !important;
+        white-space: nowrap !important;
+        min-width: auto !important;
+    }
+
+    /* ── iOS入力ズーム防止 ──
+       iOSはfont-size < 16pxの入力欄にフォーカスすると自動ズームする */
+    input[type="text"],
+    input[type="search"],
+    input[type="number"],
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+
+    /* ── ボタン: タップ領域を広げる（推奨44px以上） ── */
+    .stButton > button {
+        min-height: 44px !important;
+    }
+    /* サイドバーの検索結果ボタン */
+    div[data-testid="stSidebar"] .stButton button {
+        min-height: 38px !important;
+        font-size: 0.82rem !important;
+    }
+
+    /* ── データフレーム: 横スクロール ── */
+    [data-testid="stDataFrame"] {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── 印刷ボタン（component iframe）: モバイルでは非表示 ── */
+    iframe[title="streamlit_components_v1_html"] {
+        display: none !important;
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
