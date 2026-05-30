@@ -447,11 +447,13 @@ with st.sidebar:
                     _btn_label = f"🏥 {_mrow['医療機関名']}"
                     _btn_key   = f"_nbtn_{_mrow['医療機関名']}"
                     if st.button(_btn_label, key=_btn_key, use_container_width=True):
-                        st.session_state["_sel_year"]     = int(_mrow["報告年度"])
-                        st.session_state["_sel_pref"]     = str(_mrow["都道府県名"])
-                        st.session_state["_sel_region"]   = str(_mrow["二次医療圏名"])
-                        st.session_state["_sel_hospital"] = str(_mrow["医療機関名"])
-                        st.session_state["_view_mode"]    = "detail"
+                        st.session_state["_nav_jump"] = {
+                            "year":     int(_mrow["報告年度"]),
+                            "pref":     str(_mrow["都道府県名"]),
+                            "region":   str(_mrow["二次医療圏名"]),
+                            "hospital": str(_mrow["医療機関名"]),
+                        }
+                        st.session_state["_view_mode"] = "detail"
                         st.rerun()
                 if len(_matched) > 12:
                     st.caption(f"… 他 {len(_matched)-12}件（絞り込んでください）")
@@ -961,11 +963,15 @@ if st.session_state.get("_view_mode") == "search":
                     _hrow = df[(df["医療機関名"] == _hname) & (df["報告年度"] == s_year)]
                     if not _hrow.empty:
                         _hr = _hrow.iloc[0]
-                        st.session_state["_sel_year"]     = int(_hr["報告年度"])
-                        st.session_state["_sel_pref"]     = str(_hr["都道府県名"])
-                        st.session_state["_sel_region"]   = str(_hr["二次医療圏名"])
-                        st.session_state["_sel_hospital"] = _hname
-                        st.session_state["_view_mode"]    = "detail"
+                        # サイドバーのselectbox描画後にwidgetキーを直接書き換えると
+                        # StreamlitAPIExceptionが出るため _nav_jump 経由で渡す
+                        st.session_state["_nav_jump"] = {
+                            "year":     int(_hr["報告年度"]),
+                            "pref":     str(_hr["都道府県名"]),
+                            "region":   str(_hr["二次医療圏名"]),
+                            "hospital": _hname,
+                        }
+                        st.session_state["_view_mode"] = "detail"
                         st.rerun()
 
         if len(_nav_hospitals) > 30:
