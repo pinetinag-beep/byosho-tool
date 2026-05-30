@@ -544,13 +544,20 @@ if st.session_state.get("_view_mode") == "search":
             s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw")
 
         with fc2:
-            st.markdown("**✂️ 手術（臓器別・1件以上で表示）**")
+            st.markdown("**✂️ 手術**")
             s_surg_mode = st.radio(
                 "対象",
                 ["手術（全数）", "全身麻酔の手術"],
                 horizontal=True,
                 key="s_surg_mode",
             )
+            s_surg_logic = st.radio(
+                "複数選択時の絞り込み方法",
+                ["AND（すべて該当）", "OR（いずれか該当）"],
+                horizontal=True,
+                key="s_surg_logic",
+            )
+            st.caption("臓器別（1件以上で表示）")
             _oa, _ob = st.columns(2)
             with _oa:
                 s_ck_hifuka  = st.checkbox("皮膚・皮下組織",     key="s_ck_hifuka")
@@ -566,20 +573,38 @@ if st.session_state.get("_view_mode") == "search":
                 s_ck_nyo     = st.checkbox("尿路系・副腎",       key="s_ck_nyo")
                 s_ck_seiki   = st.checkbox("性器",               key="s_ck_seiki")
                 s_ck_shika   = st.checkbox("歯科",               key="s_ck_shika")
-            st.markdown("**術式**")
+            st.caption("術式（1件以上で表示）")
             s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
             s_ck_fuku    = st.checkbox("腹腔鏡下手術",   key="s_ck_fuku")
             s_ck_kyou    = st.checkbox("胸腔鏡下手術",   key="s_ck_kyou")
 
         with fc3:
-            st.markdown("**🔵 CT（1台以上で表示）**")
-            s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
-            s_ck_ct16p = st.checkbox("16〜64列", key="s_ck_ct16p")
-            s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
-            st.markdown("**🔴 MRI（1台以上で表示）**")
-            s_ck_mri3t  = st.checkbox("3T以上",    key="s_ck_mri3t")
-            s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
-            s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+            st.markdown("**🔵 CT**")
+            ct_filter = st.radio(
+                "CT絞り込み",
+                ["指定なし", "CTあり（合計）", "CTなし（合計）", "スペック別"],
+                key="ct_filter",
+                label_visibility="collapsed",
+            )
+            s_ck_ct64 = s_ck_ct16p = s_ck_ct16m = False
+            if ct_filter == "スペック別":
+                s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
+                s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
+                s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
+
+            st.markdown("**🔴 MRI**")
+            mri_filter = st.radio(
+                "MRI絞り込み",
+                ["指定なし", "MRIあり（合計）", "MRIなし（合計）", "スペック別"],
+                key="mri_filter",
+                label_visibility="collapsed",
+            )
+            s_ck_mri3t = s_ck_mri15p = s_ck_mri15m = False
+            if mri_filter == "スペック別":
+                s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
+                s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
+                s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+
             st.markdown("**🏥 その他設備**")
             s_has_pet      = st.checkbox("PET / PET-CTあり",    key="s_has_pet")
             s_has_robot_eq = st.checkbox("手術支援ロボットあり", key="s_has_robot_eq")
@@ -657,28 +682,74 @@ if st.session_state.get("_view_mode") == "search":
             "**「起動_build.bat」を再実行**して DuckDB を再ビルドしてください。"
         )
 
-    for _ck, _label in _organ_checks:
-        _col = f"{_organ_prefix}{_label}"
-        if _ck and _col in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+    # ── 臓器・術式フィルター（OR / AND 切り替え）──
+    _organ_col_checks = [(ck, f"{_organ_prefix}{lb}") for ck, lb in _organ_checks]
+    _shiki_col_checks = [
+        (s_ck_robot_s, "ロボット支援手術数"),
+        (s_ck_fuku,    "腹腔鏡下手術数"),
+        (s_ck_kyou,    "胸腔鏡下手術数"),
+    ]
+    _active_surg_checks = [
+        (ck, col)
+        for ck, col in _organ_col_checks + _shiki_col_checks
+        if ck and col in s_df.columns
+    ]
 
-    if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
-        s_df = s_df[s_df["ロボット支援手術数"] > 0]
-    if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
-        s_df = s_df[s_df["腹腔鏡下手術数"] > 0]
-    if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
-        s_df = s_df[s_df["胸腔鏡下手術数"] > 0]
+    if _active_surg_checks:
+        if s_surg_logic == "OR（いずれか該当）":
+            _or_mask = pd.Series(False, index=s_df.index)
+            for _, _col in _active_surg_checks:
+                _or_mask = _or_mask | (pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0)
+            s_df = s_df[_or_mask]
+        else:  # AND（すべて該当）
+            for _, _col in _active_surg_checks:
+                s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
 
-    for _ck, _col in [
-        (s_ck_ct64,  "CT_64列以上"),
-        (s_ck_ct16p, "CT_16〜64列"),
-        (s_ck_ct16m, "CT_16列未満"),
-        (s_ck_mri3t,  "MRI_3T以上"),
-        (s_ck_mri15p, "MRI_1.5〜3T"),
-        (s_ck_mri15m, "MRI_1.5T未満"),
-    ]:
-        if _ck and _col in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+    # ── CT フィルター ──
+    _CT_SPEC_COLS = ["CT_64列以上", "CT_16〜64列", "CT_16列未満", "CT_その他"]
+    if ct_filter == "CTあり（合計）":
+        if "CT台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) > 0]
+        else:
+            _ct_avail = [c for c in _CT_SPEC_COLS if c in s_df.columns]
+            if _ct_avail:
+                _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
+                s_df = s_df[_ct_sum > 0]
+    elif ct_filter == "CTなし（合計）":
+        if "CT台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) == 0]
+        else:
+            _ct_avail = [c for c in _CT_SPEC_COLS if c in s_df.columns]
+            if _ct_avail:
+                _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
+                s_df = s_df[_ct_sum == 0]
+    elif ct_filter == "スペック別":
+        for _ck, _col in [(s_ck_ct64, "CT_64列以上"), (s_ck_ct16p, "CT_16〜64列"), (s_ck_ct16m, "CT_16列未満")]:
+            if _ck and _col in s_df.columns:
+                s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+
+    # ── MRI フィルター ──
+    _MRI_SPEC_COLS = ["MRI_3T以上", "MRI_1.5〜3T", "MRI_1.5T未満"]
+    if mri_filter == "MRIあり（合計）":
+        if "MRI台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) > 0]
+        else:
+            _mri_avail = [c for c in _MRI_SPEC_COLS if c in s_df.columns]
+            if _mri_avail:
+                _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
+                s_df = s_df[_mri_sum > 0]
+    elif mri_filter == "MRIなし（合計）":
+        if "MRI台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) == 0]
+        else:
+            _mri_avail = [c for c in _MRI_SPEC_COLS if c in s_df.columns]
+            if _mri_avail:
+                _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
+                s_df = s_df[_mri_sum == 0]
+    elif mri_filter == "スペック別":
+        for _ck, _col in [(s_ck_mri3t, "MRI_3T以上"), (s_ck_mri15p, "MRI_1.5〜3T"), (s_ck_mri15m, "MRI_1.5T未満")]:
+            if _ck and _col in s_df.columns:
+                s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
     if s_has_pet:
         _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
         _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
@@ -707,16 +778,18 @@ if st.session_state.get("_view_mode") == "search":
     _ct_ck_map  = [(s_ck_ct64, "CT_64列以上"), (s_ck_ct16p, "CT_16〜64列"), (s_ck_ct16m, "CT_16列未満")]
     _mri_ck_map = [(s_ck_mri3t, "MRI_3T以上"), (s_ck_mri15p, "MRI_1.5〜3T"), (s_ck_mri15m, "MRI_1.5T未満")]
     _eshow = []
-    _any_ct_ck  = any(ck for ck, _ in _ct_ck_map)
-    _any_mri_ck = any(ck for ck, _ in _mri_ck_map)
-    if _any_ct_ck:
+    # CT列: スペック別なら選択スペック列、あり/なし指定なら合計台数列を表示
+    if ct_filter == "スペック別":
         _eshow += [col for ck, col in _ct_ck_map if ck and col in s_df.columns]
-    elif "CT台数" in s_df.columns:
-        _eshow.append("CT台数")
-    if _any_mri_ck:
+    elif ct_filter in ("CTあり（合計）", "CTなし（合計）"):
+        if "CT台数" in s_df.columns:
+            _eshow.append("CT台数")
+    # MRI列: 同様
+    if mri_filter == "スペック別":
         _eshow += [col for ck, col in _mri_ck_map if ck and col in s_df.columns]
-    elif "MRI台数" in s_df.columns:
-        _eshow.append("MRI台数")
+    elif mri_filter in ("MRIあり（合計）", "MRIなし（合計）"):
+        if "MRI台数" in s_df.columns:
+            _eshow.append("MRI台数")
     if s_has_pet:
         _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
     if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
