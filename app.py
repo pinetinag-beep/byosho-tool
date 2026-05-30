@@ -242,7 +242,12 @@ with st.sidebar:
         st.divider()
         st.subheader("🔍 病院を探す")
 
-        # ── 病院名で直接検索 ──
+        # ── ① 病院名で探す ──
+        st.markdown(
+            "<div style='font-size:0.8rem;font-weight:600;color:#444;margin-bottom:4px;'>"
+            "① 病院名で探す</div>",
+            unsafe_allow_html=True,
+        )
         _name_q = st.text_input(
             "病院名で検索",
             placeholder="例: 大学病院、中央病院",
@@ -274,15 +279,21 @@ with st.sidebar:
                 if len(_matched) > 12:
                     st.caption(f"… 他 {len(_matched)-12}件（絞り込んでください）")
 
-        # ── 詳細条件検索ボタン ──
-        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        # ── ② 条件で検索する ──
+        st.markdown(
+            "<div style='font-size:0.8rem;font-weight:600;color:#444;"
+            "margin-top:12px;margin-bottom:4px;'>"
+            "② 条件で検索する</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption("手術・設備などの条件で絞り込み")
         _is_search = st.session_state.get("_view_mode") == "search"
         if _is_search:
             if st.button("← 病院詳細に戻る", use_container_width=True, type="secondary"):
                 st.session_state["_view_mode"] = "detail"
                 st.rerun()
         else:
-            if st.button("🔧 詳細条件で検索", use_container_width=True, type="secondary"):
+            if st.button("🔧 条件で検索する", use_container_width=True, type="secondary"):
                 st.session_state["_view_mode"] = "search"
                 st.rerun()
 
