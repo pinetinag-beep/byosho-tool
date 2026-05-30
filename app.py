@@ -1502,7 +1502,14 @@ with tab6:
     if surgery_df is None:
         st.info("手術データがありません。「データを更新する」から再ダウンロードしてください。")
     else:
-        hosp_surg = surgery_df[surgery_df["医療機関名"] == hospital]
+        # 年度フィルター（surgery_dfに報告年度列がある場合は絞り込む）
+        if "報告年度" in surgery_df.columns:
+            hosp_surg = surgery_df[
+                (surgery_df["医療機関名"] == hospital) &
+                (surgery_df["報告年度"] == year)
+            ]
+        else:
+            hosp_surg = surgery_df[surgery_df["医療機関名"] == hospital]
 
         if hosp_surg.empty:
             st.info("この病院の手術データが見つかりません（手術件数0または非公表）。")
@@ -1552,7 +1559,14 @@ with tab6:
                 st.plotly_chart(fig_surg, use_container_width=True)
 
             st.markdown('<div class="section-header">二次医療圏内 手術数シェア</div>', unsafe_allow_html=True)
-            region_surg = surgery_df[surgery_df["二次医療圏名"] == region] if "二次医療圏名" in surgery_df.columns else pd.DataFrame()
+            # 年度フィルター（複数年度データが混在するとバーが重複するため）
+            if "二次医療圏名" in surgery_df.columns:
+                _rsurg_mask = surgery_df["二次医療圏名"] == region
+                if "報告年度" in surgery_df.columns:
+                    _rsurg_mask = _rsurg_mask & (surgery_df["報告年度"] == year)
+                region_surg = surgery_df[_rsurg_mask]
+            else:
+                region_surg = pd.DataFrame()
 
             if not region_surg.empty and region_surg["手術総数"].sum() > 0:
                 import plotly.graph_objects as go
