@@ -91,6 +91,109 @@ div[data-testid="stSidebar"] .stButton button {
     white-space: normal;
     word-break: break-all;
 }
+
+/* ── 印刷ボタン（画面表示用） ── */
+.print-btn {
+    display: inline-block;
+    padding: 6px 16px;
+    background: #f0f2f6;
+    border: 1px solid #d0d3db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #444;
+    cursor: pointer;
+    text-decoration: none;
+}
+.print-btn:hover { background: #e0e3ea; }
+
+/* ══════════════════════════════════
+   印刷用スタイル（A4縦）
+══════════════════════════════════ */
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 15mm 12mm 12mm 12mm;
+    }
+
+    /* サイドバー・ヘッダー・ツールバーを非表示 */
+    [data-testid="stSidebar"],
+    header[data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    .stDeployButton,
+    footer,
+    #MainMenu {
+        display: none !important;
+    }
+
+    /* メインコンテンツを全幅に */
+    .main .block-container {
+        max-width: 100% !important;
+        padding: 8mm 0 0 0 !important;
+    }
+    section.main { padding: 0 !important; }
+
+    /* タブのナビゲーション（タブボタン行）を非表示 */
+    .stTabs [role="tablist"] {
+        display: none !important;
+    }
+
+    /* アクティブなタブパネルだけ表示 */
+    .stTabs [role="tabpanel"][hidden] {
+        display: none !important;
+    }
+
+    /* ボタン・入力・ダウンロードを非表示 */
+    .stButton, .stDownloadButton,
+    .stTextInput, .stSelectbox,
+    .stCheckbox, .stRadio,
+    .print-btn {
+        display: none !important;
+    }
+
+    /* 白背景・黒文字に統一 */
+    body, .main, .stApp {
+        background: white !important;
+        color: #111 !important;
+    }
+
+    /* メトリクスカード: 印刷用にシンプル化 */
+    .metric-card {
+        background: white !important;
+        border: 1px solid #bbb !important;
+        border-left-width: 4px !important;
+        box-shadow: none !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .metric-value { color: #111 !important; }
+    .metric-label { color: #444 !important; }
+    .metric-sub   { color: #666 !important; }
+
+    /* セクションヘッダー */
+    .section-header {
+        color: #111 !important;
+        border-bottom-color: #3498db !important;
+        page-break-after: avoid;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* グラフ: 縮小してページ内に収める */
+    .js-plotly-plot, [data-testid="stArrowVegaLiteChart"] {
+        max-width: 100% !important;
+        page-break-inside: avoid;
+    }
+
+    /* テーブル */
+    [data-testid="stDataFrame"] {
+        page-break-inside: avoid;
+    }
+
+    /* ページブレーク制御 */
+    h2, h3 { page-break-after: avoid; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -716,8 +819,17 @@ else:
 
 # ── ページヘッダー ─────────────────────────────────────────
 
-st.markdown(f"## 🏥 {hospital}")
-st.caption(f"{year}年度　|　{pref}　{region}")
+_hdr_col, _btn_col = st.columns([8, 1])
+with _hdr_col:
+    st.markdown(f"## 🏥 {hospital}")
+    st.caption(f"{year}年度　|　{pref}　{region}")
+with _btn_col:
+    st.markdown(
+        "<div style='padding-top:16px;text-align:right'>"
+        "<a class='print-btn' onclick='window.print();return false;' href='#'>🖨️ 印刷</a>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 # KPIメトリクス行
 m1, m2, m3, m4, m5 = st.columns(5)
