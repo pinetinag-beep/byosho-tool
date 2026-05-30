@@ -2,6 +2,7 @@
 病床機能報告 分析・比較ツール
 """
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import unicodedata
@@ -148,7 +149,8 @@ div[data-testid="stSidebar"] .stButton button {
     .stButton, .stDownloadButton,
     .stTextInput, .stSelectbox,
     .stCheckbox, .stRadio,
-    .print-btn {
+    .print-btn,
+    iframe[title="streamlit_components_v1_html"] {
         display: none !important;
     }
 
@@ -932,11 +934,26 @@ with _hdr_col:
     st.markdown(f"## 🏥 {hospital}")
     st.caption(f"{year}年度　|　{pref}　{region}")
 with _btn_col:
-    st.markdown(
-        "<div style='padding-top:16px;text-align:right'>"
-        "<a class='print-btn' onclick='window.print();return false;' href='#'>🖨️ 印刷</a>"
-        "</div>",
-        unsafe_allow_html=True,
+    components.html(
+        """
+        <style>
+        button {
+            background: #f0f2f6;
+            border: 1px solid #d0d3db;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 0.84rem;
+            color: #444;
+            cursor: pointer;
+            float: right;
+            margin-top: 14px;
+            font-family: sans-serif;
+        }
+        button:hover { background: #e0e3ea; }
+        </style>
+        <button onclick="window.parent.print()">🖨️ 印刷</button>
+        """,
+        height=52,
     )
 
 # KPIメトリクス行
