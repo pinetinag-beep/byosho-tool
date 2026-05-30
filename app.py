@@ -179,22 +179,6 @@ def _si(val):
 with st.sidebar:
     st.title("🏥 病床機能報告")
 
-    # ── DB ステータス表示 ──
-    _src = st.session_state.get("_datasrc", "none")
-    if _src == "db":
-        try:
-            meta = get_db_meta(str(DB_PATH))
-            st.success("✅ データ読み込み済み")
-            st.caption(f"📅 更新: {meta['updated_at']}")
-            st.caption(f"📊 年度: {meta['years']}")
-            st.caption(f"🏥 病院数: {meta['hospital_cnt']:,}件")
-        except Exception:
-            st.info("DuckDB 接続中...")
-    elif _src == "parquet":
-        st.warning("⚠️ 旧データを表示中")
-    elif _src == "sample":
-        st.info("🎮 サンプルデータ表示中")
-
     # ── データなし → サンプルまたは手動ロード ──
     if st.session_state.df is None:
         st.divider()
@@ -326,6 +310,23 @@ with st.sidebar:
         st.caption(f"全 {len(_df_all[_df_all['報告年度']==sel_year]):,} 病院 | {sel_year}年度")
         if len(years) > 1:
             st.caption(f"収録年度: {int(min(years))}〜{int(max(years))}")
+
+    # ── DB ステータス表示（一番下） ──
+    st.divider()
+    _src = st.session_state.get("_datasrc", "none")
+    if _src == "db":
+        try:
+            meta = get_db_meta(str(DB_PATH))
+            st.success("✅ データ読み込み済み")
+            st.caption(f"📅 更新: {meta['updated_at']}")
+            st.caption(f"📊 年度: {meta['years']}")
+            st.caption(f"🏥 病院数: {meta['hospital_cnt']:,}件")
+        except Exception:
+            st.info("DuckDB 接続中...")
+    elif _src == "parquet":
+        st.warning("⚠️ 旧データを表示中")
+    elif _src == "sample":
+        st.info("🎮 サンプルデータ表示中")
 
     # ── 管理者セクション ──
     st.divider()
