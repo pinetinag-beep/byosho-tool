@@ -530,9 +530,11 @@ if st.session_state.get("_view_mode") == "search":
         with fc1:
             st.markdown("**📍 場所**")
             s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-            s_year   = st.selectbox("年度", s_years_list, key="s_year")
+            s_year   = st.selectbox("年度", s_years_list, key="s_year",
+                help="病床機能報告の報告年度\nデータ列: 報告年度")
             s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-            s_pref   = st.selectbox("都道府県", s_all_prefs, key="s_pref")
+            s_pref   = st.selectbox("都道府県", s_all_prefs, key="s_pref",
+                help="都道府県で絞り込み\nデータ列: 都道府県名")
             if s_pref != "全都道府県":
                 s_all_regions = ["全二次医療圏"] + sorted(
                     r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
@@ -540,8 +542,10 @@ if st.session_state.get("_view_mode") == "search":
                 )
             else:
                 s_all_regions = ["全二次医療圏"]
-            s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region")
-            s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw")
+            s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region",
+                help="二次医療圏で絞り込み\nデータ列: 二次医療圏名")
+            s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw",
+                help="医療機関名の部分一致検索\n全角/半角・スペース・中点などの表記揺れを自動正規化\nデータ列: 医療機関名")
 
         with fc2:
             st.markdown("**✂️ 手術**")
@@ -550,33 +554,47 @@ if st.session_state.get("_view_mode") == "search":
                 ["手術（全数）", "全身麻酔の手術"],
                 horizontal=True,
                 key="s_surg_mode",
+                help="様式2（手術実績票）の集計対象を切り替え\n"
+                     "・手術（全数）→ データ列: 手術_[臓器名]\n"
+                     "・全身麻酔の手術 → データ列: 全麻_[臓器名]",
             )
             s_surg_logic = st.radio(
                 "複数選択時の絞り込み方法",
                 ["AND（すべて該当）", "OR（いずれか該当）"],
                 horizontal=True,
                 key="s_surg_logic",
+                help="臓器・術式を複数チェックしたときの絞り込み方法\n"
+                     "・AND: チェックしたすべての項目を同時に実施している病院のみ表示\n"
+                     "・OR: チェックした項目のどれか1つでも実施していれば表示",
             )
             st.caption("臓器別（1件以上で表示）")
+            _organ_help = (
+                "様式2（手術実績票）の臓器別年間手術件数\n"
+                "1件以上の病院を絞り込み対象とします\n"
+                "参照列: 手術_[臓器名] または 全麻_[臓器名]（「対象」の選択に連動）"
+            )
             _oa, _ob = st.columns(2)
             with _oa:
-                s_ck_hifuka  = st.checkbox("皮膚・皮下組織",     key="s_ck_hifuka")
-                s_ck_kinkot  = st.checkbox("筋骨格系・四肢",     key="s_ck_kinkot")
-                s_ck_shinkei = st.checkbox("神経系・頭蓋",       key="s_ck_shinkei")
-                s_ck_me      = st.checkbox("眼",                 key="s_ck_me")
-                s_ck_jibika  = st.checkbox("耳鼻咽喉",           key="s_ck_jibika")
-                s_ck_ganmen  = st.checkbox("顔面・口腔・頸部",   key="s_ck_ganmen")
+                s_ck_hifuka  = st.checkbox("皮膚・皮下組織",     key="s_ck_hifuka",  help=_organ_help)
+                s_ck_kinkot  = st.checkbox("筋骨格系・四肢",     key="s_ck_kinkot",  help=_organ_help)
+                s_ck_shinkei = st.checkbox("神経系・頭蓋",       key="s_ck_shinkei", help=_organ_help)
+                s_ck_me      = st.checkbox("眼",                 key="s_ck_me",      help=_organ_help)
+                s_ck_jibika  = st.checkbox("耳鼻咽喉",           key="s_ck_jibika",  help=_organ_help)
+                s_ck_ganmen  = st.checkbox("顔面・口腔・頸部",   key="s_ck_ganmen",  help=_organ_help)
             with _ob:
-                s_ck_kyobu   = st.checkbox("胸部",               key="s_ck_kyobu")
-                s_ck_shin    = st.checkbox("心・脈管",            key="s_ck_shin")
-                s_ck_fukubu  = st.checkbox("腹部",               key="s_ck_fukubu")
-                s_ck_nyo     = st.checkbox("尿路系・副腎",       key="s_ck_nyo")
-                s_ck_seiki   = st.checkbox("性器",               key="s_ck_seiki")
-                s_ck_shika   = st.checkbox("歯科",               key="s_ck_shika")
+                s_ck_kyobu   = st.checkbox("胸部",               key="s_ck_kyobu",  help=_organ_help)
+                s_ck_shin    = st.checkbox("心・脈管",            key="s_ck_shin",   help=_organ_help)
+                s_ck_fukubu  = st.checkbox("腹部",               key="s_ck_fukubu", help=_organ_help)
+                s_ck_nyo     = st.checkbox("尿路系・副腎",       key="s_ck_nyo",    help=_organ_help)
+                s_ck_seiki   = st.checkbox("性器",               key="s_ck_seiki",  help=_organ_help)
+                s_ck_shika   = st.checkbox("歯科",               key="s_ck_shika",  help=_organ_help)
             st.caption("術式（1件以上で表示）")
-            s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
-            s_ck_fuku    = st.checkbox("腹腔鏡下手術",   key="s_ck_fuku")
-            s_ck_kyou    = st.checkbox("胸腔鏡下手術",   key="s_ck_kyou")
+            s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s",
+                help="様式2（手術実績票）\nデータ列: ロボット支援手術数")
+            s_ck_fuku    = st.checkbox("腹腔鏡下手術",   key="s_ck_fuku",
+                help="様式2（手術実績票）\nデータ列: 腹腔鏡下手術数")
+            s_ck_kyou    = st.checkbox("胸腔鏡下手術",   key="s_ck_kyou",
+                help="様式2（手術実績票）\nデータ列: 胸腔鏡下手術数")
 
         with fc3:
             st.markdown("**🔵 CT**")
@@ -585,12 +603,19 @@ if st.session_state.get("_view_mode") == "search":
                 ["指定なし", "CTあり（合計）", "CTなし（合計）", "スペック別"],
                 key="ct_filter",
                 label_visibility="collapsed",
+                help="様式1（施設票）CT装置の台数データ\n"
+                     "・指定なし: フィルターなし\n"
+                     "・あり/なし: CT台数（全スペック合計）で判定 → データ列: CT台数\n"
+                     "・スペック別: 列種別ごとに個別判定 → データ列: CT_64列以上 / CT_16〜64列 / CT_16列未満",
             )
             s_ck_ct64 = s_ck_ct16p = s_ck_ct16m = False
             if ct_filter == "スペック別":
-                s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
-                s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
-                s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
+                s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64",
+                    help="様式1（施設票）\nデータ列: CT_64列以上（台数 1台以上を条件）")
+                s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p",
+                    help="様式1（施設票）\nデータ列: CT_16〜64列（台数 1台以上を条件）")
+                s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m",
+                    help="様式1（施設票）\nデータ列: CT_16列未満（台数 1台以上を条件）")
 
             st.markdown("**🔴 MRI**")
             mri_filter = st.radio(
@@ -598,17 +623,27 @@ if st.session_state.get("_view_mode") == "search":
                 ["指定なし", "MRIあり（合計）", "MRIなし（合計）", "スペック別"],
                 key="mri_filter",
                 label_visibility="collapsed",
+                help="様式1（施設票）MRI装置の台数データ\n"
+                     "・指定なし: フィルターなし\n"
+                     "・あり/なし: MRI台数（全スペック合計）で判定 → データ列: MRI台数\n"
+                     "・スペック別: 列種別ごとに個別判定 → データ列: MRI_3T以上 / MRI_1.5〜3T / MRI_1.5T未満",
             )
             s_ck_mri3t = s_ck_mri15p = s_ck_mri15m = False
             if mri_filter == "スペック別":
-                s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
-                s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
-                s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+                s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t",
+                    help="様式1（施設票）\nデータ列: MRI_3T以上（台数 1台以上を条件）")
+                s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p",
+                    help="様式1（施設票）\nデータ列: MRI_1.5〜3T（台数 1台以上を条件）")
+                s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m",
+                    help="様式1（施設票）\nデータ列: MRI_1.5T未満（台数 1台以上を条件）")
 
             st.markdown("**🏥 その他設備**")
-            s_has_pet      = st.checkbox("PET / PET-CTあり",    key="s_has_pet")
-            s_has_robot_eq = st.checkbox("手術支援ロボットあり", key="s_has_robot_eq")
-            s_has_gamma    = st.checkbox("ガンマナイフあり",     key="s_has_gamma")
+            s_has_pet      = st.checkbox("PET / PET-CTあり",    key="s_has_pet",
+                help="様式1（施設票）\nデータ列: PET台数 + PETCT台数（合計 1台以上を条件）")
+            s_has_robot_eq = st.checkbox("手術支援ロボットあり", key="s_has_robot_eq",
+                help="様式1（施設票）\nデータ列: 内視鏡手術支援機器台数（1台以上を条件）")
+            s_has_gamma    = st.checkbox("ガンマナイフあり",     key="s_has_gamma",
+                help="様式1（施設票）\nデータ列: ガンマナイフ台数（1台以上を条件）")
 
     # ── フィルタリング処理 ──
     s_df = df[df["報告年度"] == s_year].copy()
