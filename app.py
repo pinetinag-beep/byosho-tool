@@ -1327,11 +1327,54 @@ with tab6:
 
             st.markdown("<br>", unsafe_allow_html=True)
 
+            def _pct(n, tot):
+                return f"{n / tot * 100:.1f}%" if tot > 0 else "—"
+
+            def _si0(series, col):
+                return int(series[col].sum()) if col in series.columns else 0
+
             c1, c2 = st.columns(2)
             with c1:
                 st.plotly_chart(admission_route_pie(hosp_ward, hospital), use_container_width=True)
+                # ── 入院経路 件数表 ──
+                _adm_total  = _si0(hosp_ward, "新規入棟患者数")
+                _adm_kyukyu = _si0(hosp_ward, "救急入院患者数")
+                _adm_other  = max(_adm_total - _adm_kyukyu, 0)
+                _adm_tbl = pd.DataFrame([
+                    {"入院経路": "予定外救急入院",   "件数（人）": _adm_kyukyu, "割合": _pct(_adm_kyukyu, _adm_total)},
+                    {"入院経路": "予定・院内転棟等", "件数（人）": _adm_other,  "割合": _pct(_adm_other,  _adm_total)},
+                    {"入院経路": "合計",             "件数（人）": _adm_total,  "割合": "100.0%" if _adm_total > 0 else "—"},
+                ])
+                st.dataframe(
+                    _adm_tbl,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={"件数（人）": st.column_config.NumberColumn(format="%d 人")},
+                )
+
             with c2:
                 st.plotly_chart(discharge_route_pie(hosp_ward, hospital), use_container_width=True)
+                # ── 退院経路 件数表 ──
+                _dis_total    = _si0(hosp_ward, "退棟患者数")
+                _dis_katei    = _si0(hosp_ward, "家庭退院数")
+                _dis_tain     = _si0(hosp_ward, "他院転院数")
+                _dis_shisetsu = _si0(hosp_ward, "施設入所数")
+                _dis_shibo    = _si0(hosp_ward, "死亡退院数")
+                _dis_other    = max(_dis_total - _dis_katei - _dis_tain - _dis_shisetsu - _dis_shibo, 0)
+                _dis_tbl = pd.DataFrame([
+                    {"退院経路": "家庭退院", "件数（人）": _dis_katei,    "割合": _pct(_dis_katei,    _dis_total)},
+                    {"退院経路": "他院転院", "件数（人）": _dis_tain,     "割合": _pct(_dis_tain,     _dis_total)},
+                    {"退院経路": "施設入所", "件数（人）": _dis_shisetsu, "割合": _pct(_dis_shisetsu, _dis_total)},
+                    {"退院経路": "死亡退院", "件数（人）": _dis_shibo,    "割合": _pct(_dis_shibo,    _dis_total)},
+                    {"退院経路": "その他",   "件数（人）": _dis_other,    "割合": _pct(_dis_other,    _dis_total)},
+                    {"退院経路": "合計",     "件数（人）": _dis_total,    "割合": "100.0%" if _dis_total > 0 else "—"},
+                ])
+                st.dataframe(
+                    _dis_tbl,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={"件数（人）": st.column_config.NumberColumn(format="%d 人")},
+                )
 
             st.markdown('<div class="section-header">在宅復帰率</div>', unsafe_allow_html=True)
             total_taitou = float(hosp_ward["退棟患者数"].sum())
