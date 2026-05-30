@@ -56,34 +56,16 @@ st.set_page_config(
 )
 
 # ── Google Analytics ───────────────────────────────────────
-# st.markdown は <script> をサニタイズして除去するため
-# components.html() の iframe から window.parent へ直接注入する
-components.html(
-    """
-    <script>
-    (function() {
-        try {
-            var p = window.parent;
-            if (p.document.getElementById('_ga4_injected')) return;
-            // gtag.js 本体を <head> に追加
-            var s = p.document.createElement('script');
-            s.id    = '_ga4_injected';
-            s.async = true;
-            s.src   = 'https://www.googletagmanager.com/gtag/js?id=G-8Y6SDBSCMQ';
-            p.document.head.appendChild(s);
-            // dataLayer / gtag 初期化
-            p.dataLayer = p.dataLayer || [];
-            p.gtag = function() { p.dataLayer.push(arguments); };
-            p.gtag('js', new Date());
-            p.gtag('config', 'G-8Y6SDBSCMQ');
-        } catch(e) {
-            // クロスオリジン等でブロックされた場合は無視
-        }
-    })();
-    </script>
-    """,
-    height=0,
-)
+st.markdown("""
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-8Y6SDBSCMQ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-8Y6SDBSCMQ');
+</script>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
