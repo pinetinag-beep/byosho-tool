@@ -414,7 +414,7 @@ def discharge_route_pie(ward_df: pd.DataFrame, hospital_name: str) -> go.Figure:
 def home_return_rate_bar(ward_df: pd.DataFrame, hospital_name: str, secondary_region: str) -> go.Figure:
     """
     同二次医療圏の在宅復帰率横棒グラフ（選択病院をハイライト）。
-    在宅復帰率 = 家庭退院数 / 退棟患者数
+    在宅復帰率 = 家庭退院数 / (退棟患者数 - 死亡退院数)  ← 正しい計算式
     """
     sub = ward_df[ward_df["二次医療圏名"] == secondary_region].copy() if "二次医療圏名" in ward_df.columns else ward_df.copy()
 
@@ -424,12 +424,19 @@ def home_return_rate_bar(ward_df: pd.DataFrame, hospital_name: str, secondary_re
         return _fig_layout(fig, "在宅復帰率（地域内比較）")
 
     # 病院単位に集計
-    agg = sub.groupby("医療機関名").agg(
-        家庭退院数=("家庭退院数", "sum"),
-        退棟患者数=("退棟患者数", "sum"),
-    ).reset_index()
+    agg_cols = {"家庭退院数": ("家庭退院数", "sum"), "退棟患者数": ("退棟患者数", "sum")}
+    if "死亡退院数" in sub.columns:
+        agg_cols["死亡退院数"] = ("死亡退院数", "sum")
+    agg = sub.groupby("医療機関名").agg(**agg_cols).reset_index()
+
+    # 正しい分母: 退棟患者数 − 死亡退院数
+    if "死亡退院数" in agg.columns:
+        _denom = (agg["退棟患者数"] - agg["死亡退院数"]).clip(lower=0)
+    else:
+        _denom = agg["退棟患者数"]
+
     agg["在宅復帰率(%)"] = (
-        agg["家庭退院数"] / agg["退棟患者数"].replace(0, np.nan) * 100
+        agg["家庭退院数"] / _denom.replace(0, np.nan) * 100
     ).round(1)
     agg = agg.dropna(subset=["在宅復帰率(%)"]).sort_values("在宅復帰率(%)", ascending=True).tail(20)
 

@@ -1455,14 +1455,35 @@ with tab6:
                 )
 
             st.markdown('<div class="section-header">在宅復帰率</div>', unsafe_allow_html=True)
+
+            # ── 数値取得 ──
             total_taitou = float(hosp_ward["退棟患者数"].sum())
             total_katei  = float(hosp_ward["家庭退院数"].sum())
-            home_rate = total_katei / total_taitou if total_taitou > 0 else 0
+            total_shibo  = float(hosp_ward["死亡退院数"].sum()) if "死亡退院数" in hosp_ward.columns else 0.0
 
-            hr1, hr2, hr3 = st.columns(3)
-            hr1.metric("退棟患者数（年間）",   f"{int(total_taitou):,}人")
-            hr2.metric("家庭退院数（年間）",   f"{int(total_katei):,}人")
-            hr3.metric("在宅復帰率",           f"{home_rate * 100:.1f}%")
+            # 正しい計算式: 家庭退院数 ÷ (退棟患者数 − 死亡退院数) × 100
+            _denom = max(total_taitou - total_shibo, 0)
+            home_rate = total_katei / _denom if _denom > 0 else 0
+
+            # ── 計算式・データソース表示 ──
+            st.info(
+                "**計算式**　在宅復帰率 ＝ 家庭退院数 ÷（退棟患者数 − 死亡退院患者数）× 100\n\n"
+                "**データ**: 様式1（病棟票）退棟先区分　｜　"
+                "**使用列**: 家庭退院数（分子）／ 退棟患者数・死亡退院数（分母）\n\n"
+                "※ 正式定義では分子は「自宅・居住系介護施設等への退院数」です。"
+                "データに居住系介護施設等の別列がある場合は加算が必要です。"
+            )
+
+            hr1, hr2, hr3, hr4 = st.columns(4)
+            hr1.metric("退棟患者数（年間）", f"{int(total_taitou):,}人",
+                help="様式1（病棟票）\nデータ列: 退棟患者数\n分母の基数となる全退棟患者数")
+            hr2.metric("死亡退院数（年間）", f"{int(total_shibo):,}人",
+                help="様式1（病棟票）\nデータ列: 死亡退院数\n分母から除外される死亡退院患者数")
+            hr3.metric("家庭退院数（年間）", f"{int(total_katei):,}人",
+                help="様式1（病棟票）\nデータ列: 家庭退院数\n分子となる自宅退院患者数")
+            hr4.metric("在宅復帰率", f"{home_rate * 100:.1f}%",
+                help="在宅復帰率 = 家庭退院数 ÷（退棟患者数 − 死亡退院数）× 100\n"
+                     "様式1（病棟票）より算出")
 
             st.markdown("<br>", unsafe_allow_html=True)
 
