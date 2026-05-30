@@ -4,6 +4,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import unicodedata
+import re
 
 import urllib.request
 from pathlib import Path
@@ -24,6 +26,16 @@ _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
 def _sort_prefs(pref_list):
     """都道府県名リストを都道府県コード順に並べる"""
     return sorted(pref_list, key=lambda p: _PREF_ORDER.get(p, "99"))
+
+def _normalize_name(name: str) -> str:
+    """病院名の表記揺れを正規化（全角→半角、スペース除去、小文字化）"""
+    if not isinstance(name, str):
+        return ""
+    name = unicodedata.normalize("NFKC", name)
+    name = re.sub(r'[\s　・]', '', name)
+    name = name.lower()
+    return name
+
 from charts import (
     bed_donut, occupancy_gauge, bed_type_occupancy_bar,
     regional_bed_comparison, occupancy_scatter, share_bar, ranking_table_fig,
@@ -58,6 +70,15 @@ st.markdown("""
     font-size: 1.1rem; font-weight: 600; color: #2c3e50;
     border-bottom: 2px solid #3498db; padding-bottom: 6px; margin: 20px 0 12px;
 }
+/* サイドバーの検索結果ボタンをフラットに */
+div[data-testid="stSidebar"] .stButton button {
+    text-align: left;
+    font-size: 0.82rem;
+    padding: 4px 8px;
+    height: auto;
+    white-space: normal;
+    word-break: break-all;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -66,7 +87,6 @@ st.markdown("""
 
 DB_PATH = Path(__file__).parent / "data" / "byosho.duckdb"
 
-# 後方互換用 parquet キャッシュ（DuckDB がない場合のフォールバック）
 CACHE_FILE         = Path(__file__).parent / "data_cache.parquet"
 CACHE_FILE_WARD    = Path(__file__).parent / "ward_cache.parquet"
 CACHE_FILE_SURGERY = Path(__file__).parent / "surgery_cache.parquet"
@@ -101,7 +121,6 @@ def _db_surgery():
 
 if "df" not in st.session_state:
     if DB_PATH.exists():
-        # DuckDB が存在 → 全ユーザーで自動ロード
         try:
             st.session_state.df          = _db_hospitals()
             st.session_state.ward_df     = _db_wards()
@@ -113,7 +132,6 @@ if "df" not in st.session_state:
             st.session_state.surgery_df = None
             st.session_state._datasrc   = "none"
     elif CACHE_FILE.exists():
-        # 旧 parquet キャッシュ（起動_build.bat 未実行の場合）
         st.session_state.df = pd.read_parquet(CACHE_FILE)
         st.session_state.ward_df     = pd.read_parquet(CACHE_FILE_WARD) if CACHE_FILE_WARD.exists() else None
         st.session_state.surgery_df  = pd.read_parquet(CACHE_FILE_SURGERY) if CACHE_FILE_SURGERY.exists() else None
@@ -130,6 +148,18 @@ if "surgery_df" not in st.session_state:
     st.session_state.surgery_df = None
 if "_datasrc" not in st.session_state:
     st.session_state._datasrc = "none"
+# 表示モード: "detail"（病院詳細）or "search"（詳細条件検索）
+if "_view_mode" not in st.session_state:
+    st.session_state["_view_mode"] = "detail"
+
+
+# ── NaN → int ヘルパー ─────────────────────────────────────
+def _si(val):
+    """NaN / None / 文字列を安全に int に変換"""
+    try:
+        return int(val or 0)
+    except (ValueError, TypeError):
+        return 0
 
 
 # ── サイドバー ───────────────────────────────────────────────
@@ -150,12 +180,6 @@ with st.sidebar:
             st.info("DuckDB 接続中...")
     elif _src == "parquet":
         st.warning("⚠️ 旧データを表示中")
-        st.caption("「起動_build.bat」を実行すると\n過去3年分が使えるようになります。")
-        df_tmp = st.session_state.df
-        if df_tmp is not None:
-            yrs = sorted(df_tmp["報告年度"].dropna().unique())
-            prefs = df_tmp["都道府県名"].nunique()
-            st.caption(f"現在: {yrs}年度 / {prefs}都道府県")
     elif _src == "sample":
         st.info("🎮 サンプルデータ表示中")
 
@@ -197,11 +221,59 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"読み込みエラー: {e}")
 
-    # ── 絞り込みフィルタ（データあり） ──
+    # ── 病院を探す（データあり） ──
     if st.session_state.df is not None:
-        df = st.session_state.df
+        _df_all = st.session_state.df
+
         st.divider()
-        st.subheader("病院を選択")
+        st.subheader("🔍 病院を探す")
+
+        # ── 病院名で直接検索 ──
+        _name_q = st.text_input(
+            "病院名で検索",
+            placeholder="例: 大学病院、中央病院",
+            key="_sidebar_name_q",
+            label_visibility="collapsed",
+        )
+
+        if _name_q:
+            _norm_q = _normalize_name(_name_q)
+            _latest_year = int(_df_all["報告年度"].max())
+            _name_df = _df_all[_df_all["報告年度"] == _latest_year].copy()
+            _name_df["_norm"] = _name_df["医療機関名"].apply(_normalize_name)
+            _matched = _name_df[_name_df["_norm"].str.contains(_norm_q, na=False)]
+
+            if _matched.empty:
+                st.caption("🔎 見つかりませんでした")
+            else:
+                st.caption(f"**{len(_matched)}件** 見つかりました（{_latest_year}年度）")
+                for _, _mrow in _matched.head(12).iterrows():
+                    _btn_label = f"🏥 {_mrow['医療機関名']}"
+                    _btn_key   = f"_nbtn_{_mrow['医療機関名']}"
+                    if st.button(_btn_label, key=_btn_key, use_container_width=True):
+                        st.session_state["_sel_year"]     = int(_mrow["報告年度"])
+                        st.session_state["_sel_pref"]     = str(_mrow["都道府県名"])
+                        st.session_state["_sel_region"]   = str(_mrow["二次医療圏名"])
+                        st.session_state["_sel_hospital"] = str(_mrow["医療機関名"])
+                        st.session_state["_view_mode"]    = "detail"
+                        st.rerun()
+                if len(_matched) > 12:
+                    st.caption(f"… 他 {len(_matched)-12}件（絞り込んでください）")
+
+        # ── 詳細条件検索ボタン ──
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        _is_search = st.session_state.get("_view_mode") == "search"
+        if _is_search:
+            if st.button("← 病院詳細に戻る", use_container_width=True, type="secondary"):
+                st.session_state["_view_mode"] = "detail"
+                st.rerun()
+        else:
+            if st.button("🔧 詳細条件で検索", use_container_width=True, type="secondary"):
+                st.session_state["_view_mode"] = "search"
+                st.rerun()
+
+        st.divider()
+        st.subheader("📍 選択中の病院")
 
         # 検索タブからのナビゲーションジャンプを処理
         _nav = st.session_state.pop("_nav_jump", None)
@@ -212,35 +284,34 @@ with st.sidebar:
             st.session_state["_sel_hospital"] = str(_nav["hospital"])
             st.session_state["_nav_done"]     = str(_nav["hospital"])
 
-        years = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+        years = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
         sel_year = st.selectbox("報告年度", years, key="_sel_year")
 
-        prefs = _sort_prefs(df["都道府県名"].unique())
+        prefs = _sort_prefs(_df_all["都道府県名"].unique())
         if st.session_state.get("_sel_pref") not in prefs:
             st.session_state["_sel_pref"] = prefs[0] if prefs else None
         sel_pref = st.selectbox("都道府県", prefs, key="_sel_pref")
 
-        regions = sorted(r for r in df[df["都道府県名"] == sel_pref]["二次医療圏名"].unique() if r != "不明")
+        regions = sorted(r for r in _df_all[_df_all["都道府県名"] == sel_pref]["二次医療圏名"].unique() if r != "不明")
         if st.session_state.get("_sel_region") not in regions:
             st.session_state["_sel_region"] = regions[0] if regions else None
         sel_region = st.selectbox("二次医療圏", regions, key="_sel_region")
 
-        hospitals_in_region = df[
-            (df["報告年度"] == sel_year) &
-            (df["都道府県名"] == sel_pref) &
-            (df["二次医療圏名"] == sel_region)
+        hospitals_in_region = _df_all[
+            (_df_all["報告年度"] == sel_year) &
+            (_df_all["都道府県名"] == sel_pref) &
+            (_df_all["二次医療圏名"] == sel_region)
         ]["医療機関名"].sort_values().tolist()
 
         if st.session_state.get("_sel_hospital") not in hospitals_in_region:
             st.session_state["_sel_hospital"] = hospitals_in_region[0] if hospitals_in_region else None
         sel_hospital = st.selectbox("医療機関名", hospitals_in_region, key="_sel_hospital")
 
-        # ナビゲーション成功通知
         if "_nav_done" in st.session_state:
             st.success(f"✅ {st.session_state.pop('_nav_done')}\n「病院概要」タブで確認できます")
 
         st.divider()
-        st.caption(f"全 {len(df[df['報告年度']==sel_year]):,} 病院 | {sel_year}年度")
+        st.caption(f"全 {len(_df_all[_df_all['報告年度']==sel_year]):,} 病院 | {sel_year}年度")
         if len(years) > 1:
             st.caption(f"収録年度: {int(min(years))}〜{int(max(years))}")
 
@@ -292,10 +363,294 @@ if st.session_state.df is None:
 # ── データ準備 ─────────────────────────────────────────────
 
 df = st.session_state.df
-year = sel_year
-pref = sel_pref
-region = sel_region
+year     = sel_year
+pref     = sel_pref
+region   = sel_region
 hospital = sel_hospital
+
+
+# ══════════════════════════════════════════════════════════
+# 詳細条件検索モード
+# ══════════════════════════════════════════════════════════
+
+if st.session_state.get("_view_mode") == "search":
+
+    st.markdown("## 🔧 詳細条件で病院を検索")
+    st.caption("手術件数・医療設備の条件で全国の病院を絞り込んで一覧表示します")
+
+    # ── フィルターパネル ──
+    with st.expander("🔎 絞り込みフィルター", expanded=True):
+        fc1, fc2, fc3 = st.columns(3)
+
+        with fc1:
+            st.markdown("**📍 場所**")
+            s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+            s_year   = st.selectbox("年度", s_years_list, key="s_year")
+            s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
+            s_pref   = st.selectbox("都道府県", s_all_prefs, key="s_pref")
+            if s_pref != "全都道府県":
+                s_all_regions = ["全二次医療圏"] + sorted(
+                    r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
+                    if r != "不明"
+                )
+            else:
+                s_all_regions = ["全二次医療圏"]
+            s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region")
+            s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw")
+
+        with fc2:
+            st.markdown("**✂️ 手術（臓器別・1件以上で表示）**")
+            s_surg_mode = st.radio(
+                "対象",
+                ["手術（全数）", "全身麻酔の手術"],
+                horizontal=True,
+                key="s_surg_mode",
+            )
+            _oa, _ob = st.columns(2)
+            with _oa:
+                s_ck_hifuka  = st.checkbox("皮膚・皮下組織",     key="s_ck_hifuka")
+                s_ck_kinkot  = st.checkbox("筋骨格系・四肢",     key="s_ck_kinkot")
+                s_ck_shinkei = st.checkbox("神経系・頭蓋",       key="s_ck_shinkei")
+                s_ck_me      = st.checkbox("眼",                 key="s_ck_me")
+                s_ck_jibika  = st.checkbox("耳鼻咽喉",           key="s_ck_jibika")
+                s_ck_ganmen  = st.checkbox("顔面・口腔・頸部",   key="s_ck_ganmen")
+            with _ob:
+                s_ck_kyobu   = st.checkbox("胸部",               key="s_ck_kyobu")
+                s_ck_shin    = st.checkbox("心・脈管",            key="s_ck_shin")
+                s_ck_fukubu  = st.checkbox("腹部",               key="s_ck_fukubu")
+                s_ck_nyo     = st.checkbox("尿路系・副腎",       key="s_ck_nyo")
+                s_ck_seiki   = st.checkbox("性器",               key="s_ck_seiki")
+                s_ck_shika   = st.checkbox("歯科",               key="s_ck_shika")
+            st.markdown("**術式**")
+            s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
+            s_ck_fuku    = st.checkbox("腹腔鏡下手術",   key="s_ck_fuku")
+            s_ck_kyou    = st.checkbox("胸腔鏡下手術",   key="s_ck_kyou")
+
+        with fc3:
+            st.markdown("**🔵 CT（1台以上で表示）**")
+            s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
+            s_ck_ct16p = st.checkbox("16〜64列", key="s_ck_ct16p")
+            s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
+            st.markdown("**🔴 MRI（1台以上で表示）**")
+            s_ck_mri3t  = st.checkbox("3T以上",    key="s_ck_mri3t")
+            s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
+            s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+            st.markdown("**🏥 その他設備**")
+            s_has_pet      = st.checkbox("PET / PET-CTあり",    key="s_has_pet")
+            s_has_robot_eq = st.checkbox("手術支援ロボットあり", key="s_has_robot_eq")
+            s_has_gamma    = st.checkbox("ガンマナイフあり",     key="s_has_gamma")
+
+    # ── フィルタリング処理 ──
+    s_df = df[df["報告年度"] == s_year].copy()
+
+    if s_pref != "全都道府県":
+        s_df = s_df[s_df["都道府県名"] == s_pref]
+    if s_region != "全二次医療圏":
+        s_df = s_df[s_df["二次医療圏名"] == s_region]
+    if s_kw:
+        _norm_kw = _normalize_name(s_kw)
+        s_df = s_df[s_df["医療機関名"].apply(_normalize_name).str.contains(_norm_kw, na=False)]
+
+    # 手術データをマージ
+    _ORGAN_LABELS = [
+        "皮膚・皮下組織", "筋骨格系・四肢・体幹", "神経系・頭蓋", "眼",
+        "耳鼻咽喉", "顔面・口腔・頸部", "胸部", "心・脈管",
+        "腹部", "尿路系・副腎", "性器", "歯科",
+    ]
+    _surg_cols_all = (
+        ["手術総数", "全身麻酔手術数", "ロボット支援手術数",
+         "腹腔鏡下手術数", "胸腔鏡下手術数", "悪性腫瘍手術数",
+         "脳血管内手術数", "人工心肺手術数"]
+        + [f"手術_{lb}" for lb in _ORGAN_LABELS]
+        + [f"全麻_{lb}" for lb in _ORGAN_LABELS]
+    )
+    _surg_state = st.session_state.get("surgery_df")
+
+    if _surg_state is not None and not _surg_state.empty:
+        _sy = _surg_state[_surg_state["報告年度"] == s_year] if "報告年度" in _surg_state.columns else _surg_state
+        _avail = [c for c in _surg_cols_all if c in _sy.columns]
+        if _avail:
+            _join = "医療機関コード" if ("医療機関コード" in _sy.columns and "医療機関コード" in s_df.columns) else "医療機関名"
+            _sy_m = _sy[[_join] + _avail].copy()
+            _sy_m[_join] = _sy_m[_join].astype(str).str.strip()
+            if _join == "医療機関コード" and "医療機関コード" in s_df.columns:
+                s_df = s_df.copy()
+                s_df["医療機関コード"] = s_df["医療機関コード"].astype(str).str.strip()
+            s_df = s_df.merge(
+                _sy_m.drop_duplicates(_join),
+                on=_join, how="left", suffixes=("", "_sy"),
+            )
+        for c in _avail:
+            s_df[c] = pd.to_numeric(s_df[c], errors="coerce").fillna(0).astype(int)
+    else:
+        for c in _surg_cols_all:
+            s_df[c] = 0
+
+    # ── 臓器別手術フィルター ──
+    _organ_prefix = "全麻_" if s_surg_mode == "全身麻酔の手術" else "手術_"
+    _organ_checks = [
+        (s_ck_hifuka,  "皮膚・皮下組織"),
+        (s_ck_kinkot,  "筋骨格系・四肢・体幹"),
+        (s_ck_shinkei, "神経系・頭蓋"),
+        (s_ck_me,      "眼"),
+        (s_ck_jibika,  "耳鼻咽喉"),
+        (s_ck_ganmen,  "顔面・口腔・頸部"),
+        (s_ck_kyobu,   "胸部"),
+        (s_ck_shin,    "心・脈管"),
+        (s_ck_fukubu,  "腹部"),
+        (s_ck_nyo,     "尿路系・副腎"),
+        (s_ck_seiki,   "性器"),
+        (s_ck_shika,   "歯科"),
+    ]
+
+    _organ_cols_exist = any(f"手術_{lb}" in s_df.columns for lb in _ORGAN_LABELS)
+    _any_organ_checked = any(ck for ck, _ in _organ_checks)
+
+    if _any_organ_checked and not _organ_cols_exist:
+        st.warning(
+            "⚠️ 臓器別の手術データはまだ読み込まれていません。\n\n"
+            "**「起動_build.bat」を再実行**して DuckDB を再ビルドしてください。"
+        )
+
+    for _ck, _label in _organ_checks:
+        _col = f"{_organ_prefix}{_label}"
+        if _ck and _col in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+
+    if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
+        s_df = s_df[s_df["ロボット支援手術数"] > 0]
+    if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
+        s_df = s_df[s_df["腹腔鏡下手術数"] > 0]
+    if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
+        s_df = s_df[s_df["胸腔鏡下手術数"] > 0]
+
+    for _ck, _col in [
+        (s_ck_ct64,  "CT_64列以上"),
+        (s_ck_ct16p, "CT_16〜64列"),
+        (s_ck_ct16m, "CT_16列未満"),
+        (s_ck_mri3t,  "MRI_3T以上"),
+        (s_ck_mri15p, "MRI_1.5〜3T"),
+        (s_ck_mri15m, "MRI_1.5T未満"),
+    ]:
+        if _ck and _col in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+    if s_has_pet:
+        _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
+        _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
+        s_df = s_df[(_pet_v > 0) | (_petct_v > 0)]
+    if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["内視鏡手術支援機器台数"], errors="coerce").fillna(0) > 0]
+    if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["ガンマナイフ台数"], errors="coerce").fillna(0) > 0]
+
+    # ── 表示列の決定 ──
+    _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
+    _any_surg = any(ck for ck, _ in _organ_checks) or s_ck_robot_s or s_ck_fuku or s_ck_kyou
+    _sshow = []
+    if _any_surg and "手術総数" in s_df.columns:
+        _sshow.append("手術総数")
+    if _any_surg and s_surg_mode == "全身麻酔の手術" and "全身麻酔手術数" in s_df.columns:
+        _sshow.append("全身麻酔手術数")
+    if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
+        _sshow.append("ロボット支援手術数")
+    if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
+        _sshow.append("腹腔鏡下手術数")
+    if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
+        _sshow.append("胸腔鏡下手術数")
+    _checked_organ_cols = [f"{_organ_prefix}{lb}" for _ck, lb in _organ_checks if _ck]
+    _organ_show = [c for c in _checked_organ_cols if c in s_df.columns]
+    _ct_ck_map  = [(s_ck_ct64, "CT_64列以上"), (s_ck_ct16p, "CT_16〜64列"), (s_ck_ct16m, "CT_16列未満")]
+    _mri_ck_map = [(s_ck_mri3t, "MRI_3T以上"), (s_ck_mri15p, "MRI_1.5〜3T"), (s_ck_mri15m, "MRI_1.5T未満")]
+    _eshow = []
+    _any_ct_ck  = any(ck for ck, _ in _ct_ck_map)
+    _any_mri_ck = any(ck for ck, _ in _mri_ck_map)
+    if _any_ct_ck:
+        _eshow += [col for ck, col in _ct_ck_map if ck and col in s_df.columns]
+    elif "CT台数" in s_df.columns:
+        _eshow.append("CT台数")
+    if _any_mri_ck:
+        _eshow += [col for ck, col in _mri_ck_map if ck and col in s_df.columns]
+    elif "MRI台数" in s_df.columns:
+        _eshow.append("MRI台数")
+    if s_has_pet:
+        _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
+    if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
+        _eshow.append("内視鏡手術支援機器台数")
+    if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
+        _eshow.append("ガンマナイフ台数")
+    _disp = _base + _sshow + _organ_show + _eshow
+
+    result_s = (
+        s_df[_disp]
+        .sort_values("合計_許可病床数", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    # ── 結果表示 ──
+    st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
+
+    _col_cfg = {
+        "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%d 床"),
+        "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%d 台"),
+        "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%d 台"),
+        "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%d 台"),
+        "MRI_3T以上":       st.column_config.NumberColumn("MRI 3T以上",       format="%d 台"),
+        "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%d 台"),
+        "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%d 台"),
+        "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%d 台"),
+    }
+    for _c in _sshow:
+        _col_cfg[_c] = st.column_config.NumberColumn(format="%d 件")
+    for _c in _organ_show:
+        _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
+        _col_cfg[_c] = st.column_config.NumberColumn(_label, format="%d 件")
+    for _c in _eshow:
+        if _c not in _col_cfg:
+            _col_cfg[_c] = st.column_config.NumberColumn(format="%d 台")
+
+    st.dataframe(result_s, hide_index=True, use_container_width=True, column_config=_col_cfg)
+
+    # CSVダウンロード
+    st.download_button(
+        "📥 CSV ダウンロード",
+        result_s.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"hospital_search_{s_year}.csv",
+        mime="text/csv",
+        key="s_csv_dl",
+    )
+
+    # ── 詳細ナビゲーション ──
+    if not result_s.empty:
+        st.divider()
+        st.markdown("### 🏥 病院を選んで詳細を見る")
+        st.caption("病院名をクリックすると、その病院の詳細分析画面に移動します。")
+
+        # 病院名ボタングリッド
+        _nav_hospitals = result_s["医療機関名"].tolist()
+        _nav_cols = st.columns(3)
+        for _i, _hname in enumerate(_nav_hospitals[:30]):
+            with _nav_cols[_i % 3]:
+                if st.button(f"🏥 {_hname}", key=f"_snav_{_i}", use_container_width=True):
+                    _hrow = df[(df["医療機関名"] == _hname) & (df["報告年度"] == s_year)]
+                    if not _hrow.empty:
+                        _hr = _hrow.iloc[0]
+                        st.session_state["_sel_year"]     = int(_hr["報告年度"])
+                        st.session_state["_sel_pref"]     = str(_hr["都道府県名"])
+                        st.session_state["_sel_region"]   = str(_hr["二次医療圏名"])
+                        st.session_state["_sel_hospital"] = _hname
+                        st.session_state["_view_mode"]    = "detail"
+                        st.rerun()
+
+        if len(_nav_hospitals) > 30:
+            st.caption(f"※ 先頭30件を表示。全{len(_nav_hospitals)}件はCSVをダウンロードしてください。")
+
+    # 検索モードはここで終了
+    st.stop()
+
+
+# ══════════════════════════════════════════════════════════
+# 病院詳細モード（TAB1〜6）
+# ══════════════════════════════════════════════════════════
 
 # 選択病院の年次データ
 hosp_row = df[
@@ -325,20 +680,12 @@ st.caption(f"{year}年度　|　{pref}　{region}")
 # KPIメトリクス行
 m1, m2, m3, m4, m5 = st.columns(5)
 
-def _si(val):
-    """NaN / None / 文字列を安全に int に変換"""
-    try:
-        return int(val or 0)
-    except (ValueError, TypeError):
-        return 0
-
 total_kyoka  = _si(hosp_row.get("合計_許可病床数", 0)) if isinstance(hosp_row, pd.Series) else 0
 total_kado   = _si(hosp_row.get("合計_稼働病床数", 0)) if isinstance(hosp_row, pd.Series) else 0
 total_zaitou = _si(hosp_row.get("合計_在棟延べ数", 0)) if isinstance(hosp_row, pd.Series) else 0
 doctors      = _si(hosp_row.get("常勤医師数", 0)) if isinstance(hosp_row, pd.Series) else 0
 nurses       = _si(hosp_row.get("常勤看護師数", 0)) if isinstance(hosp_row, pd.Series) else 0
 
-# 稼働率: 在棟患者延べ数/365/許可病床数（正式）、なければ稼働病床数/許可病床数
 if total_zaitou > 0 and total_kyoka > 0:
     occ = total_zaitou / 365 / total_kyoka
     kado_sub = f"平均在棟 {total_zaitou // 365:,}人/日"
@@ -372,14 +719,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ── タブ ──────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 病院概要",
     "🏆 地域比較",
     "📋 ランキング",
     "📈 経年トレンド",
     "👨‍⚕️ スタッフ分析",
     "📋 詳細分析",
-    "🔍 病院検索",
 ])
 
 
@@ -436,7 +782,6 @@ with tab1:
 
         # ── 医療設備セクション ──────────────────────
         def _ev(col):
-            """設備台数を取得（列なければNone、NaN は 0 として扱う）"""
             if not isinstance(hosp_row, pd.Series) or col not in hosp_row.index:
                 return None
             val = hosp_row.get(col, 0)
@@ -471,7 +816,6 @@ with tab1:
             st.markdown('<div class="section-header">医療設備（モダリティ）</div>', unsafe_allow_html=True)
 
             def _modality_card(title: str, accent: str, total: int, breakdown: dict) -> str:
-                """CT / MRI 用カードHTML"""
                 items_html = "".join(
                     f'<div style="flex:1;text-align:center;padding:0 6px;'
                     f'border-right:1px solid rgba(255,255,255,0.07);">'
@@ -496,7 +840,6 @@ with tab1:
                 )
 
             def _equip_badge(label: str, val: int) -> str:
-                """その他設備用バッジHTML"""
                 return (
                     f'<div style="background:#1a2133;border:1px solid rgba(255,255,255,0.1);'
                     f'border-radius:8px;padding:10px 14px;text-align:center;">'
@@ -506,7 +849,6 @@ with tab1:
                     f'</div>'
                 )
 
-            # ── CT カード ──
             ct_total = _ev("CT台数") or 0
             has_ct   = any(_ev(c) is not None for c in CT_BREAKDOWN) or _ev("CT台数") is not None
             if has_ct:
@@ -516,7 +858,6 @@ with tab1:
                     unsafe_allow_html=True,
                 )
 
-            # ── MRI カード ──
             mri_total = _ev("MRI台数") or 0
             has_mri   = any(_ev(c) is not None for c in MRI_BREAKDOWN) or _ev("MRI台数") is not None
             if has_mri:
@@ -526,7 +867,6 @@ with tab1:
                     unsafe_allow_html=True,
                 )
 
-            # ── その他設備バッジ（列が存在する場合は0台でも表示）──
             other_data = {lbl: (_ev(col) or 0) for col, lbl in OTHER_EQUIP.items() if _ev(col) is not None}
             if other_data:
                 items = list(other_data.items())
@@ -663,7 +1003,6 @@ with tab5:
                 use_container_width=True,
             )
 
-        # 選択病院と地域平均の比較
         st.markdown('<div class="section-header">選択病院 vs 地域平均</div>', unsafe_allow_html=True)
         if len(region_df_staff) > 0:
             metrics = ["医師数_per100床", "看護師数_per100床"]
@@ -692,7 +1031,6 @@ with tab6:
     if ward_df is None:
         st.info("病棟単位の詳細データがありません。厚労省様式1・2病棟票を再読み込みしてください。")
     else:
-        # 選択病院の ward_df（当該年度のみ）
         hosp_ward = ward_df[
             (ward_df["医療機関名"] == hospital) &
             (ward_df["報告年度"] == year)
@@ -701,7 +1039,6 @@ with tab6:
         if hosp_ward.empty:
             st.info("選択した病院・年度の病棟データが見つかりません。データを再読み込みしてください。")
         else:
-            # 1. 入院基本料別病床数テーブル
             st.markdown('<div class="section-header">入院基本料別病床数</div>', unsafe_allow_html=True)
             bed_tbl = detail_bed_type_table(hosp_ward, hospital)
             if not bed_tbl.empty:
@@ -711,14 +1048,12 @@ with tab6:
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # 2 & 3. 入院経路・退院経路の円グラフ
             c1, c2 = st.columns(2)
             with c1:
                 st.plotly_chart(admission_route_pie(hosp_ward, hospital), use_container_width=True)
             with c2:
                 st.plotly_chart(discharge_route_pie(hosp_ward, hospital), use_container_width=True)
 
-            # 4. 在宅復帰率メトリクス
             st.markdown('<div class="section-header">在宅復帰率</div>', unsafe_allow_html=True)
             total_taitou = float(hosp_ward["退棟患者数"].sum())
             total_katei  = float(hosp_ward["家庭退院数"].sum())
@@ -727,15 +1062,10 @@ with tab6:
             hr1, hr2, hr3 = st.columns(3)
             hr1.metric("退棟患者数（年間）",   f"{int(total_taitou):,}人")
             hr2.metric("家庭退院数（年間）",   f"{int(total_katei):,}人")
-            hr3.metric(
-                "在宅復帰率",
-                f"{home_rate * 100:.1f}%",
-                delta=None,
-            )
+            hr3.metric("在宅復帰率",           f"{home_rate * 100:.1f}%")
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # 5. 地域内比較（在宅復帰率）横棒グラフ
             st.markdown('<div class="section-header">地域内 在宅復帰率比較</div>', unsafe_allow_html=True)
             region_ward = ward_df[
                 (ward_df["二次医療圏名"] == region) &
@@ -776,7 +1106,6 @@ with tab6:
                 "人工心肺手術数": "人工心肺",
             }
 
-            # KPIカード
             kpi_cols = st.columns(4)
             for (col, label), kpi in zip(list(SURG_COLS.items())[:4], kpi_cols):
                 val = _si(surg_row.get(col, 0))
@@ -787,7 +1116,6 @@ with tab6:
                 val = _si(surg_row.get(col, 0))
                 kpi.metric(label, f"{val:,}件")
 
-            # 手術内訳横棒グラフ
             total = _si(surg_row.get("手術総数", 0))
             if total > 0:
                 import plotly.graph_objects as go
@@ -809,11 +1137,11 @@ with tab6:
                 )
                 st.plotly_chart(fig_surg, use_container_width=True)
 
-            # 二次医療圏内手術数シェア
             st.markdown('<div class="section-header">二次医療圏内 手術数シェア</div>', unsafe_allow_html=True)
             region_surg = surgery_df[surgery_df["二次医療圏名"] == region] if "二次医療圏名" in surgery_df.columns else pd.DataFrame()
 
             if not region_surg.empty and region_surg["手術総数"].sum() > 0:
+                import plotly.graph_objects as go
                 region_total = region_surg["手術総数"].sum()
                 region_surg = region_surg.copy()
                 region_surg["シェア(%)"] = (region_surg["手術総数"] / region_total * 100).round(1)
@@ -840,309 +1168,8 @@ with tab6:
                 )
                 st.plotly_chart(fig_share, use_container_width=True)
 
-                # シェアテーブル
                 tbl = region_surg[["医療機関名", "手術総数", "全身麻酔手術数", "シェア(%)", "全身麻酔率(%)"]].sort_values("手術総数", ascending=False).reset_index(drop=True)
                 tbl.index += 1
                 st.dataframe(tbl, use_container_width=True)
             else:
                 st.info("この二次医療圏の手術データがありません。")
-
-
-# ── TAB 7: 病院検索 ─────────────────────────────────────────
-
-with tab7:
-    st.markdown("### 🔍 病院検索")
-    st.caption("手術件数・医療設備の条件で全国の病院を絞り込んで一覧表示します")
-
-    # ── フィルターパネル ──
-    with st.expander("🔧 絞り込みフィルター", expanded=True):
-        fc1, fc2, fc3 = st.columns(3)
-
-        with fc1:
-            st.markdown("**📍 場所**")
-            s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-            s_year   = st.selectbox("年度", s_years_list, key="s_year")
-            s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-            s_pref   = st.selectbox("都道府県", s_all_prefs, key="s_pref")
-            if s_pref != "全都道府県":
-                s_all_regions = ["全二次医療圏"] + sorted(
-                    r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
-                    if r != "不明"
-                )
-            else:
-                s_all_regions = ["全二次医療圏"]
-            s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region")
-            s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw")
-
-        with fc2:
-            st.markdown("**✂️ 手術（臓器別・1件以上で表示）**")
-            s_surg_mode = st.radio(
-                "対象",
-                ["手術（全数）", "全身麻酔の手術"],
-                horizontal=True,
-                key="s_surg_mode",
-            )
-            # 臓器別チェックボックス（2列グリッド）
-            _oa, _ob = st.columns(2)
-            with _oa:
-                s_ck_hifuka  = st.checkbox("皮膚・皮下組織",     key="s_ck_hifuka")
-                s_ck_kinkot  = st.checkbox("筋骨格系・四肢",     key="s_ck_kinkot")
-                s_ck_shinkei = st.checkbox("神経系・頭蓋",       key="s_ck_shinkei")
-                s_ck_me      = st.checkbox("眼",                 key="s_ck_me")
-                s_ck_jibika  = st.checkbox("耳鼻咽喉",           key="s_ck_jibika")
-                s_ck_ganmen  = st.checkbox("顔面・口腔・頸部",   key="s_ck_ganmen")
-            with _ob:
-                s_ck_kyobu   = st.checkbox("胸部",               key="s_ck_kyobu")
-                s_ck_shin    = st.checkbox("心・脈管",            key="s_ck_shin")
-                s_ck_fukubu  = st.checkbox("腹部",               key="s_ck_fukubu")
-                s_ck_nyo     = st.checkbox("尿路系・副腎",       key="s_ck_nyo")
-                s_ck_seiki   = st.checkbox("性器",               key="s_ck_seiki")
-                s_ck_shika   = st.checkbox("歯科",               key="s_ck_shika")
-            st.markdown("**術式**")
-            s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
-            s_ck_fuku    = st.checkbox("腹腔鏡下手術",   key="s_ck_fuku")
-            s_ck_kyou    = st.checkbox("胸腔鏡下手術",   key="s_ck_kyou")
-
-        with fc3:
-            st.markdown("**🔵 CT（1台以上で表示）**")
-            s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
-            s_ck_ct16p = st.checkbox("16〜64列", key="s_ck_ct16p")
-            s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
-            st.markdown("**🔴 MRI（1台以上で表示）**")
-            s_ck_mri3t  = st.checkbox("3T以上",    key="s_ck_mri3t")
-            s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
-            s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
-            st.markdown("**🏥 その他設備**")
-            s_has_pet      = st.checkbox("PET / PET-CTあり",    key="s_has_pet")
-            s_has_robot_eq = st.checkbox("手術支援ロボットあり", key="s_has_robot_eq")
-            s_has_gamma    = st.checkbox("ガンマナイフあり",     key="s_has_gamma")
-
-    # ── フィルタリング処理 ──
-    s_df = df[df["報告年度"] == s_year].copy()
-
-    if s_pref != "全都道府県":
-        s_df = s_df[s_df["都道府県名"] == s_pref]
-    if s_region != "全二次医療圏":
-        s_df = s_df[s_df["二次医療圏名"] == s_region]
-    if s_kw:
-        s_df = s_df[s_df["医療機関名"].str.contains(s_kw, na=False, case=False)]
-
-    # 手術データをマージ
-    _ORGAN_LABELS = [
-        "皮膚・皮下組織", "筋骨格系・四肢・体幹", "神経系・頭蓋", "眼",
-        "耳鼻咽喉", "顔面・口腔・頸部", "胸部", "心・脈管",
-        "腹部", "尿路系・副腎", "性器", "歯科",
-    ]
-    _surg_cols_all = (
-        ["手術総数", "全身麻酔手術数", "ロボット支援手術数",
-         "腹腔鏡下手術数", "胸腔鏡下手術数", "悪性腫瘍手術数",
-         "脳血管内手術数", "人工心肺手術数"]
-        + [f"手術_{lb}" for lb in _ORGAN_LABELS]
-        + [f"全麻_{lb}" for lb in _ORGAN_LABELS]
-    )
-    _surg_state = st.session_state.get("surgery_df")
-
-    if _surg_state is not None and not _surg_state.empty:
-        _sy = _surg_state[_surg_state["報告年度"] == s_year] if "報告年度" in _surg_state.columns else _surg_state
-        _avail = [c for c in _surg_cols_all if c in _sy.columns]
-        if _avail:
-            _join = "医療機関コード" if ("医療機関コード" in _sy.columns and "医療機関コード" in s_df.columns) else "医療機関名"
-            # 型不一致（str vs int64）を防ぐため両側を str に統一
-            _sy_m = _sy[[_join] + _avail].copy()
-            _sy_m[_join] = _sy_m[_join].astype(str).str.strip()
-            if _join == "医療機関コード" and "医療機関コード" in s_df.columns:
-                s_df = s_df.copy()
-                s_df["医療機関コード"] = s_df["医療機関コード"].astype(str).str.strip()
-            s_df = s_df.merge(
-                _sy_m.drop_duplicates(_join),
-                on=_join, how="left", suffixes=("", "_sy"),
-            )
-        for c in _avail:
-            s_df[c] = pd.to_numeric(s_df[c], errors="coerce").fillna(0).astype(int)
-    else:
-        for c in _surg_cols_all:
-            s_df[c] = 0
-
-    # ── 臓器別手術フィルター（モードで全数 or 全身麻酔を切替）──
-    _organ_prefix = "全麻_" if s_surg_mode == "全身麻酔の手術" else "手術_"
-    _organ_checks = [
-        (s_ck_hifuka,  "皮膚・皮下組織"),
-        (s_ck_kinkot,  "筋骨格系・四肢・体幹"),
-        (s_ck_shinkei, "神経系・頭蓋"),
-        (s_ck_me,      "眼"),
-        (s_ck_jibika,  "耳鼻咽喉"),
-        (s_ck_ganmen,  "顔面・口腔・頸部"),
-        (s_ck_kyobu,   "胸部"),
-        (s_ck_shin,    "心・脈管"),
-        (s_ck_fukubu,  "腹部"),
-        (s_ck_nyo,     "尿路系・副腎"),
-        (s_ck_seiki,   "性器"),
-        (s_ck_shika,   "歯科"),
-    ]
-
-    # 臓器別列が存在するか（DuckDB 再ビルド済みか）確認
-    _organ_cols_exist = any(f"手術_{lb}" in s_df.columns for lb in _ORGAN_LABELS)
-    _any_organ_checked = any(ck for ck, _ in _organ_checks)
-
-    if _any_organ_checked and not _organ_cols_exist:
-        st.warning(
-            "⚠️ 臓器別の手術データはまだ読み込まれていません。\n\n"
-            "**「起動_build.bat」を再実行**して DuckDB を再ビルドしてください。\n"
-            "（約10〜20分。完了後アプリを再起動すると使えるようになります）"
-        )
-
-    for _ck, _label in _organ_checks:
-        _col = f"{_organ_prefix}{_label}"
-        if _ck and _col in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
-
-    # ── 術式フィルター ──
-    if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
-        s_df = s_df[s_df["ロボット支援手術数"] > 0]
-    if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
-        s_df = s_df[s_df["腹腔鏡下手術数"] > 0]
-    if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
-        s_df = s_df[s_df["胸腔鏡下手術数"] > 0]
-
-    # 設備フィルター（CT/MRI モデル別チェックボックス）
-    for _ck, _col in [
-        (s_ck_ct64,  "CT_64列以上"),
-        (s_ck_ct16p, "CT_16〜64列"),
-        (s_ck_ct16m, "CT_16列未満"),
-        (s_ck_mri3t,  "MRI_3T以上"),
-        (s_ck_mri15p, "MRI_1.5〜3T"),
-        (s_ck_mri15m, "MRI_1.5T未満"),
-    ]:
-        if _ck and _col in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
-    if s_has_pet:
-        _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
-        _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
-        s_df = s_df[(_pet_v > 0) | (_petct_v > 0)]
-    if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["内視鏡手術支援機器台数"], errors="coerce").fillna(0) > 0]
-    if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["ガンマナイフ台数"], errors="coerce").fillna(0) > 0]
-
-    # ── 表示列の決定（チェックした項目だけ動的に追加） ──
-    _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
-
-    # いずれかの手術フィルターがONか
-    _any_surg = any(ck for ck, _ in _organ_checks) or s_ck_robot_s or s_ck_fuku or s_ck_kyou
-
-    # 手術総数は何かチェックされていれば常に表示
-    _sshow = []
-    if _any_surg and "手術総数" in s_df.columns:
-        _sshow.append("手術総数")
-    # 全身麻酔モードなら全身麻酔手術数も表示
-    if _any_surg and s_surg_mode == "全身麻酔の手術" and "全身麻酔手術数" in s_df.columns:
-        _sshow.append("全身麻酔手術数")
-    # チェックされた術式列のみ表示
-    if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
-        _sshow.append("ロボット支援手術数")
-    if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
-        _sshow.append("腹腔鏡下手術数")
-    if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
-        _sshow.append("胸腔鏡下手術数")
-
-    # チェックされた臓器別列のみ表示
-    _checked_organ_cols = [
-        f"{_organ_prefix}{lb}"
-        for _ck, lb in _organ_checks if _ck
-    ]
-    _organ_show = [c for c in _checked_organ_cols if c in s_df.columns]
-    # CT/MRI 設備列：チェックされた列のみ表示
-    _ct_ck_map  = [(s_ck_ct64, "CT_64列以上"), (s_ck_ct16p, "CT_16〜64列"), (s_ck_ct16m, "CT_16列未満")]
-    _mri_ck_map = [(s_ck_mri3t, "MRI_3T以上"), (s_ck_mri15p, "MRI_1.5〜3T"), (s_ck_mri15m, "MRI_1.5T未満")]
-    _eshow = []
-    _any_ct_ck  = any(ck for ck, _ in _ct_ck_map)
-    _any_mri_ck = any(ck for ck, _ in _mri_ck_map)
-    # CT: チェックがあれば該当列、なければ合計
-    if _any_ct_ck:
-        _eshow += [col for ck, col in _ct_ck_map if ck and col in s_df.columns]
-    elif "CT台数" in s_df.columns:
-        _eshow.append("CT台数")
-    # MRI: チェックがあれば該当列、なければ合計
-    if _any_mri_ck:
-        _eshow += [col for ck, col in _mri_ck_map if ck and col in s_df.columns]
-    elif "MRI台数" in s_df.columns:
-        _eshow.append("MRI台数")
-    # その他設備：チェックされたもののみ
-    if s_has_pet:
-        _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
-    if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
-        _eshow.append("内視鏡手術支援機器台数")
-    if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
-        _eshow.append("ガンマナイフ台数")
-    _disp  = _base + _sshow + _organ_show + _eshow
-
-    result_s = (
-        s_df[_disp]
-        .sort_values("合計_許可病床数", ascending=False)
-        .reset_index(drop=True)
-    )
-
-    # ── 結果表示 ──
-    st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
-
-    _col_cfg = {
-        "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%d 床"),
-        "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%d 台"),
-        "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%d 台"),
-        "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%d 台"),
-        "MRI_3T以上":       st.column_config.NumberColumn("MRI 3T以上",       format="%d 台"),
-        "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%d 台"),
-        "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%d 台"),
-        "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%d 台"),
-    }
-    for _c in _sshow:
-        _col_cfg[_c] = st.column_config.NumberColumn(format="%d 件")
-    for _c in _organ_show:
-        _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
-        _col_cfg[_c] = st.column_config.NumberColumn(_label, format="%d 件")
-    for _c in _eshow:
-        if _c not in _col_cfg:
-            _col_cfg[_c] = st.column_config.NumberColumn(format="%d 台")
-
-    st.dataframe(result_s, hide_index=True, use_container_width=True, column_config=_col_cfg)
-
-    # CSVダウンロード
-    st.download_button(
-        "📥 CSV ダウンロード",
-        result_s.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"hospital_search_{s_year}.csv",
-        mime="text/csv",
-        key="s_csv_dl",
-    )
-
-    # ── 詳細ナビゲーション ──
-    if not result_s.empty:
-        st.divider()
-        st.caption("選択した病院の詳細（病院概要タブ）に移動できます")
-        nav_c1, nav_c2 = st.columns([3, 1])
-        with nav_c1:
-            nav_sel = st.selectbox(
-                "病院を選択:",
-                ["（選択してください）"] + result_s["医療機関名"].tolist(),
-                key="s_nav_sel",
-            )
-        with nav_c2:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            nav_go = st.button(
-                "詳細を見る →",
-                type="primary",
-                key="s_nav_btn",
-                disabled=(nav_sel == "（選択してください）"),
-            )
-        if nav_go and nav_sel != "（選択してください）":
-            _hrow = df[(df["医療機関名"] == nav_sel) & (df["報告年度"] == s_year)]
-            if not _hrow.empty:
-                _hr = _hrow.iloc[0]
-                st.session_state["_nav_jump"] = {
-                    "year":     int(_hr["報告年度"]),
-                    "pref":     str(_hr["都道府県名"]),
-                    "region":   str(_hr["二次医療圏名"]),
-                    "hospital": nav_sel,
-                }
-                st.session_state["_nav_done"] = nav_sel
-                st.rerun()
