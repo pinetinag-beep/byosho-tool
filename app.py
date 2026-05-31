@@ -1741,13 +1741,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ── タブ ──────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 病院概要",
     "🏆 地域比較",
     "📋 ランキング",
     "📈 経年トレンド",
     "👨‍⚕️ スタッフ分析",
     "📋 詳細分析",
+    "🗺️ 地図",
 ])
 
 
@@ -2266,3 +2267,147 @@ with tab6:
                 st.dataframe(tbl, use_container_width=True)
             else:
                 st.info("この二次医療圏の手術データがありません。")
+
+
+# ── TAB 7: 地図 ─────────────────────────────────────────────
+
+with tab7:
+    st.markdown("### 🗺️ 病院マップ")
+    st.caption("病院名・都道府県名からジオコーディング（OpenStreetMap）して地図に表示します。初回のみ時間がかかります。")
+
+    try:
+        import folium
+        from streamlit_folium import st_folium as _st_folium
+        from geocoder import geocode_batch, load_cached_coords, count_uncached
+        _MAP_OK = True
+    except ImportError as _e:
+        _MAP_OK = False
+        st.error(f"地図表示に必要なライブラリが見つかりません: {_e}")
+
+    if _MAP_OK:
+        if not DB_PATH.exists():
+            st.warning("地図機能はDuckDBデータ使用時のみ利用できます。")
+        else:
+            # ── 表示範囲の選択 ──
+            map_scope = st.radio(
+                "表示範囲",
+                ["選択中の都道府県", "選択中の二次医療圏"],
+                horizontal=True,
+                key="map_scope",
+            )
+
+            if map_scope == "選択中の都道府県":
+                map_df = df[(df["都道府県名"] == pref) & (df["報告年度"] == year)].copy()
+                map_title = f"{pref}（{year}年度）"
+            else:
+                map_df = df[
+                    (df["都道府県名"] == pref)
+                    & (df["二次医療圏名"] == region)
+                    & (df["報告年度"] == year)
+                ].copy()
+                map_title = f"{pref} {region}（{year}年度）"
+
+            n_total = len(map_df)
+            n_uncached = count_uncached(str(DB_PATH), map_df["医療機関名"].tolist(), pref)
+            n_cached = n_total - n_uncached
+
+            st.markdown(f"**対象: {map_title} — {n_total:,}病院**")
+
+            mi1, mi2 = st.columns(2)
+            mi1.metric("キャッシュ済み", f"{n_cached:,}件")
+            mi2.metric("未ジオコーディング", f"{n_uncached:,}件")
+
+            if n_uncached > 0:
+                est_min = n_uncached * 1.2 / 60
+                st.warning(
+                    f"⏱️ {n_uncached:,}件のジオコーディングが必要です（推定 {est_min:.1f}〜{est_min*1.5:.1f}分）。\n\n"
+                    "結果はDBにキャッシュされるため、次回以降は即座に表示されます。"
+                )
+                if st.button("📍 ジオコーディング実行", type="primary", key="run_geocoding"):
+                    _prog_bar = st.progress(0)
+                    _prog_txt = st.empty()
+
+                    def _prog_cb(done, total):
+                        _prog_bar.progress(done / total)
+                        _prog_txt.text(f"処理中... {done}/{total}")
+
+                    geocode_batch(map_df, str(DB_PATH), progress_cb=_prog_cb)
+                    _prog_txt.text("✅ 完了!")
+                    st.rerun()
+
+            # ── キャッシュ済み座標を読み込んで地図を描画 ──
+            geo_dict = load_cached_coords(str(DB_PATH), pref)
+            map_df["lat"] = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None))[0])
+            map_df["lon"] = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None))[1])
+            map_valid = map_df.dropna(subset=["lat", "lon"])
+
+            if map_valid.empty:
+                st.info("表示できる病院がまだありません。「ジオコーディング実行」で座標を取得してください。")
+            else:
+                st.success(f"✅ {len(map_valid):,}病院を地図に表示")
+
+                center_lat = float(map_valid["lat"].mean())
+                center_lon = float(map_valid["lon"].mean())
+                zoom = 11 if map_scope == "選択中の二次医療圏" else 9
+
+                _m = folium.Map(
+                    location=[center_lat, center_lon],
+                    zoom_start=zoom,
+                    tiles="CartoDB positron",
+                )
+
+                _max_beds = max(int(map_valid["合計_許可病床数"].max() or 1), 1)
+
+                for _, _r in map_valid.iterrows():
+                    _beds = int(_r.get("合計_許可病床数", 0) or 0)
+                    _kado = int(_r.get("合計_稼働病床数", 0) or 0)
+                    _occ  = f"{_kado / _beds * 100:.1f}%" if _beds > 0 else "—"
+                    _radius = max(5, min(22, _beds / _max_beds * 22))
+
+                    if _beds >= 500:
+                        _color = "#e74c3c"
+                    elif _beds >= 300:
+                        _color = "#e67e22"
+                    elif _beds >= 100:
+                        _color = "#2ecc71"
+                    else:
+                        _color = "#3498db"
+
+                    _is_sel = _r["医療機関名"] == hospital
+                    _popup_html = (
+                        f'<div style="font-family:Meiryo,sans-serif;min-width:190px">'
+                        f'<b style="font-size:13px">{_r["医療機関名"]}</b><br>'
+                        f'<span style="color:#666;font-size:11px">{_r["都道府県名"]} {_r["二次医療圏名"]}</span>'
+                        f'<hr style="margin:5px 0">'
+                        f'許可病床数: <b>{_beds:,}床</b><br>'
+                        f'稼働率: <b>{_occ}</b>'
+                        f'</div>'
+                    )
+
+                    folium.CircleMarker(
+                        location=[float(_r["lat"]), float(_r["lon"])],
+                        radius=_radius,
+                        color="#c0392b" if _is_sel else "#555",
+                        weight=3 if _is_sel else 1,
+                        fill=True,
+                        fill_color=_color,
+                        fill_opacity=0.75,
+                        popup=folium.Popup(_popup_html, max_width=260),
+                        tooltip=f"{_r['医療機関名']}（{_beds:,}床）",
+                    ).add_to(_m)
+
+                _legend = """
+                <div style="position:fixed;bottom:30px;right:10px;background:white;
+                            padding:10px 14px;border-radius:8px;
+                            box-shadow:2px 2px 8px rgba(0,0,0,0.25);
+                            font-size:12px;font-family:Meiryo,sans-serif;z-index:9999">
+                  <b>許可病床数</b><br>
+                  <span style="color:#e74c3c;font-size:16px">●</span> 500床以上<br>
+                  <span style="color:#e67e22;font-size:16px">●</span> 300〜499床<br>
+                  <span style="color:#2ecc71;font-size:16px">●</span> 100〜299床<br>
+                  <span style="color:#3498db;font-size:16px">●</span> 100床未満
+                </div>
+                """
+                _m.get_root().html.add_child(folium.Element(_legend))
+
+                _st_folium(_m, width="100%", height=600, returned_objects=[])
