@@ -1741,14 +1741,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ── タブ ──────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab7, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 病院概要",
+    "🗺️ 地図",
     "🏆 地域比較",
     "📋 ランキング",
     "📈 経年トレンド",
     "👨‍⚕️ スタッフ分析",
     "📋 詳細分析",
-    "🗺️ 地図",
 ])
 
 
