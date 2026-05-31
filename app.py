@@ -537,34 +537,35 @@ with st.sidebar:
 
         # ── ③ 地域から探す ──
         if _sb_section("③ 地域から探す", "③"):
-            years = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-            sel_year = st.selectbox("報告年度", years, key="_sel_year")
+            with st.container(border=True):
+                years = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
+                sel_year = st.selectbox("報告年度", years, key="_sel_year")
 
-            prefs = _sort_prefs(_df_all["都道府県名"].unique())
-            if st.session_state.get("_sel_pref") not in prefs:
-                st.session_state["_sel_pref"] = prefs[0] if prefs else None
-            sel_pref = st.selectbox("都道府県", prefs, key="_sel_pref")
+                prefs = _sort_prefs(_df_all["都道府県名"].unique())
+                if st.session_state.get("_sel_pref") not in prefs:
+                    st.session_state["_sel_pref"] = prefs[0] if prefs else None
+                sel_pref = st.selectbox("都道府県", prefs, key="_sel_pref")
 
-            regions = sorted(
-                r for r in _df_all[_df_all["都道府県名"] == sel_pref]["二次医療圏名"].unique()
-                if r != "不明"
-            )
-            if st.session_state.get("_sel_region") not in regions:
-                st.session_state["_sel_region"] = regions[0] if regions else None
-            sel_region = st.selectbox("二次医療圏", regions, key="_sel_region")
+                regions = sorted(
+                    r for r in _df_all[_df_all["都道府県名"] == sel_pref]["二次医療圏名"].unique()
+                    if r != "不明"
+                )
+                if st.session_state.get("_sel_region") not in regions:
+                    st.session_state["_sel_region"] = regions[0] if regions else None
+                sel_region = st.selectbox("二次医療圏", regions, key="_sel_region")
 
-            hospitals_in_region = _df_all[
-                (_df_all["報告年度"] == sel_year) &
-                (_df_all["都道府県名"] == sel_pref) &
-                (_df_all["二次医療圏名"] == sel_region)
-            ]["医療機関名"].sort_values().tolist()
+                hospitals_in_region = _df_all[
+                    (_df_all["報告年度"] == sel_year) &
+                    (_df_all["都道府県名"] == sel_pref) &
+                    (_df_all["二次医療圏名"] == sel_region)
+                ]["医療機関名"].sort_values().tolist()
 
-            if st.session_state.get("_sel_hospital") not in hospitals_in_region:
-                st.session_state["_sel_hospital"] = hospitals_in_region[0] if hospitals_in_region else None
-            sel_hospital = st.selectbox("医療機関名", hospitals_in_region, key="_sel_hospital")
+                if st.session_state.get("_sel_hospital") not in hospitals_in_region:
+                    st.session_state["_sel_hospital"] = hospitals_in_region[0] if hospitals_in_region else None
+                sel_hospital = st.selectbox("医療機関名", hospitals_in_region, key="_sel_hospital")
 
-            if "_nav_done" in st.session_state:
-                st.success(f"✅ {st.session_state.pop('_nav_done')}\n「病院概要」タブで確認できます")
+                if "_nav_done" in st.session_state:
+                    st.success(f"✅ {st.session_state.pop('_nav_done')}\n「病院概要」タブで確認できます")
 
         else:
             # ③が閉じているとき: sel_* をセッションステートから復元
