@@ -2278,7 +2278,7 @@ with tab7:
     try:
         import folium
         from streamlit_folium import st_folium as _st_folium
-        from geocoder import geocode_batch, load_cached_coords, count_uncached
+        from geocoder import geocode_batch, load_cached_coords, count_uncached, has_official_locations
         _MAP_OK = True
     except ImportError as _e:
         _MAP_OK = False
@@ -2288,6 +2288,16 @@ with tab7:
         if not DB_PATH.exists():
             st.warning("地図機能はDuckDBデータ使用時のみ利用できます。")
         else:
+            # 公式座標（医療情報ネット）の有無を表示
+            if has_official_locations(str(DB_PATH)):
+                st.success("✅ 厚労省 医療情報ネットの公式座標データ読み込み済み")
+            else:
+                st.info(
+                    "💡 **公式座標データを取り込むと精度が大幅に向上します**\n\n"
+                    "ローカルで以下を実行してください:\n"
+                    "```\npython build_master.py\n```\n"
+                    "（厚労省 医療情報ネット オープンデータを自動ダウンロードします）"
+                )
             # ── 表示範囲の選択 ──
             map_scope = st.radio(
                 "表示範囲",
