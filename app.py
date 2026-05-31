@@ -83,7 +83,7 @@ st.markdown("""
     font-size: 1.1rem; font-weight: 600; color: #2c3e50;
     border-bottom: 2px solid #3498db; padding-bottom: 6px; margin: 20px 0 12px;
 }
-/* サイドバーの検索結果ボタンをフラットに */
+/* ── サイドバー 共通 ── */
 div[data-testid="stSidebar"] .stButton button {
     text-align: left;
     font-size: 0.82rem;
@@ -91,6 +91,41 @@ div[data-testid="stSidebar"] .stButton button {
     height: auto;
     white-space: normal;
     word-break: break-all;
+}
+
+/* ── アコーディオン: 非アクティブ（▶） ── */
+div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-secondary"] {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-left: 3px solid transparent !important;
+    color: #64748b !important;
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+    font-size: 0.84rem !important;
+    padding: 9px 12px !important;
+}
+div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-secondary"]:hover {
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+    border-left-color: #94a3b8 !important;
+}
+
+/* ── アコーディオン: アクティブ（▼） ── */
+div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
+    background: #eff6ff !important;
+    border: 1px solid #bfdbfe !important;
+    border-left: 4px solid #2563eb !important;
+    color: #1e40af !important;
+    font-weight: 700 !important;
+    border-radius: 6px !important;
+    font-size: 0.84rem !important;
+    padding: 9px 11px !important;
+    box-shadow: 0 1px 4px rgba(37,99,235,0.10) !important;
+}
+div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
+    background: #dbeafe !important;
+    border-left-color: #1d4ed8 !important;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.18) !important;
 }
 
 /* ── 印刷ボタン（画面表示用） ── */
@@ -435,7 +470,7 @@ with st.sidebar:
             is_open = _sb_open == key
             icon = "▼" if is_open else "▶"
             if st.button(f"{icon} {label}", use_container_width=True, key=f"_sbhdr_{key}",
-                         type="secondary"):
+                         type="primary" if is_open else "secondary"):
                 st.session_state["_sb_open"] = key if not is_open else None
                 st.rerun()
             return is_open
