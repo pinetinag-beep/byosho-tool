@@ -1413,6 +1413,81 @@ if st.session_state.get("_view_mode") == "region_vision":
     st.markdown('<div class="section-header">🔭 各病院の機能方向性（参考）</div>', unsafe_allow_html=True)
     st.caption("スコアと病床構成から算出した、2040年地域医療構想に向けた各病院の機能方向性の参考分類です。")
 
+    # ── 機能方向性の定義表
+    with st.expander("📖 機能方向性の定義・判定基準", expanded=True):
+        st.markdown("""
+<style>
+.role-def-table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+.role-def-table th {
+    background:#f0f2f6; padding:7px 10px; text-align:left;
+    border-bottom:2px solid #d0d3db; font-size:0.78rem; color:#444;
+}
+.role-def-table td { padding:7px 10px; border-bottom:1px solid #e8e8e8; vertical-align:top; }
+.role-def-table tr:last-child td { border-bottom:none; }
+.role-badge {
+    display:inline-block; padding:2px 8px; border-radius:10px;
+    font-weight:600; font-size:0.78rem; white-space:nowrap;
+}
+</style>
+<table class="role-def-table">
+<thead>
+<tr>
+  <th style="width:14%">分類</th>
+  <th style="width:24%">定義</th>
+  <th style="width:32%">このツールの判定基準</th>
+  <th style="width:30%">2040年に向けた主な方向性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><span class="role-badge" style="background:#fde8e8;color:#c0392b;">🏆 急性期拠点候補</span></td>
+  <td>地域の高度・急性期医療を集約的に担う<b>中核病院の候補</b>。新地域医療構想の「急性期拠点病院」に相当。</td>
+  <td>①スコアが地域内上位（病院数÷4程度の枠）、かつ②合計スコア<b>38点以上</b></td>
+  <td>急性期・高度急性期機能を集約。地域内で1〜3病院程度に絞り込まれる想定。救命救急・専門医療の維持が使命。</td>
+</tr>
+<tr>
+  <td><span class="role-badge" style="background:#fdf0e6;color:#c0392b;">🔴 地域急性期</span></td>
+  <td>急性期医療を提供できる規模を持つが、<b>拠点集約の対象外</b>となる急性期病院。</td>
+  <td>急性期系病床（高度急性期＋急性期）の<b>比率50%以上</b>かつ<b>150床以上</b></td>
+  <td>急性期拠点病院と連携・機能分担しながら、地域の入院急性期需要を補完。選択と集中が今後の課題。</td>
+</tr>
+<tr>
+  <td><span class="role-badge" style="background:#fef9e7;color:#d35400;">🚑 高齢者救急</span></td>
+  <td>高齢者の<b>軽〜中等症救急</b>を受け入れ、在宅・介護施設への早期復帰を支援する病院。</td>
+  <td>急性期系比率<b>25%以上</b>かつ（回復期比率<b>15%以上</b>または<b>300床未満</b>）</td>
+  <td>2040年に向けて最も需要増が見込まれる機能。高齢者の生活機能維持・在宅復帰支援を軸に整備。</td>
+</tr>
+<tr>
+  <td><span class="role-badge" style="background:#eaf4fb;color:#1a6fa8;">🔄 回復期強化</span></td>
+  <td>リハビリテーション・<b>回復期機能を主軸</b>とする病院。地域包括ケア病棟を含む。</td>
+  <td>回復期病床比率<b>40%以上</b></td>
+  <td>術後・脳卒中・骨折後のリハビリ需要は2040年に向けて大幅増。地域包括ケア病棟の充実と急性期後連携が鍵。</td>
+</tr>
+<tr>
+  <td><span class="role-badge" style="background:#e8f8f0;color:#1a7a4a;">💊 慢性期・在宅支援</span></td>
+  <td>長期療養・慢性期入院や<b>在宅療養支援</b>を主体とする病院・診療所。</td>
+  <td>慢性期病床比率<b>35%以上</b></td>
+  <td>高齢化に伴う療養・看取り需要への対応。在宅療養支援病院機能との連携強化や、訪問診療・看取り体制の整備。</td>
+</tr>
+<tr>
+  <td><span class="role-badge" style="background:#f4ecf7;color:#7d3c98;">🏠 専門・外来特化</span></td>
+  <td>小規模で<b>専門診療・外来</b>、または在宅支援に特化した医療機関。</td>
+  <td>許可病床数<b>100床未満</b></td>
+  <td>入院機能を縮小・特化し、外来・専門診療への集中または地域包括ケアの担い手として大病院との後方連携強化。</td>
+</tr>
+<tr>
+  <td><span class="role-badge" style="background:#f2f3f4;color:#666;">⚪ 機能転換検討中</span></td>
+  <td>上記いずれの特徴も明確でなく、<b>機能の方向性の選択が課題</b>となっている病院。</td>
+  <td>上記6分類のいずれの条件も非該当</td>
+  <td>急性期から回復期・在宅支援への段階的転換、または地域での明確な役割分担について調整会議での検討が必要。</td>
+</tr>
+</tbody>
+</table>
+<p style="font-size:0.72rem;color:#999;margin-top:8px;">
+※ 判定基準は病床機能報告の報告値のみを用いた参考分類です。実際の機能定義は都道府県の地域医療構想に基づきます。
+</p>
+        """, unsafe_allow_html=True)
+
     for _, _rr in rv_df.iterrows():
         _hn_r   = _rr["医療機関名"]
         _role_r = _rr["_role"]
