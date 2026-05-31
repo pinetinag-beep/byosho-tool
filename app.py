@@ -436,7 +436,7 @@ with st.sidebar:
             icon = "▼" if is_open else "▶"
             if st.button(f"{icon} {label}", use_container_width=True, key=f"_sbhdr_{key}",
                          type="secondary"):
-                st.session_state["_sb_open"] = key if not is_open else "③"
+                st.session_state["_sb_open"] = key if not is_open else None
                 st.rerun()
             return is_open
 
