@@ -476,6 +476,26 @@ with st.sidebar:
                 st.session_state["_view_mode"] = "search"
                 st.rerun()
 
+        # ── ③ 地域医療構想分析 ──
+        st.markdown(
+            "<div style='font-size:0.8rem;font-weight:600;color:#444;"
+            "margin-top:12px;margin-bottom:4px;'>"
+            "③ 地域医療構想分析</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption("二次医療圏の機能配置・2040年構想")
+        _is_vision = st.session_state.get("_view_mode") == "region_vision"
+        if _is_vision:
+            if st.button("← 病院詳細に戻る", key="_vision_back_btn",
+                         use_container_width=True, type="secondary"):
+                st.session_state["_view_mode"] = "detail"
+                st.rerun()
+        else:
+            if st.button("🗺️ 地域構想分析を見る", key="_vision_open_btn",
+                         use_container_width=True, type="secondary"):
+                st.session_state["_view_mode"] = "region_vision"
+                st.rerun()
+
         st.divider()
         st.subheader("📍 選択中の病院")
 
@@ -978,6 +998,529 @@ if st.session_state.get("_view_mode") == "search":
             st.caption(f"※ 先頭30件を表示。全{len(_nav_hospitals)}件はCSVをダウンロードしてください。")
 
     # 検索モードはここで終了
+    st.stop()
+
+
+# ══════════════════════════════════════════════════════════
+# 地域医療構想分析モード
+# ══════════════════════════════════════════════════════════
+
+if st.session_state.get("_view_mode") == "region_vision":
+    import plotly.graph_objects as _go_rv
+
+    _rv_year   = year
+    _rv_region = region
+    _rv_pref   = pref
+
+    # ── ヘッダー
+    st.markdown(f"## 🗺️ {_rv_region} 地域医療構想分析")
+    st.caption(
+        f"{_rv_year}年度データ　|　{_rv_pref}　{_rv_region}　"
+        "※ 本分析は病床機能報告データに基づく参考情報です。"
+        "実際の構想策定には一次データ・専門家の関与が必要です。"
+    )
+
+    # ── 地域内全病院データ
+    rv_df = df[
+        (df["報告年度"] == _rv_year) &
+        (df["二次医療圏名"] == _rv_region)
+    ].copy().reset_index(drop=True)
+
+    if rv_df.empty:
+        st.warning("選択した二次医療圏のデータが見つかりません。サイドバーで二次医療圏を選択してください。")
+        st.stop()
+
+    # 手術データマップ {医療機関名: 手術総数 / ロボット手術数}
+    _surg_df_rv = st.session_state.get("surgery_df")
+    _surg_map_rv   = {}   # 医療機関名 → 手術総数
+    _robot_map_rv  = {}   # 医療機関名 → ロボット支援手術数
+    if _surg_df_rv is not None and not _surg_df_rv.empty:
+        _rv_smask = pd.Series(True, index=_surg_df_rv.index)
+        if "二次医療圏名" in _surg_df_rv.columns:
+            _rv_smask = _rv_smask & (_surg_df_rv["二次医療圏名"] == _rv_region)
+        if "報告年度" in _surg_df_rv.columns:
+            _rv_smask = _rv_smask & (_surg_df_rv["報告年度"] == _rv_year)
+        for _, _sr in _surg_df_rv[_rv_smask].iterrows():
+            _hn = str(_sr.get("医療機関名", ""))
+            _surg_map_rv[_hn]  = int(_sr.get("手術総数", 0) or 0)
+            _robot_map_rv[_hn] = int(_sr.get("ロボット支援手術数", 0) or 0)
+
+    # ════════════════════════════════════
+    # スコアリング・分類関数
+    # ════════════════════════════════════
+
+    def _kyoten_score_rv(row):
+        """急性期拠点機能スコア（0〜100点）を計算して返す"""
+        s = {}
+        beds  = _si(row.get("合計_許可病床数", 0))
+        koudo = _si(row.get("高度急性期_許可病床数", 0))
+        docs  = _si(row.get("常勤医師数", 0))
+        hn    = str(row.get("医療機関名", ""))
+
+        # ① 病床規模 (0〜25点)
+        if   beds >= 500: s["病床規模"] = 25
+        elif beds >= 400: s["病床規模"] = 20
+        elif beds >= 300: s["病床規模"] = 15
+        elif beds >= 200: s["病床規模"] = 10
+        elif beds >= 100: s["病床規模"] = 5
+        else:             s["病床規模"] = 0
+
+        # ② 高度急性期病床率 (0〜20点)
+        koudo_r = koudo / beds if beds > 0 else 0
+        if   koudo_r >= 0.30: s["高度急性期率"] = 20
+        elif koudo_r >= 0.15: s["高度急性期率"] = 13
+        elif koudo_r >= 0.05: s["高度急性期率"] = 6
+        else:                 s["高度急性期率"] = 0
+
+        # ③ 手術実績 (0〜25点)
+        surg = _surg_map_rv.get(hn, 0)
+        if   surg >= 3000: s["手術実績"] = 25
+        elif surg >= 2000: s["手術実績"] = 20
+        elif surg >= 1000: s["手術実績"] = 14
+        elif surg >= 500:  s["手術実績"] = 8
+        elif surg >= 100:  s["手術実績"] = 3
+        else:              s["手術実績"] = 0
+
+        # ④ 医師密度（常勤医師数 / 100床） (0〜20点)
+        doc100 = docs / beds * 100 if beds > 0 else 0
+        if   doc100 >= 25: s["医師密度"] = 20
+        elif doc100 >= 15: s["医師密度"] = 14
+        elif doc100 >= 8:  s["医師密度"] = 8
+        elif doc100 >= 4:  s["医師密度"] = 4
+        else:              s["医師密度"] = 0
+
+        # ⑤ 高度設備 (0〜10点)
+        eq = 0
+        if _robot_map_rv.get(hn, 0) > 0:           eq += 4
+        if _si(row.get("CT_64列以上", 0)) > 0:     eq += 2
+        if _si(row.get("MRI_3T以上",  0)) > 0:     eq += 2
+        _pet = _si(row.get("PET台数", 0)) + _si(row.get("PETCT台数", 0))
+        if _pet > 0:                                eq += 2
+        s["高度設備"] = min(eq, 10)
+
+        return sum(s.values()), s
+
+    def _classify_role_rv(row, rank, score, n_total):
+        """機能方向性を分類してラベルとコメントを返す"""
+        beds    = _si(row.get("合計_許可病床数", 0))
+        koudo   = _si(row.get("高度急性期_許可病床数", 0))
+        kyusei  = _si(row.get("急性期_許可病床数", 0))
+        kaifuku = _si(row.get("回復期_許可病床数", 0))
+        mansei  = _si(row.get("慢性期_許可病床数", 0))
+        hn      = str(row.get("医療機関名", ""))
+
+        if beds == 0:
+            return "⚪ データ不足", "許可病床数データがありません。"
+
+        acute_r    = (koudo + kyusei) / beds
+        recovery_r = kaifuku / beds
+        chronic_r  = mansei / beds
+        surg_cnt   = _surg_map_rv.get(hn, 0)
+
+        # 急性期拠点候補: 地域上位かつスコア水準を満たす
+        _top_n = max(1, min(3, max(1, n_total // 4) + 1))
+        if rank <= _top_n and score >= 38:
+            return (
+                "🏆 急性期拠点候補",
+                f"スコア {score}点（地域 {rank}位）。病床規模・手術実績・医師密度から地域の急性期医療を"
+                f"集約的に担う中核病院としての素地がある。"
+                f"{'ロボット支援手術や高度画像設備も備え、高度急性期機能の集約先として有力。' if _robot_map_rv.get(hn,0)>0 else ''}"
+            )
+
+        # 地域急性期: 急性期系比率高く中〜大規模
+        if acute_r >= 0.50 and beds >= 150:
+            return (
+                "🔴 地域急性期",
+                f"急性期系病床 {acute_r*100:.0f}%（{int(beds*acute_r):,}床）。"
+                f"地域急性期機能を担いつつ、急性期拠点病院との役割分担・連携強化が重要。"
+                f"{'手術実績 ' + str(surg_cnt) + '件/年。' if surg_cnt > 0 else ''}"
+            )
+
+        # 高齢者救急: 急性期と回復期を両方持ち高齢患者対応に適した構成
+        if acute_r >= 0.25 and (recovery_r >= 0.15 or beds < 300):
+            return (
+                "🚑 高齢者救急",
+                f"急性期 {acute_r*100:.0f}% / 回復期 {recovery_r*100:.0f}%。"
+                f"高齢者の軽〜中等症救急入院受け入れと在宅・施設からの後方支援を担う機能が有効。"
+                f"2040年にかけて高齢者救急需要の増大が見込まれる。"
+            )
+
+        # 回復期強化
+        if recovery_r >= 0.40:
+            return (
+                "🔄 回復期強化",
+                f"回復期病床 {recovery_r*100:.0f}%（{int(beds*recovery_r):,}床）。"
+                f"2040年に向けて高齢者リハビリ需要が大幅増大するため、回復期・地域包括ケア病棟機能の拡充が期待される。"
+            )
+
+        # 慢性期・在宅支援
+        if chronic_r >= 0.35:
+            return (
+                "💊 慢性期・在宅支援",
+                f"慢性期病床 {chronic_r*100:.0f}%（{int(beds*chronic_r):,}床）。"
+                f"高齢化に伴う療養需要に対応しつつ、在宅療養支援機能や看取り対応の強化も重要。"
+            )
+
+        # 小規模
+        if beds < 100:
+            return (
+                "🏠 専門・外来特化",
+                f"小規模（{beds}床）。外来・専門診療への特化や在宅支援機能の強化、"
+                f"大病院との連携・後方ベッドとしての役割が有効。"
+            )
+
+        return (
+            "⚪ 機能転換検討中",
+            f"急性期 {acute_r*100:.0f}% / 回復期 {recovery_r*100:.0f}% / 慢性期 {chronic_r*100:.0f}%。"
+            f"病床機能の選択と集中や地域での役割分担について、調整会議での議論が必要。"
+        )
+
+    # ── スコア計算
+    _rv_score_details = {}
+    rv_df["_score"] = 0
+    for _idx, _rrow in rv_df.iterrows():
+        _tot, _det = _kyoten_score_rv(_rrow)
+        rv_df.at[_idx, "_score"] = _tot
+        _rv_score_details[_rrow["医療機関名"]] = _det
+    rv_df = rv_df.sort_values("_score", ascending=False).reset_index(drop=True)
+    rv_df["_rank"] = range(1, len(rv_df) + 1)
+
+    # 機能方向性
+    _n_hosp_rv = len(rv_df)
+    rv_df[["_role", "_comment"]] = rv_df.apply(
+        lambda r: pd.Series(_classify_role_rv(r, int(r["_rank"]), int(r["_score"]), _n_hosp_rv)),
+        axis=1,
+    )
+
+    # ════════════════════════════════════
+    # Section 1 : 地域現状スナップショット
+    # ════════════════════════════════════
+    st.markdown('<div class="section-header">📊 地域現状スナップショット</div>', unsafe_allow_html=True)
+
+    _rv_bt_cols = [f"{t}_許可病床数" for t in BED_TYPES if f"{t}_許可病床数" in rv_df.columns]
+
+    def _rv_tot(col):
+        return int(rv_df[col].fillna(0).sum()) if col in rv_df.columns else 0
+
+    _rv_beds_koudo   = _rv_tot("高度急性期_許可病床数")
+    _rv_beds_kyusei  = _rv_tot("急性期_許可病床数")
+    _rv_beds_kaifuku = _rv_tot("回復期_許可病床数")
+    _rv_beds_mansei  = _rv_tot("慢性期_許可病床数")
+    _rv_beds_total   = _rv_tot("合計_許可病床数")
+    _rv_docs_total   = _rv_tot("常勤医師数")
+    _rv_surg_total   = sum(_surg_map_rv.values())
+    _rv_acute_total  = _rv_beds_koudo + _rv_beds_kyusei
+    _rv_care_total   = _rv_beds_kaifuku + _rv_beds_mansei
+
+    _rvc1, _rvc2, _rvc3, _rvc4 = st.columns(4)
+    _rvc1.metric(
+        "地域内病院数",
+        f"{_n_hosp_rv} 病院",
+        f"許可病床計 {_rv_beds_total:,}床",
+        help="選択中の二次医療圏・年度のデータ（病床機能報告）",
+    )
+    _rvc2.metric(
+        "急性期系病床",
+        f"{_rv_acute_total:,} 床",
+        f"高度急性期 {_rv_beds_koudo:,} + 急性期 {_rv_beds_kyusei:,}",
+        help="高度急性期_許可病床数 ＋ 急性期_許可病床数 の地域合計",
+    )
+    _rvc3.metric(
+        "回復期・慢性期",
+        f"{_rv_care_total:,} 床",
+        f"回復期 {_rv_beds_kaifuku:,} + 慢性期 {_rv_beds_mansei:,}",
+        help="回復期_許可病床数 ＋ 慢性期_許可病床数 の地域合計",
+    )
+    _rvc4.metric(
+        "地域常勤医師数",
+        f"{_rv_docs_total:,} 人",
+        f"手術 {_rv_surg_total:,} 件/年" if _rv_surg_total > 0 else "",
+        help="常勤医師数の地域合計 / 手術総数は様式2より",
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 病床種別構成 — 病院別横向き積み上げバー
+    if _rv_bt_cols:
+        _rv_bar_src = rv_df[["医療機関名"] + _rv_bt_cols].copy()
+        for _c in _rv_bt_cols:
+            _rv_bar_src[_c] = pd.to_numeric(_rv_bar_src[_c], errors="coerce").fillna(0)
+        _rv_bar_src["_total"] = _rv_bar_src[_rv_bt_cols].sum(axis=1)
+        _rv_bar_src = _rv_bar_src.sort_values("_total", ascending=True)
+
+        _rv_bt_colors = {"高度急性期": "#e74c3c", "急性期": "#e67e22",
+                         "回復期": "#3498db", "慢性期": "#27ae60"}
+        fig_rv_stack = _go_rv.Figure()
+        for _bt in BED_TYPES:
+            _col = f"{_bt}_許可病床数"
+            if _col in _rv_bar_src.columns:
+                fig_rv_stack.add_trace(_go_rv.Bar(
+                    name=_bt,
+                    x=_rv_bar_src[_col],
+                    y=_rv_bar_src["医療機関名"],
+                    orientation="h",
+                    marker_color=_rv_bt_colors.get(_bt, "#999"),
+                    hovertemplate=f"%{{y}}<br>{_bt}: %{{x:,}}床<extra></extra>",
+                ))
+        fig_rv_stack.update_layout(
+            barmode="stack",
+            title=f"{_rv_region} 病院別 病床種別構成（{_rv_year}年度）",
+            height=max(380, _n_hosp_rv * 32 + 100),
+            margin=dict(l=10, r=10, t=55, b=10),
+            font=dict(family="Meiryo, sans-serif"),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            legend=dict(orientation="h", y=1.10),
+            xaxis_title="病床数（床）",
+        )
+        st.plotly_chart(fig_rv_stack, use_container_width=True)
+
+    # ════════════════════════════════════
+    # Section 2 : 急性期拠点スコアリング
+    # ════════════════════════════════════
+    st.markdown('<div class="section-header">🏆 急性期拠点機能スコアリング</div>', unsafe_allow_html=True)
+
+    st.caption(
+        "**評価項目（100点満点）**　"
+        "①病床規模(25点) ②高度急性期病床率(20点) ③手術実績(25点) ④医師密度(20点) ⑤高度設備(10点)　"
+        "※手術データが未登録の病院は③が0点になります"
+    )
+
+    # スコアテーブル
+    _rv_score_rows = []
+    for _, _rr in rv_df.iterrows():
+        _hn_s = _rr["医療機関名"]
+        _det  = _rv_score_details.get(_hn_s, {})
+        _rv_score_rows.append({
+            "病院名":         _hn_s,
+            "総スコア":       int(_rr["_score"]),
+            "機能方向性":     _rr["_role"],
+            "①病床規模":     _det.get("病床規模", 0),
+            "②高度急性期率": _det.get("高度急性期率", 0),
+            "③手術実績":     _det.get("手術実績", 0),
+            "④医師密度":     _det.get("医師密度", 0),
+            "⑤高度設備":     _det.get("高度設備", 0),
+            "許可病床数":     _si(_rr.get("合計_許可病床数", 0)),
+            "高度急性期床":   _si(_rr.get("高度急性期_許可病床数", 0)),
+            "手術総数":       _surg_map_rv.get(_hn_s, 0),
+            "常勤医師数":     _si(_rr.get("常勤医師数", 0)),
+        })
+    _rv_score_tbl = pd.DataFrame(_rv_score_rows)
+    st.dataframe(
+        _rv_score_tbl,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "総スコア":       st.column_config.ProgressColumn("総スコア", max_value=100, format="%d 点"),
+            "①病床規模":     st.column_config.ProgressColumn("①病床規模(25)", max_value=25, format="%d"),
+            "②高度急性期率": st.column_config.ProgressColumn("②高度急性期(20)", max_value=20, format="%d"),
+            "③手術実績":     st.column_config.ProgressColumn("③手術(25)", max_value=25, format="%d"),
+            "④医師密度":     st.column_config.ProgressColumn("④医師密度(20)", max_value=20, format="%d"),
+            "⑤高度設備":     st.column_config.ProgressColumn("⑤設備(10)", max_value=10, format="%d"),
+            "許可病床数":     st.column_config.NumberColumn("許可病床", format="%d 床"),
+            "高度急性期床":   st.column_config.NumberColumn("高度急性期", format="%d 床"),
+            "手術総数":       st.column_config.NumberColumn("手術", format="%d 件"),
+            "常勤医師数":     st.column_config.NumberColumn("医師", format="%d 人"),
+        },
+    )
+
+    # ポジショニングマップ（病床数 vs 手術件数 / 医師密度）
+    _rv_scatter_df = rv_df.copy()
+    _rv_scatter_df["手術総数"] = _rv_scatter_df["医療機関名"].map(_surg_map_rv).fillna(0)
+    _rv_scatter_df["合計_許可病床数_n"] = pd.to_numeric(
+        _rv_scatter_df.get("合計_許可病床数", pd.Series(0, index=_rv_scatter_df.index)),
+        errors="coerce",
+    ).fillna(0)
+
+    _rv_role_colors = {
+        "🏆 急性期拠点候補":   "#e74c3c",
+        "🔴 地域急性期":       "#e67e22",
+        "🚑 高齢者救急":       "#f39c12",
+        "🔄 回復期強化":       "#3498db",
+        "💊 慢性期・在宅支援": "#27ae60",
+        "🏠 専門・外来特化":   "#9b59b6",
+        "⚪ 機能転換検討中":   "#95a5a6",
+        "⚪ データ不足":       "#bdc3c7",
+    }
+
+    fig_rv_scatter = _go_rv.Figure()
+    for _rl in _rv_scatter_df["_role"].unique():
+        _sub = _rv_scatter_df[_rv_scatter_df["_role"] == _rl]
+        fig_rv_scatter.add_trace(_go_rv.Scatter(
+            x=_sub["合計_許可病床数_n"],
+            y=_sub["手術総数"],
+            mode="markers+text",
+            name=_rl,
+            marker=dict(
+                size=14,
+                color=_rv_role_colors.get(_rl, "#999"),
+                opacity=0.85,
+                line=dict(width=1.5, color="white"),
+            ),
+            text=_sub["医療機関名"],
+            textposition="top center",
+            textfont=dict(size=9),
+            hovertemplate=(
+                "%{text}<br>病床数: %{x:,}床<br>手術数: %{y:,}件<extra></extra>"
+            ),
+        ))
+    fig_rv_scatter.update_layout(
+        title=f"{_rv_region} 病院ポジショニングマップ（病床数 vs 年間手術件数）",
+        xaxis_title="許可病床数（床）",
+        yaxis_title="年間手術総数（件）",
+        height=520,
+        margin=dict(l=10, r=10, t=60, b=10),
+        font=dict(family="Meiryo, sans-serif"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="v", x=1.01, font=dict(size=11)),
+    )
+    st.plotly_chart(fig_rv_scatter, use_container_width=True)
+    if _rv_surg_total == 0:
+        st.caption("⚠️ 手術データが未登録のため Y軸（手術件数）はすべて 0 になっています")
+
+    # ════════════════════════════════════
+    # Section 3 : 各病院の機能方向性
+    # ════════════════════════════════════
+    st.markdown('<div class="section-header">🔭 各病院の機能方向性（参考）</div>', unsafe_allow_html=True)
+    st.caption("スコアと病床構成から算出した、2040年地域医療構想に向けた各病院の機能方向性の参考分類です。")
+
+    for _, _rr in rv_df.iterrows():
+        _hn_r   = _rr["医療機関名"]
+        _role_r = _rr["_role"]
+        _comm_r = _rr["_comment"]
+        _scr_r  = int(_rr["_score"])
+        _beds_r = _si(_rr.get("合計_許可病床数", 0))
+        _surg_r = _surg_map_rv.get(_hn_r, 0)
+        _bc_r   = _rv_role_colors.get(_role_r, "#bdc3c7")
+
+        _surg_txt = f" | 手術 {_surg_r:,}件/年" if _surg_r > 0 else ""
+        _docs_r   = _si(_rr.get("常勤医師数", 0))
+        _docs_txt = f" | 医師 {_docs_r}人" if _docs_r > 0 else ""
+
+        st.markdown(f"""
+        <div style="border-left:4px solid {_bc_r}; padding:10px 14px; margin:8px 0;
+                    background:#f8f9fa; border-radius:0 8px 8px 0;">
+          <div style="font-weight:600; font-size:0.95rem;">{_hn_r}</div>
+          <div style="font-size:0.82rem; color:#444; margin:4px 0;">
+            {_role_r} &nbsp;
+            <span style="color:#999;">
+              スコア {_scr_r}点 | {_beds_r:,}床{_surg_txt}{_docs_txt}
+            </span>
+          </div>
+          <div style="font-size:0.8rem; color:#555; line-height:1.6;">{_comm_r}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ════════════════════════════════════
+    # Section 4 : 2040年病床需要の方向性（試算）
+    # ════════════════════════════════════
+    st.markdown('<div class="section-header">📅 2040年に向けた病床需要の方向性（試算）</div>', unsafe_allow_html=True)
+
+    st.info(
+        "⚠️ **試算の前提**: 国の地域医療構想（2024年）の方向性と全国トレンドをもとに、"
+        "**全国平均的な係数**を機械的に乗じた参考値です。"
+        "実際の数値は都道府県が公表する**地域医療構想調整会議の推計**を参照してください。"
+    )
+
+    _rv_proj_cfg = {
+        "高度急性期": (
+            _rv_beds_koudo,
+            int(_rv_beds_koudo * 0.95),
+            "集約化・効率化により微減（▲5%）",
+            "#e74c3c",
+        ),
+        "急性期": (
+            _rv_beds_kyusei,
+            int(_rv_beds_kyusei * 0.80),
+            "在院日数短縮・集約化で大幅減（▲20%）",
+            "#e67e22",
+        ),
+        "回復期": (
+            _rv_beds_kaifuku,
+            int(_rv_beds_kaifuku * 1.35),
+            "高齢者需要大幅増（＋35%）",
+            "#3498db",
+        ),
+        "慢性期": (
+            _rv_beds_mansei,
+            int(_rv_beds_mansei * 1.15),
+            "高齢者需要増（＋15%）",
+            "#27ae60",
+        ),
+    }
+
+    _rv_proj_rows = []
+    for _bt, (_cur, _fut, _note, _clr) in _rv_proj_cfg.items():
+        if _cur > 0 or _fut > 0:
+            _ch  = _fut - _cur
+            _pct = (_fut / _cur - 1) * 100 if _cur > 0 else 0
+            _rv_proj_rows.append({
+                "病床種別": _bt,
+                "現状（床）": _cur,
+                "2040年試算（床）": _fut,
+                "増減（床）": _ch,
+                "増減率": f"{_pct:+.0f}%",
+                "背景・根拠": _note,
+            })
+
+    if _rv_proj_rows:
+        _rv_proj_tbl = pd.DataFrame(_rv_proj_rows)
+        st.dataframe(
+            _rv_proj_tbl,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "現状（床）":      st.column_config.NumberColumn(format="%d 床"),
+                "2040年試算（床）": st.column_config.NumberColumn(format="%d 床"),
+                "増減（床）":      st.column_config.NumberColumn(format="%+d 床"),
+            },
+        )
+
+        # 現状 vs 2040年試算 比較バー
+        fig_rv_proj = _go_rv.Figure()
+        for _row_p in _rv_proj_rows:
+            _clr_p = _rv_proj_cfg[_row_p["病床種別"]][3]
+            fig_rv_proj.add_trace(_go_rv.Bar(
+                name=f"{_row_p['病床種別']}（現状）",
+                x=["現状"],
+                y=[_row_p["現状（床）"]],
+                marker_color=_clr_p,
+                opacity=0.55,
+            ))
+            fig_rv_proj.add_trace(_go_rv.Bar(
+                name=f"{_row_p['病床種別']}（2040試算）",
+                x=["2040年試算"],
+                y=[_row_p["2040年試算（床）"]],
+                marker_color=_clr_p,
+                opacity=1.0,
+            ))
+        fig_rv_proj.update_layout(
+            barmode="stack",
+            title=f"{_rv_region} 病床需要の現状 vs 2040年試算",
+            height=420,
+            margin=dict(l=10, r=10, t=55, b=10),
+            font=dict(family="Meiryo, sans-serif"),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            yaxis_title="病床数（床）",
+            legend=dict(orientation="v", x=1.01, font=dict(size=10)),
+        )
+        st.plotly_chart(fig_rv_proj, use_container_width=True)
+
+    # 注意書き
+    st.markdown("""
+    <div style="font-size:0.78rem; color:#888; margin-top:20px; padding:12px 14px;
+                background:#f0f0f0; border-radius:6px; line-height:1.7;">
+    📌 <b>本分析の注意点</b><br>
+    ・スコアリングは病床機能報告データのみを用いた参考値です。救急搬送実績・地域連携体制・財務状況等は含まれていません。<br>
+    ・「急性期拠点候補」はスコアと地域内順位から算出したものであり、行政・調整会議の公式認定ではありません。<br>
+    ・2040年試算は全国トレンド係数を一律適用したものです。地域の年齢構成・人口動態・患者流出入は反映されていません。<br>
+    ・実際の地域医療構想の策定・協議は、都道府県・医療機関・地域住民が参加する調整会議で行われます。
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 地域構想モードはここで終了
     st.stop()
 
 
