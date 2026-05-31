@@ -1235,10 +1235,20 @@ if st.session_state.get("_view_mode") == "region_vision":
     _rv_beds_kaifuku = _rv_tot("回復期_許可病床数")
     _rv_beds_mansei  = _rv_tot("慢性期_許可病床数")
     _rv_beds_total   = _rv_tot("合計_許可病床数")
-    _rv_docs_total   = _rv_tot("常勤医師数")
     _rv_surg_total   = sum(_surg_map_rv.values())
     _rv_acute_total  = _rv_beds_koudo + _rv_beds_kyusei
     _rv_care_total   = _rv_beds_kaifuku + _rv_beds_mansei
+
+    # 常勤医師数: 報告している病院のみ集計し、100床あたりで密度を算出
+    if "常勤医師数" in rv_df.columns:
+        _rv_doc_series    = pd.to_numeric(rv_df["常勤医師数"], errors="coerce")
+        _rv_docs_reported = int(_rv_doc_series.notna().sum())   # 報告病院数
+        _rv_docs_total    = int(_rv_doc_series.fillna(0).sum()) # 地域合計（参考）
+    else:
+        _rv_docs_reported = 0
+        _rv_docs_total    = 0
+    # 100床あたり医師数（地域全体の医師密度）
+    _rv_doc_per_100bed = round(_rv_docs_total / _rv_beds_total * 100, 1) if _rv_beds_total > 0 else 0
 
     _rvc1, _rvc2, _rvc3, _rvc4 = st.columns(4)
     _rvc1.metric(
@@ -1259,11 +1269,20 @@ if st.session_state.get("_view_mode") == "region_vision":
         f"回復期 {_rv_beds_kaifuku:,} + 慢性期 {_rv_beds_mansei:,}",
         help="回復期_許可病床数 ＋ 慢性期_許可病床数 の地域合計",
     )
+    _rv_doc_sub = (
+        f"地域計 {_rv_docs_total:,}人"
+        + (f"（{_rv_docs_reported}/{_n_hosp_rv}病院が報告）" if _rv_docs_reported < _n_hosp_rv else f"（{_rv_docs_reported}病院）")
+    )
     _rvc4.metric(
-        "地域常勤医師数",
-        f"{_rv_docs_total:,} 人",
-        f"手術 {_rv_surg_total:,} 件/年" if _rv_surg_total > 0 else "",
-        help="常勤医師数の地域合計 / 手術総数は様式2より",
+        "医師密度（100床あたり）",
+        f"{_rv_doc_per_100bed:.1f} 人",
+        _rv_doc_sub,
+        help=(
+            "計算式: 地域の常勤医師数合計 ÷ 地域の許可病床数合計 × 100\n"
+            "データ: 様式1（施設票）常勤医師数\n"
+            "※ 各病院が施設単位で報告した常勤医師数の合計を使用。"
+            "未報告の病院は分子に含まれないため、報告率が低い医療圏では実態より低く算出される場合があります。"
+        ),
     )
 
     st.markdown("<br>", unsafe_allow_html=True)
