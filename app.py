@@ -484,6 +484,33 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
         st.caption("二次医療圏の機能配置・2040年構想")
+
+        # 地域構想分析専用セレクタ（病院選択とは独立）
+        _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
+        rv_sel_year = st.selectbox(
+            "分析年度", _rv_years_list, key="_rv_sel_year",
+            help="地域構想分析の対象年度（病院選択とは独立して設定できます）",
+        )
+
+        _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
+        if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
+            st.session_state["_rv_sel_pref"] = _rv_all_prefs[0] if _rv_all_prefs else None
+        rv_sel_pref = st.selectbox(
+            "都道府県", _rv_all_prefs, key="_rv_sel_pref",
+            help="地域構想分析の対象都道府県",
+        )
+
+        _rv_regions_list = sorted(
+            r for r in _df_all[_df_all["都道府県名"] == rv_sel_pref]["二次医療圏名"].unique()
+            if r != "不明"
+        )
+        if st.session_state.get("_rv_sel_region") not in _rv_regions_list:
+            st.session_state["_rv_sel_region"] = _rv_regions_list[0] if _rv_regions_list else None
+        rv_sel_region = st.selectbox(
+            "二次医療圏", _rv_regions_list, key="_rv_sel_region",
+            help="地域構想分析の対象二次医療圏",
+        )
+
         _is_vision = st.session_state.get("_view_mode") == "region_vision"
         if _is_vision:
             if st.button("← 病院詳細に戻る", key="_vision_back_btn",
@@ -1008,9 +1035,10 @@ if st.session_state.get("_view_mode") == "search":
 if st.session_state.get("_view_mode") == "region_vision":
     import plotly.graph_objects as _go_rv
 
-    _rv_year   = year
-    _rv_region = region
-    _rv_pref   = pref
+    # サイドバーの専用セレクタ値を使用（なければ現在の病院選択から補完）
+    _rv_year   = int(st.session_state.get("_rv_sel_year",  year))
+    _rv_pref   = str(st.session_state.get("_rv_sel_pref",  pref))
+    _rv_region = str(st.session_state.get("_rv_sel_region", region))
 
     # ── ヘッダー
     st.markdown(f"## 🗺️ {_rv_region} 地域医療構想分析")
