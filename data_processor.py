@@ -263,13 +263,35 @@ def merge_shisetsu(hospital_df: pd.DataFrame, shisetsu_df: pd.DataFrame) -> pd.D
     return merged
 
 
+def _detect_yoshiki2_header(file_bytes: bytes) -> tuple[int, list[int]]:
+    """
+    様式2 Excelのヘッダー行位置を自動検出する。
+    "医療機関コード"や"医療機関名"が列名として現れる行を探す。
+    戻り値: (header行インデックス, skiprows リスト)
+    """
+    raw = pd.read_excel(io.BytesIO(file_bytes), header=None, nrows=12)
+    key_words = ("医療機関コード", "医療機関名", "都道府県コード", "手術")
+    best = (4, [5])  # fallback: known-good for 2022/2023
+    best_score = 0
+    for i, row in raw.iterrows():
+        vals = [str(v).strip() for v in row if str(v) not in ("nan", "")]
+        score = sum(1 for kw in key_words if any(kw in v for v in vals))
+        if score > best_score:
+            best_score = score
+            skip = [i + 1] if (i + 1) < len(raw) else []
+            best = (i, skip)
+    return best
+
+
 def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
     """
     厚労省 病床機能報告 様式2病棟票（年間合計）Excelを読み込んで
     病院単位の手術件数DataFrameを返す。
     * は非公表（少数例マスク）→ 0 として扱う。
+    ヘッダー行位置は年度によって異なるため自動検出する。
     """
-    df = pd.read_excel(io.BytesIO(file_bytes), header=4, skiprows=[5])
+    header_row, skip_rows = _detect_yoshiki2_header(file_bytes)
+    df = pd.read_excel(io.BytesIO(file_bytes), header=header_row, skiprows=skip_rows)
     df.columns = [str(c).strip() for c in df.columns]
 
     code_col = _find_col(df.columns, "医療機関コード")
@@ -368,7 +390,14 @@ def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
         agg = agg.rename(columns={code_col: "医療機関コード"})
     agg["報告年度"] = year
 
-    return agg[agg["手術総数"] > 0].copy()
+    # 少なくとも1つの手術列に正の値がある行を残す（* マスク列は0扱いのため緩めに判定）
+    val_cols_renamed = list(src_to_dst.values()) + list(organ_src_to_dst.values())
+    existing = [c for c in val_cols_renamed if c in agg.columns]
+    if existing:
+        mask = agg[existing].sum(axis=1) > 0
+    else:
+        mask = agg["手術総数"] > 0
+    return agg[mask].copy()
 
 
 def detect_mhlw_format(df_raw: pd.DataFrame) -> bool:

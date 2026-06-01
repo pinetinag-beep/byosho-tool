@@ -119,7 +119,10 @@ def _build_year(year: int, urls: dict):
     if "yoshiki2" in urls:
         print(f"  [yoshiki2 (surgery)]")
         try:
+            from data_processor import _detect_yoshiki2_header
             y2 = _download(urls["yoshiki2"], "yoshiki2")
+            hdr, skip = _detect_yoshiki2_header(y2)
+            print(f"    -> header=row{hdr}, skiprows={skip}")
             surg_df = load_mhlw_yoshiki2(y2, year=year)
             print(f"    -> surgery:{len(surg_df):,}")
         except Exception as e:
