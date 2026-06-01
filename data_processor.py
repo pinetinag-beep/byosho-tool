@@ -263,24 +263,61 @@ def merge_shisetsu(hospital_df: pd.DataFrame, shisetsu_df: pd.DataFrame) -> pd.D
     return merged
 
 
-def _detect_yoshiki2_header(file_bytes: bytes) -> tuple[int, list[int]]:
+def _detect_yoshiki2_is_multilevel(file_bytes: bytes) -> bool:
     """
-    様式2 Excelのヘッダー行位置を自動検出する。
-    "医療機関コード"や"医療機関名"が列名として現れる行を探す。
-    戻り値: (header行インデックス, skiprows リスト)
+    2021年形式（5段組ヘッダー）かどうかを判定する。
+    row4に手術関連キーワードがあれば単一ヘッダー（2022/2023）、
+    なければ階層ヘッダー（2021）と判定する。
     """
-    raw = pd.read_excel(io.BytesIO(file_bytes), header=None, nrows=12)
-    key_words = ("医療機関コード", "医療機関名", "都道府県コード", "手術")
-    best = (4, [5])  # fallback: known-good for 2022/2023
-    best_score = 0
-    for i, row in raw.iterrows():
-        vals = [str(v).strip() for v in row if str(v) not in ("nan", "")]
-        score = sum(1 for kw in key_words if any(kw in v for v in vals))
-        if score > best_score:
-            best_score = score
-            skip = [i + 1] if (i + 1) < len(raw) else []
-            best = (i, skip)
-    return best
+    raw = pd.read_excel(io.BytesIO(file_bytes), header=None, nrows=6)
+    row4_vals = [str(v).strip() for v in raw.iloc[4] if str(v).strip() not in ("nan", "")]
+    return not any("手術" in v for v in row4_vals)
+
+
+def _flatten_multilevel_cols(df: pd.DataFrame) -> list[str]:
+    """
+    MultiIndex列名をフラットな文字列に変換する。
+    横方向マージセルを前方補完してから各レベルの値を '_' で連結する。
+    同名列には .1 .2 ... を付与して一意にする。
+    """
+    if not isinstance(df.columns, pd.MultiIndex):
+        return [str(c).strip().replace("\n", "") for c in df.columns]
+
+    n_levels = df.columns.nlevels
+    levels_data = pd.DataFrame(
+        [[str(v).strip().replace("\n", "").replace("(R3)", "").strip() for v in col]
+         for col in df.columns],
+        columns=[f"L{i}" for i in range(n_levels)],
+    )
+
+    # "Unnamed..." と "nan" を空文字に
+    for col in levels_data.columns:
+        levels_data[col] = levels_data[col].apply(
+            lambda v: "" if ("Unnamed" in v or v.lower() == "nan") else v
+        )
+        # 横方向 ffill（空セル＝マージセルを左から補完）
+        levels_data[col] = levels_data[col].replace("", None).ffill().fillna("")
+
+    flat = []
+    for _, row in levels_data.iterrows():
+        parts, seen = [], set()
+        for v in row:
+            if v and v not in seen:
+                seen.add(v)
+                parts.append(v)
+        flat.append("_".join(parts) if parts else "_")
+
+    # 重複列名に .1 .2 を付与
+    seen_cnt: dict[str, int] = {}
+    result = []
+    for c in flat:
+        if c in seen_cnt:
+            seen_cnt[c] += 1
+            result.append(f"{c}.{seen_cnt[c]}")
+        else:
+            seen_cnt[c] = 0
+            result.append(c)
+    return result
 
 
 def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
@@ -288,11 +325,18 @@ def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
     厚労省 病床機能報告 様式2病棟票（年間合計）Excelを読み込んで
     病院単位の手術件数DataFrameを返す。
     * は非公表（少数例マスク）→ 0 として扱う。
-    ヘッダー行位置は年度によって異なるため自動検出する。
+    2021年: rows0-4が5段組ヘッダー、row5スキップ、row6+がデータ。
+    2022/2023年: row4が単一ヘッダー、row5スキップ、row6+がデータ。
     """
-    header_row, skip_rows = _detect_yoshiki2_header(file_bytes)
-    df = pd.read_excel(io.BytesIO(file_bytes), header=header_row, skiprows=skip_rows)
-    df.columns = [str(c).strip() for c in df.columns]
+    is_multi = _detect_yoshiki2_is_multilevel(file_bytes)
+    if is_multi:
+        # 2021年形式: 5段組ヘッダー
+        df = pd.read_excel(io.BytesIO(file_bytes), header=[0, 1, 2, 3, 4], skiprows=[5])
+        df.columns = _flatten_multilevel_cols(df)
+    else:
+        # 2022/2023年形式: 単一ヘッダー
+        df = pd.read_excel(io.BytesIO(file_bytes), header=4, skiprows=[5])
+        df.columns = [str(c).strip() for c in df.columns]
 
     code_col = _find_col(df.columns, "医療機関コード")
     pref_code_col = "都道府県コード"
@@ -326,10 +370,11 @@ def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
         ("臓器別の状況_歯科",   "歯科"),
     ]
 
-    # 二次医療圏列：「名」付きを優先（コード列より名前列を先に取る）
+    # 二次医療圏列：「名」付きを優先。2021年は「構想区域名」を使用。
     iryo_col_y2 = (_find_col(df.columns, "二次医療圏名")
                    or _find_col(df.columns, "二次医療圏名称")
-                   or _find_col(df.columns, "二次医療圏"))
+                   or _find_col(df.columns, "二次医療圏")
+                   or _find_col(df.columns, "構想区域名"))
 
     # ── 必要列を抽出 ──
     keep_cols = []
