@@ -717,10 +717,9 @@ with st.sidebar:
             accept_multiple_files=True,
             key="_yoshiki2_upload",
         )
-        if _y2_files and st.button(f"手術データをDBに取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_yoshiki2_import"):
+        if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_yoshiki2_import"):
             with st.spinner(f"様式2 {len(_y2_files)}ファイル処理中..."):
                 try:
-                    import duckdb as _duckdb
                     _parts = []
                     for _f in _y2_files:
                         _fb = _f.read()
@@ -731,18 +730,23 @@ with st.sidebar:
                         st.error("データが空です。ファイルを確認してください。")
                     else:
                         _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
-                        _con = _duckdb.connect(str(DB_PATH))
-                        try:
-                            _existing = _con.execute("SELECT * FROM surgery WHERE 報告年度 != 2021").fetchdf()
-                        except Exception:
-                            _existing = pd.DataFrame()
-                        _merged = pd.concat([_existing, _surg_new], ignore_index=True) if not _existing.empty else _surg_new
-                        _con.execute("DROP TABLE IF EXISTS surgery")
-                        _con.register("_surg", _merged)
-                        _con.execute("CREATE TABLE surgery AS SELECT * FROM _surg")
-                        _con.close()
-                        st.cache_data.clear()
-                        st.session_state.pop("surgery_df", None)
+                        # 既存の2022/2023データと結合
+                        _existing = st.session_state.get("surgery_df")
+                        if _existing is not None and not _existing.empty:
+                            _existing = _existing[_existing["報告年度"] != 2021]
+                            _merged = pd.concat([_existing, _surg_new], ignore_index=True)
+                        else:
+                            _merged = _surg_new
+                        st.session_state["surgery_df"] = _merged
+                        # DuckDBがある環境（ローカル）では永続化
+                        if DB_PATH.exists():
+                            import duckdb as _duckdb
+                            _con = _duckdb.connect(str(DB_PATH))
+                            _con.execute("DROP TABLE IF EXISTS surgery")
+                            _con.register("_surg", _merged)
+                            _con.execute("CREATE TABLE surgery AS SELECT * FROM _surg")
+                            _con.close()
+                            st.cache_data.clear()
                         st.success(f"✅ {len(_surg_new):,} 病院の2021年手術データを取り込みました")
                         st.rerun()
                 except Exception as _e:
