@@ -710,21 +710,27 @@ with st.sidebar:
                 st.session_state.pop(key, None)
             st.rerun()
         st.divider()
-        st.caption("🔬 2021年 手術データ（様式2）を更新")
-        _y2_file = st.file_uploader(
-            "000953885.xlsx をアップロード",
+        st.caption("🔬 2021年 手術データ（様式2 全7ファイル）を更新")
+        _y2_files = st.file_uploader(
+            "000953885〜000953892.xlsx（7ファイル、複数選択可）",
             type=["xlsx", "xls"],
+            accept_multiple_files=True,
             key="_yoshiki2_upload",
         )
-        if _y2_file and st.button("手術データをDBに取り込む", use_container_width=True, key="_yoshiki2_import"):
-            with st.spinner("様式2 処理中..."):
+        if _y2_files and st.button(f"手術データをDBに取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_yoshiki2_import"):
+            with st.spinner(f"様式2 {len(_y2_files)}ファイル処理中..."):
                 try:
                     import duckdb as _duckdb
-                    _fb = _y2_file.read()
-                    _surg_new = load_mhlw_yoshiki2(_fb, year=2021)
-                    if _surg_new.empty:
+                    _parts = []
+                    for _f in _y2_files:
+                        _fb = _f.read()
+                        _part = load_mhlw_yoshiki2(_fb, year=2021)
+                        st.caption(f"  {_f.name}: {len(_part):,} 病院")
+                        _parts.append(_part)
+                    if not _parts:
                         st.error("データが空です。ファイルを確認してください。")
                     else:
+                        _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
                         _con = _duckdb.connect(str(DB_PATH))
                         try:
                             _existing = _con.execute("SELECT * FROM surgery WHERE 報告年度 != 2021").fetchdf()
