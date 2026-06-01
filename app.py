@@ -303,6 +303,34 @@ div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"
         display: none !important;
     }
 }
+
+/* ── サイドバー「«」→「✕ 閉じる」 ─────────────────────────
+   Streamlit のサイドバー折りたたみボタンの SVG を非表示にして
+   分かりやすいラベルに置き換える                            */
+[data-testid="stSidebarHeader"] button svg,
+[data-testid="stSidebarCollapseButton"] svg {
+    display: none;
+}
+[data-testid="stSidebarHeader"] button::after,
+[data-testid="stSidebarCollapseButton"] button::after {
+    content: "✕ 閉じる";
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+[data-testid="stSidebarHeader"] button,
+[data-testid="stSidebarCollapseButton"] button {
+    width: auto !important;
+    padding: 4px 8px !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 6px !important;
+}
+
+@media (max-width: 768px) {
+}
 </style>
 """, unsafe_allow_html=True)
 
