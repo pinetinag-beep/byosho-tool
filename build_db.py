@@ -64,7 +64,15 @@ YEAR_URLS = {
             ("Kyushu-Okinawa",    f"{BASE}000953883.xlsx"),
         ],
         "shisetsu": f"{BASE}000953853.xlsx",
-        "yoshiki2": f"{BASE}000953855.xlsx",
+        "yoshiki2": [
+            ("Hokkaido-Tohoku",   f"{BASE}000953885.xlsx"),
+            ("Kanto-A",           f"{BASE}000953886.xlsx"),
+            ("Kanto-B",           f"{BASE}000953887.xlsx"),
+            ("Chubu",             f"{BASE}000953888.xlsx"),
+            ("Kinki",             f"{BASE}000953889.xlsx"),
+            ("Chugoku-Shikoku",   f"{BASE}000953890.xlsx"),
+            ("Kyushu-Okinawa",    f"{BASE}000953892.xlsx"),
+        ],
     },
 }
 
@@ -120,11 +128,25 @@ def _build_year(year: int, urls: dict):
         print(f"  [yoshiki2 (surgery)]")
         try:
             from data_processor import _detect_yoshiki2_is_multilevel
-            y2 = _download(urls["yoshiki2"], "yoshiki2")
-            fmt = "2021式(5段組)" if _detect_yoshiki2_is_multilevel(y2) else "2022/2023式(単一)"
-            print(f"    -> フォーマット検出: {fmt}")
-            surg_df = load_mhlw_yoshiki2(y2, year=year)
-            print(f"    -> surgery:{len(surg_df):,}")
+            y2_entry = urls["yoshiki2"]
+            # リスト形式（地域別複数ファイル）と単一URL文字列の両方に対応
+            if isinstance(y2_entry, list):
+                parts = []
+                for label, url in y2_entry:
+                    try:
+                        data = _download(url, label)
+                        parts.append(load_mhlw_yoshiki2(data, year=year))
+                    except Exception as e:
+                        print(f"    -> {label} skip: {e}")
+                if parts:
+                    surg_df = pd.concat(parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
+            else:
+                data = _download(y2_entry, "yoshiki2")
+                fmt = "2021式(5段組)" if _detect_yoshiki2_is_multilevel(data) else "2022/2023式(単一)"
+                print(f"    -> フォーマット検出: {fmt}")
+                surg_df = load_mhlw_yoshiki2(data, year=year)
+            if surg_df is not None:
+                print(f"    -> surgery:{len(surg_df):,}")
         except Exception as e:
             print(f"    -> yoshiki2 skip: {e}")
 
