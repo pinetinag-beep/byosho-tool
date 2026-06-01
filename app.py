@@ -755,6 +755,9 @@ with st.sidebar:
         _surg_sess = st.session_state.get("surgery_df")
         if _surg_sess is not None and not _surg_sess.empty:
             import io as _io
+            _yr_counts = _surg_sess.groupby("報告年度").size().to_dict()
+            _yr_str = "  ".join(f"{y}年:{n:,}件" for y, n in sorted(_yr_counts.items()))
+            st.caption(f"現在のセッションデータ: {_yr_str}")
             _buf = _io.BytesIO()
             _surg_sess.to_parquet(_buf, index=False)
             st.download_button(
@@ -764,6 +767,7 @@ with st.sidebar:
                 mime="application/octet-stream",
                 use_container_width=True,
             )
+            st.caption("⚠️ 2021年が3,000件以上になってからダウンロードしてください")
         st.divider()
         st.caption("サーバー上でデータを再構築する場合:")
         st.code("python build_db.py", language="bash")
