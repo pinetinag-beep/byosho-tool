@@ -6,6 +6,10 @@ __pycache__/
 # 旧キャッシュ
 *.parquet
 
+# DuckDB（バイナリ、大きいため除外）
+data/*.duckdb
+data/*.duckdb.wal
+
 # 一時ファイル
 _probe.xlsx
 _yshiki2.xlsx
