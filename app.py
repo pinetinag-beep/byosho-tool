@@ -751,6 +751,19 @@ with st.sidebar:
                         st.rerun()
                 except Exception as _e:
                     st.error(f"エラー: {_e}")
+        # 手術データをparquetとしてダウンロード（永続化用）
+        _surg_sess = st.session_state.get("surgery_df")
+        if _surg_sess is not None and not _surg_sess.empty:
+            import io as _io
+            _buf = _io.BytesIO()
+            _surg_sess.to_parquet(_buf, index=False)
+            st.download_button(
+                "📥 手術データをparquetでダウンロード（永続化用）",
+                data=_buf.getvalue(),
+                file_name="surgery_cache.parquet",
+                mime="application/octet-stream",
+                use_container_width=True,
+            )
         st.divider()
         st.caption("サーバー上でデータを再構築する場合:")
         st.code("python build_db.py", language="bash")
