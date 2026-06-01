@@ -167,38 +167,79 @@ def share_bar(region_df: pd.DataFrame, highlight: str) -> go.Figure:
     return _fig_layout(fig, "地域内病床シェア", height=max(350, len(df) * 26))
 
 
-def ranking_table_fig(region_df: pd.DataFrame, highlight: str) -> go.Figure:
-    """地域内順位テーブル"""
-    df = region_df[["地域内順位", "医療機関名", "合計_許可病床数", "合計_稼働病床数",
-                     "地域シェア(%)", "合計稼働率"]].copy()
-    df["合計稼働率"] = (df["合計稼働率"] * 100).round(1).astype(str) + "%"
-    df["地域シェア(%)"] = df["地域シェア(%)"].astype(str) + "%"
+_COL_FMT = {
+    "合計_許可病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "合計_稼働病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "地域シェア(%)":    lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str) + "%",
+    "合計稼働率":       lambda s: (pd.to_numeric(s, errors="coerce") * 100).round(1).astype(str) + "%",
+    "常勤医師数":       lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "常勤看護師数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "医師数_per100床":  lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str),
+    "看護師数_per100床": lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str),
+    "救急搬送件数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "CT台数":           lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "MRI台数":          lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+}
 
-    n = len(df)
-    is_hl = [n == highlight for n in df["医療機関名"]]
 
-    # 行ごとの背景色・文字色
+def ranking_table_fig(
+    region_df: pd.DataFrame,
+    highlight: str,
+    rank_col: str = "合計_許可病床数",
+    show_cols: list | None = None,
+    col_labels: list | None = None,
+) -> go.Figure:
+    """地域内順位テーブル（ランキング列選択対応）"""
+    if show_cols is None:
+        show_cols = ["合計_許可病床数", "合計_稼働病床数", "地域シェア(%)", "合計稼働率"]
+    if col_labels is None:
+        col_labels = ["許可病床数", "稼働病床数", "地域シェア", "稼働率"]
+
+    df = region_df.copy()
+    df["_rank"] = pd.to_numeric(df[rank_col], errors="coerce").rank(
+        ascending=False, method="min", na_option="bottom"
+    ).astype(int)
+    df = df.sort_values("_rank").reset_index(drop=True)
+
+    # format display columns
+    disp = pd.DataFrame()
+    disp["_rank"] = df["_rank"]
+    disp["医療機関名"] = df["医療機関名"]
+    for c in show_cols:
+        if c in df.columns:
+            fmt = _COL_FMT.get(c, lambda s: s.astype(str))
+            disp[c] = fmt(df[c])
+        else:
+            disp[c] = "—"
+
+    n = len(disp)
+    is_hl = [name == highlight for name in disp["医療機関名"]]
+
     fill_colors = [
         ["#c0392b" if h else ("#f2f2f2" if i % 2 == 0 else "white") for i, h in enumerate(is_hl)]
-    ] * len(df.columns)
+    ] * len(disp.columns)
     font_colors = [
         ["white" if h else "#2c3e50" for h in is_hl]
-    ] * len(df.columns)
+    ] * len(disp.columns)
+
+    all_labels = ["順位", "医療機関名"] + col_labels
+    col_widths = [55, 220] + [95] * len(col_labels)
+    align = ["center", "left"] + ["center"] * len(col_labels)
 
     fig = go.Figure(go.Table(
-        columnwidth=[60, 220, 100, 100, 100, 100],
+        columnwidth=col_widths,
         header=dict(
-            values=["順位", "医療機関名", "許可病床数", "稼働病床数", "地域シェア", "稼働率"],
+            values=all_labels,
             fill_color="#2c3e50",
             font=dict(color="white", size=13),
             align="center",
             height=34,
         ),
         cells=dict(
-            values=[df[c] for c in df.columns],
+            values=[disp[c] for c in disp.columns],
             fill_color=fill_colors,
             font=dict(color=font_colors, size=13),
-            align=["center", "left", "center", "center", "center", "center"],
+            align=align,
             height=30,
         ),
     ))

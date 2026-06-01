@@ -2056,19 +2056,23 @@ with tab2:
 
 with tab3:
     st.markdown(f"**{pref}　{region}　{year}年度**")
-    st.plotly_chart(ranking_table_fig(region_df, hospital), use_container_width=True)
 
-    st.markdown('<div class="section-header">稼働率ランキング</div>', unsafe_allow_html=True)
-    occ_df = region_df.copy()
-    occ_df["稼働率(%)"] = (
-        occ_df["合計_稼働病床数"] / occ_df["合計_許可病床数"].replace(0, np.nan) * 100
-    ).round(1)
-    occ_rank = occ_df[["医療機関名", "稼働率(%)", "合計_許可病床数", "合計_稼働病床数"]].sort_values(
-        "稼働率(%)", ascending=False
-    ).reset_index(drop=True)
-    occ_rank.index += 1
-    occ_rank.index.name = "順位"
-    st.dataframe(occ_rank, use_container_width=True)
+    _RANK_OPTIONS = {
+        "許可病床数":  {"col": "合計_許可病床数",  "show": ["合計_許可病床数", "合計_稼働病床数", "地域シェア(%)", "合計稼働率"], "labels": ["許可病床数", "稼働病床数", "地域シェア", "稼働率"]},
+        "稼働率":      {"col": "合計稼働率",        "show": ["合計稼働率", "合計_許可病床数"],                                   "labels": ["稼働率",   "許可病床数"]},
+        "医師数":      {"col": "常勤医師数",         "show": ["常勤医師数", "医師数_per100床"],                                   "labels": ["常勤医師数", "医師数/100床"]},
+        "看護師数":    {"col": "常勤看護師数",       "show": ["常勤看護師数", "看護師数_per100床"],                               "labels": ["常勤看護師", "看護師/100床"]},
+        "救急搬送":    {"col": "救急搬送件数",       "show": ["救急搬送件数", "合計_許可病床数"],                                 "labels": ["救急搬送件数", "許可病床数"]},
+        "CT":          {"col": "CT台数",             "show": ["CT台数", "合計_許可病床数"],                                       "labels": ["CT台数", "許可病床数"]},
+        "MRI":         {"col": "MRI台数",            "show": ["MRI台数", "合計_許可病床数"],                                      "labels": ["MRI台数", "許可病床数"]},
+    }
+
+    rank_sel = st.radio("ランキング項目", list(_RANK_OPTIONS.keys()), horizontal=True, key="_rank_sel")
+    _opt = _RANK_OPTIONS[rank_sel]
+    st.plotly_chart(
+        ranking_table_fig(region_df, hospital, rank_col=_opt["col"], show_cols=_opt["show"], col_labels=_opt["labels"]),
+        use_container_width=True,
+    )
 
 
 # ── TAB 4: 経年トレンド ────────────────────────────────────
