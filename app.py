@@ -468,7 +468,7 @@ with st.sidebar:
         # アコーディオンヘッダー補助関数
         def _sb_section(label: str, key: str) -> bool:
             is_open = _sb_open == key
-            icon = "▼" if is_open else "▶"
+            icon = "－" if is_open else "＋"
             if st.button(f"{icon} {label}", use_container_width=True, key=f"_sbhdr_{key}",
                          type="primary" if is_open else "secondary"):
                 st.session_state["_sb_open"] = key if not is_open else None
