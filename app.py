@@ -710,6 +710,38 @@ with st.sidebar:
                 st.session_state.pop(key, None)
             st.rerun()
         st.divider()
+        st.caption("🔬 2021年 手術データ（様式2）を更新")
+        _y2_file = st.file_uploader(
+            "000953885.xlsx をアップロード",
+            type=["xlsx", "xls"],
+            key="_yoshiki2_upload",
+        )
+        if _y2_file and st.button("手術データをDBに取り込む", use_container_width=True, key="_yoshiki2_import"):
+            with st.spinner("様式2 処理中..."):
+                try:
+                    import duckdb as _duckdb
+                    _fb = _y2_file.read()
+                    _surg_new = load_mhlw_yoshiki2(_fb, year=2021)
+                    if _surg_new.empty:
+                        st.error("データが空です。ファイルを確認してください。")
+                    else:
+                        _con = _duckdb.connect(str(DB_PATH))
+                        try:
+                            _existing = _con.execute("SELECT * FROM surgery WHERE 報告年度 != 2021").fetchdf()
+                        except Exception:
+                            _existing = pd.DataFrame()
+                        _merged = pd.concat([_existing, _surg_new], ignore_index=True) if not _existing.empty else _surg_new
+                        _con.execute("DROP TABLE IF EXISTS surgery")
+                        _con.register("_surg", _merged)
+                        _con.execute("CREATE TABLE surgery AS SELECT * FROM _surg")
+                        _con.close()
+                        st.cache_data.clear()
+                        st.session_state.pop("surgery_df", None)
+                        st.success(f"✅ {len(_surg_new):,} 病院の2021年手術データを取り込みました")
+                        st.rerun()
+                except Exception as _e:
+                    st.error(f"エラー: {_e}")
+        st.divider()
         st.caption("サーバー上でデータを再構築する場合:")
         st.code("python build_db.py", language="bash")
         st.caption("特定年度だけ更新する場合:")
