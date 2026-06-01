@@ -304,9 +304,10 @@ div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"
     }
 }
 
-/* ── サイドバー「«」→「✕ 閉じる」 ─────────────────────────
-   Streamlit のサイドバー折りたたみボタンの SVG を非表示にして
-   分かりやすいラベルに置き換える                            */
+/* ── サイドバー開閉ボタン ─────────────────────────────────
+   「«」→「✕ 閉じる」、「»」→「☰ メニュー」に置き換え   */
+
+/* サイドバー内の閉じるボタン « */
 [data-testid="stSidebarHeader"] button svg,
 [data-testid="stSidebarCollapseButton"] svg {
     display: none;
@@ -327,6 +328,29 @@ div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"
     background: #f1f5f9 !important;
     border: 1px solid #e2e8f0 !important;
     border-radius: 6px !important;
+}
+
+/* メインエリア側の開くボタン » */
+[data-testid="collapsedControl"] svg,
+[data-testid="stSidebarCollapsedControl"] svg {
+    display: none;
+}
+[data-testid="collapsedControl"]::after,
+[data-testid="stSidebarCollapsedControl"]::after {
+    content: "☰ メニュー";
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"] {
+    width: auto !important;
+    padding: 6px 10px !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 0 6px 6px 0 !important;
 }
 
 @media (max-width: 768px) {
