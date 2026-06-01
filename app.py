@@ -706,7 +706,7 @@ with st.sidebar:
         st.caption("データの再読み込み / キャッシュ管理")
         if st.button("キャッシュをクリアして再読み込み", use_container_width=True):
             st.cache_data.clear()
-            for key in ["df", "ward_df", "surgery_df"]:
+            for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
                 st.session_state.pop(key, None)
             st.rerun()
         st.divider()
@@ -730,7 +730,6 @@ with st.sidebar:
                         st.error("データが空です。ファイルを確認してください。")
                     else:
                         _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
-                        # 既存の2022/2023データと結合
                         _existing = st.session_state.get("surgery_df")
                         if _existing is not None and not _existing.empty:
                             _existing = _existing[_existing["報告年度"] != 2021]
@@ -738,6 +737,10 @@ with st.sidebar:
                         else:
                             _merged = _surg_new
                         st.session_state["surgery_df"] = _merged
+                        import io as _io2
+                        _pbuf = _io2.BytesIO()
+                        _merged.to_parquet(_pbuf, index=False)
+                        st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
                         # DuckDBがある環境（ローカル）では永続化
                         if DB_PATH.exists():
                             import duckdb as _duckdb
@@ -747,27 +750,20 @@ with st.sidebar:
                             _con.execute("CREATE TABLE surgery AS SELECT * FROM _surg")
                             _con.close()
                             st.cache_data.clear()
-                        st.success(f"✅ {len(_surg_new):,} 病院の2021年手術データを取り込みました")
-                        st.rerun()
+                        st.success(f"✅ 2021年: {len(_surg_new):,} 病院を取り込みました。下のボタンでダウンロードしてください。")
                 except Exception as _e:
                     st.error(f"エラー: {_e}")
-        # 手術データをparquetとしてダウンロード（永続化用）
-        _surg_sess = st.session_state.get("surgery_df")
-        if _surg_sess is not None and not _surg_sess.empty:
-            import io as _io
-            _yr_counts = _surg_sess.groupby("報告年度").size().to_dict()
-            _yr_str = "  ".join(f"{y}年:{n:,}件" for y, n in sorted(_yr_counts.items()))
-            st.caption(f"現在のセッションデータ: {_yr_str}")
-            _buf = _io.BytesIO()
-            _surg_sess.to_parquet(_buf, index=False)
+        # インポート成功後のみダウンロードボタンを表示
+        _y2_parquet = st.session_state.get("_yoshiki2_parquet")
+        if _y2_parquet:
             st.download_button(
-                "📥 手術データをparquetでダウンロード（永続化用）",
-                data=_buf.getvalue(),
+                "📥 surgery_cache.parquet をダウンロード（このチャットに貼ってください）",
+                data=_y2_parquet,
                 file_name="surgery_cache.parquet",
                 mime="application/octet-stream",
                 use_container_width=True,
+                type="primary",
             )
-            st.caption("⚠️ 2021年が3,000件以上になってからダウンロードしてください")
         st.divider()
         st.caption("サーバー上でデータを再構築する場合:")
         st.code("python build_db.py", language="bash")
