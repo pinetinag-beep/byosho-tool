@@ -137,19 +137,63 @@ app.py          ← Streamlit UI（全タブ・サイドバー）
 | `_view_mode` | `"detail"`（病院詳細）/ `"search"`（条件検索） |
 | `_yoshiki2_parquet` | 管理者パネルで様式2インポート後の parquet バイト列（ダウンロード用） |
 
+## ユーザーへの作業依頼ルール
+
+ユーザーのWindows環境での作業が必要な場合は、必ず以下の形式でステップ・バイ・ステップで指示する。まとめて1行で言わない。
+
+**ユーザー環境の注意点：**
+- Pythonの実行は `py` コマンドを使う（`python` はMicrosoft Store stubで動かない）
+- 作業フォルダ: `C:\Users\inter\OneDrive\Desktop\byosho_tool`
+
+**指示の例（住所データを追加する場合）：**
+
+1. コマンドプロンプトを開く
+2. 以下を実行してフォルダに移動する：
+   ```
+   cd C:\Users\inter\OneDrive\Desktop\byosho_tool
+   ```
+3. 以下を実行して住所データを取り込む：
+   ```
+   py build_master.py
+   ```
+4. 完了したら、以下を実行してparquetをエクスポートする：
+   ```
+   py -c "import duckdb, pandas as pd; con=duckdb.connect('data/byosho.duckdb'); con.execute('SELECT * FROM hospitals').fetchdf().to_parquet('data_cache_new.parquet', index=False); con.close(); print('done')"
+   ```
+5. `data_cache_new.parquet` をこのチャットに添付する
+6. Claudeがコミット・プッシュする
+
+---
+
+## データ更新の全般的な流れ
+
+DuckDBを更新してStreamlit Cloudに反映する一般手順：
+
+**ステップ1（ユーザー：Windowsで実行）**
+1. コマンドプロンプトを開く
+2. `cd C:\Users\inter\OneDrive\Desktop\byosho_tool` で移動
+3. 必要なスクリプトを `py <スクリプト名>` で実行
+
+**ステップ2（ユーザー：parquetをエクスポート）**
+4. 以下を実行して parquet を生成：
+   ```
+   py -c "import duckdb, pandas as pd; con=duckdb.connect('data/byosho.duckdb'); con.execute('SELECT * FROM hospitals').fetchdf().to_parquet('data_cache.parquet', index=False); con.execute('SELECT * FROM wards').fetchdf().to_parquet('ward_cache.parquet', index=False); con.execute('SELECT * FROM surgery').fetchdf().to_parquet('surgery_cache.parquet', index=False); con.close(); print('done')"
+   ```
+5. 生成された parquet ファイルをこのチャットに添付する
+
+**ステップ3（Claude：コミット・プッシュ）**
+6. Claude がリポジトリに配置してコミット・プッシュする
+
+---
+
 ## 手術データの更新手順
 
-手術データ（様式2）を更新する場合（年度追加・データ差し替え等）：
+手術データ（様式2）を更新する場合：
 
 1. アプリの管理者パネルで様式2ファイルをアップロード → 「手術データを取り込む」
 2. 成功後に表示されるダウンロードボタンで `surgery_cache.parquet` を取得
-3. Claude Code セッションに貼り付け → 以下を実行してコミット：
-  ```bash
-  cp <ダウンロードした parquet> surgery_cache.parquet
-  git add surgery_cache.parquet
-  git commit -m "手術データを更新"
-  git push origin HEAD:master && git push origin HEAD:main
-  ```
+3. このチャットに `surgery_cache.parquet` を添付する
+4. Claude がリポジトリにコミットして Streamlit Cloud に反映する
 
 **2021年は7地域ファイル**（000953885〜000953892.xlsx、891は欠番）を全て選択してアップロードすること。
 
