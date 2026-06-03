@@ -134,6 +134,12 @@ def build_locations(data: bytes, db_path: str) -> int:
             data_date     VARCHAR
         )
     """)
+    # url 列が存在しない場合は追加（既存DBへのマイグレーション）
+    existing_cols = [r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='locations'"
+    ).fetchall()]
+    if "url" not in existing_cols:
+        con.execute("ALTER TABLE locations ADD COLUMN url VARCHAR")
     # 既存の e-gov データを削除して上書き
     con.execute("DELETE FROM locations WHERE data_source = 'egov'")
 
