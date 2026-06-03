@@ -39,6 +39,7 @@ _COL_CANDIDATES = {
     "lon":     ["経度", "所在地標準（経度）", "所在地標準住所（経度）", "longitude", "lon"],
     "pref":    ["都道府県名", "都道府県"],
     "address": ["住所", "所在地", "所在地標準住所"],
+    "url":     ["案内用ホームページアドレス", "ホームページアドレス", "ホームページURL", "URL"],
 }
 
 
@@ -90,6 +91,7 @@ def _normalize(df: pd.DataFrame) -> pd.DataFrame:
     rows["lon"]           = pd.to_numeric(df[col["lon"]], errors="coerce")
     rows["都道府県名"]     = df[col["pref"]]    if col["pref"]    else ""
     rows["住所"]           = df[col["address"]] if col["address"] else ""
+    rows["url"]            = df[col["url"]]     if col["url"]     else ""
 
     rows = rows.dropna(subset=["lat", "lon"])
     rows = rows[(rows["lat"].between(20, 50)) & (rows["lon"].between(122, 154))]
@@ -127,6 +129,7 @@ def build_locations(data: bytes, db_path: str) -> int:
             lon           DOUBLE,
             都道府県名    VARCHAR,
             住所          VARCHAR,
+            url           VARCHAR,
             data_source   VARCHAR,
             data_date     VARCHAR
         )
