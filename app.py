@@ -718,41 +718,48 @@ with st.sidebar:
             key="_yoshiki2_upload",
         )
         if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_yoshiki2_import"):
-            with st.spinner(f"様式2 {len(_y2_files)}ファイル処理中..."):
-                try:
-                    _parts = []
-                    for _f in _y2_files:
-                        _fb = _f.read()
-                        _part = load_mhlw_yoshiki2(_fb, year=2021)
-                        st.caption(f"  {_f.name}: {len(_part):,} 病院")
-                        _parts.append(_part)
-                    if not _parts:
-                        st.error("データが空です。ファイルを確認してください。")
+            _prog = st.progress(0, text="処理開始...")
+            _status = st.empty()
+            try:
+                _parts = []
+                for _i, _f in enumerate(_y2_files):
+                    _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
+                    _fb = _f.read()
+                    _part = load_mhlw_yoshiki2(_fb, year=2021)
+                    _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
+                    _parts.append(_part)
+                _prog.progress(1.0, text="集計中...")
+                if not _parts:
+                    _prog.empty()
+                    st.error("データが空です。ファイルを確認してください。")
+                else:
+                    _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
+                    _existing = st.session_state.get("surgery_df")
+                    if _existing is not None and not _existing.empty:
+                        _existing = _existing[_existing["報告年度"] != 2021]
+                        _merged = pd.concat([_existing, _surg_new], ignore_index=True)
                     else:
-                        _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
-                        _existing = st.session_state.get("surgery_df")
-                        if _existing is not None and not _existing.empty:
-                            _existing = _existing[_existing["報告年度"] != 2021]
-                            _merged = pd.concat([_existing, _surg_new], ignore_index=True)
-                        else:
-                            _merged = _surg_new
-                        st.session_state["surgery_df"] = _merged
-                        import io as _io2
-                        _pbuf = _io2.BytesIO()
-                        _merged.to_parquet(_pbuf, index=False)
-                        st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
-                        # DuckDBがある環境（ローカル）では永続化
-                        if DB_PATH.exists():
-                            import duckdb as _duckdb
-                            _con = _duckdb.connect(str(DB_PATH))
-                            _con.execute("DROP TABLE IF EXISTS surgery")
-                            _con.register("_surg", _merged)
-                            _con.execute("CREATE TABLE surgery AS SELECT * FROM _surg")
-                            _con.close()
-                            st.cache_data.clear()
-                        st.success(f"✅ 2021年: {len(_surg_new):,} 病院を取り込みました。下のボタンでダウンロードしてください。")
-                except Exception as _e:
-                    st.error(f"エラー: {_e}")
+                        _merged = _surg_new
+                    st.session_state["surgery_df"] = _merged
+                    import io as _io2
+                    _pbuf = _io2.BytesIO()
+                    _merged.to_parquet(_pbuf, index=False)
+                    st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
+                    if DB_PATH.exists():
+                        import duckdb as _duckdb
+                        _con = _duckdb.connect(str(DB_PATH))
+                        _con.execute("DROP TABLE IF EXISTS surgery")
+                        _con.register("_surg", _merged)
+                        _con.execute("CREATE TABLE surgery AS SELECT * FROM _surg")
+                        _con.close()
+                        st.cache_data.clear()
+                    _prog.empty()
+                    _status.empty()
+                    st.success(f"✅ 2021年: {len(_surg_new):,} 病院を取り込みました。下のボタンでダウンロードしてください。")
+            except Exception as _e:
+                _prog.empty()
+                st.error(f"エラー: {_e}")
+                st.exception(_e)
         # インポート成功後のみダウンロードボタンを表示
         _y2_parquet = st.session_state.get("_yoshiki2_parquet")
         if _y2_parquet:
