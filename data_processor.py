@@ -79,7 +79,8 @@ def load_mhlw_byosho(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
     pref_code_col = "都道府県コード"
 
     # 二次医療圏列：「名」付きを優先、なければ広く検索（コード列より名前列を先に取る）
-    iryo_col = _find_col(df.columns, "二次医療圏名") or _find_col(df.columns, "二次医療圏名称") or _find_col(df.columns, "二次医療圏")
+    iryo_col = (_find_col(df.columns, "二次医療圏名") or _find_col(df.columns, "二次医療圏名称")
+                or _find_col(df.columns, "二次医療圏") or _find_col(df.columns, "構想区域名"))
 
     keep_cols = [func_col]
     if code_col:
@@ -554,7 +555,8 @@ def load_mhlw_byosho_extended(file_bytes: bytes, year: int = 2024) -> tuple[pd.D
     # 二次医療圏列名を「二次医療圏名」に統一（年度差異を吸収、名前列を優先）
     iryo_col_ext = (_find_col(list(df.columns), "二次医療圏名")
                     or _find_col(list(df.columns), "二次医療圏名称")
-                    or _find_col(list(df.columns), "二次医療圏"))
+                    or _find_col(list(df.columns), "二次医療圏")
+                    or _find_col(list(df.columns), "構想区域名"))
     if iryo_col_ext and iryo_col_ext != "二次医療圏名":
         df = df.rename(columns={iryo_col_ext: "二次医療圏名"})
     if "二次医療圏名" not in df.columns:
