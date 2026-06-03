@@ -1857,12 +1857,10 @@ with _hdr_col:
     st.caption(f"{year}年度　|　{pref}　{region}")
     _h_address = hosp_row.get("住所", "") if isinstance(hosp_row, pd.Series) else ""
     _h_address = "" if str(_h_address) in ("nan", "None", "") else str(_h_address)
-    _h_code = hosp_row.get("医療機関コード", "") if isinstance(hosp_row, pd.Series) else ""
-    _h_code = "" if str(_h_code) in ("nan", "None", "") else str(_h_code)
-    _h_url = (f"https://www.iryou.teikyouseido.mhlw.go.jp/znk-web/faces/ZNK01V01.xhtml?KINOID={_h_code.zfill(10)}"
-              if _h_code else "")
+    _h_url = hosp_row.get("url", "") if isinstance(hosp_row, pd.Series) else ""
+    _h_url = "" if str(_h_url) in ("nan", "None", "") else str(_h_url).strip()
     _addr_html = f"📍 {_h_address}" if _h_address else "📍 －"
-    _url_html  = f'<a href="{_h_url}" target="_blank">🔗 医療情報ネット</a>' if _h_url else "🔗 －"
+    _url_html  = f'<a href="{_h_url}" target="_blank">🔗 公式サイト</a>' if _h_url else "🔗 －"
     st.markdown(
         f"<div style='font-size:0.85rem;color:#555;margin-top:2px;'>{_addr_html}</div>"
         f"<div style='font-size:0.85rem;margin-top:2px;'>{_url_html}</div>",
