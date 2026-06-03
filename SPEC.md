@@ -11,7 +11,7 @@
 
 **デプロイ先**: Streamlit Community Cloud（`estver.streamlit.app`）  
 **リポジトリ**: `pinetinag-beep/byosho-tool`  
-**本番ブランチ**: `main`（master・作業ブランチは main に統合済み）
+**本番ブランチ**: `master`（`main` は削除済み）
 
 ---
 
@@ -225,11 +225,10 @@ python build_master.py --file e-gov20250601.zip
 
 | ブランチ | 状態 | 説明 |
 |---|---|---|
-| `main` | **本番** | Streamlit Cloud がここを参照 |
-| `master` | `main` と同期済み | 今後は `main` のみ使用 |
-| `claude/work-status-check-8PEo3` | マージ済み | 削除可 |
+| `master` | **本番** | Streamlit Cloud がここを参照。唯一の永続ブランチ |
+| `claude/*` | 作業用 | Claude Code セッションが自動生成。完了後は `master` にマージ |
 
-**運用ルール**: 開発は作業ブランチで行い、動作確認後に `main` へ fast-forward マージ。
+**運用ルール**: 開発は Claude Code の作業ブランチで行い、動作確認後に `master` へマージ。
 
 ---
 
