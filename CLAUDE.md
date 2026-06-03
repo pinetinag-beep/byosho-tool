@@ -83,6 +83,42 @@ app.py          ← Streamlit UI（全タブ・サイドバー）
 
 `ranking_table_fig(df, highlight, rank_col, show_cols, col_labels)` — ランキングタブで使用。`rank_col` で並び替え基準（許可病床数・稼働率・医師数など7種）を切り替える。
 
+## app.py 構造（行番号目安）
+
+| 範囲 | 内容 |
+|---|---|
+| 1〜370 | import・定数・キャッシュ関数 |
+| 371〜465 | DuckDB / parquet からのデータ読み込み・セッションステート初期化 |
+| 466〜700 | サイドバー（データ未準備時のアップロード UI・病院選択アコーディオン） |
+| 703〜780 | 管理者セクション（キャッシュクリア・様式2アップロード・ダウンロード） |
+| 781〜 | メインエリア（tab1〜tab7） |
+
+## セッションステート 主要キー
+
+| キー | 内容 |
+|---|---|
+| `df` | 病院データ DataFrame（全年度） |
+| `ward_df` | 病棟データ DataFrame |
+| `surgery_df` | 手術データ DataFrame |
+| `_datasrc` | `"db"` / `"parquet"` / `"sample"` / `"none"` |
+| `_sb_open` | サイドバーで開いているアコーディオンセクション（`"①"` 等） |
+| `_view_mode` | `"detail"`（病院詳細）/ `"search"`（条件検索） |
+| `_yoshiki2_parquet` | 管理者パネルで様式2インポート後の parquet バイト列（ダウンロード用） |
+
+## 既知の未解決問題
+
+**2021年手術データが不完全（594件、本来は約3,400件）**
+
+- `surgery_cache.parquet` には 594件しか入っていない（旧来の不正なデータ）
+- 修正手順: アプリの管理者パネルで 2021年様式2 全7ファイルをアップロード → 成功後に表示されるダウンロードボタンで parquet を取得 → Claude Code セッションに貼り付け → 以下を実行してコミット：
+  ```bash
+  cp <ダウンロードした parquet> surgery_cache.parquet
+  git add surgery_cache.parquet
+  git commit -m "2021年手術データを修正"
+  git push origin HEAD:master && git push origin HEAD:main
+  ```
+- 2022/2023年の手術データはparquetに正しく入っており永続。
+
 ## 未実装機能（SPEC.md 参照）
 
 - 移動時間フィルター（住所入力 → OSRM Table API → N分以内の病院を絞り込み）
