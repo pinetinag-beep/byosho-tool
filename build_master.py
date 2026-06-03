@@ -31,11 +31,12 @@ DEFAULT_URL = (
 DB_PATH = Path(__file__).parent / "data" / "byosho.duckdb"
 
 # e-gov CSV の列名候補（バージョンによってブレがある）
+# 注: 旧形式は「緯度」「経度」、2025年版は「所在地標準（緯度）」「所在地標準（経度）」
 _COL_CANDIDATES = {
-    "name":    ["施設名", "医療機関名称", "名称"],
-    "code":    ["医療機関コード", "施設コード", "医療機関番号"],
-    "lat":     ["緯度", "所在地標準住所（緯度）", "latitude", "lat"],
-    "lon":     ["経度", "所在地標準住所（経度）", "longitude", "lon"],
+    "name":    ["施設名", "医療機関名称", "正式名称", "名称"],
+    "code":    ["医療機関コード", "施設コード", "医療機関番号", "ID"],
+    "lat":     ["緯度", "所在地標準（緯度）", "所在地標準住所（緯度）", "latitude", "lat"],
+    "lon":     ["経度", "所在地標準（経度）", "所在地標準住所（経度）", "longitude", "lon"],
     "pref":    ["都道府県名", "都道府県"],
     "address": ["住所", "所在地", "所在地標準住所"],
 }
@@ -54,8 +55,8 @@ def _pick(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
-def _load_zip(data: bytes) -> pd.DataFrame:
-    """ZIP バイト列から全 CSV を読み込み縦結合して返す。"""
+def _load_zip(data: bytes) -> list[pd.DataFrame]:
+    """ZIP バイト列から全 CSV を読み込んで DataFrame のリストを返す。"""
     frames = []
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
@@ -71,27 +72,26 @@ def _load_zip(data: bytes) -> pd.DataFrame:
                     df = pd.read_csv(f, encoding="cp932", dtype=str, low_memory=False)
             print(f"    {name}: {len(df):,}行, 列={list(df.columns[:6])}...")
             frames.append(df)
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    return frames
 
 
 def _normalize(df: pd.DataFrame) -> pd.DataFrame:
-    """必要列を抽出・正規化して返す。"""
+    """1つの CSV を正規化して返す。緯度経度列がなければ空 DF を返す。"""
     col = {k: _pick(df, v) for k, v in _COL_CANDIDATES.items()}
-    missing = [k for k, v in col.items() if v is None and k in ("lat", "lon")]
-    if missing:
-        raise ValueError(f"緯度・経度の列が見つかりません。列一覧: {list(df.columns)}")
+
+    # 緯度経度がない CSV（診療時間CSVなど）はスキップ
+    if not col["lat"] or not col["lon"]:
+        return pd.DataFrame()
 
     rows = pd.DataFrame()
-    rows["施設名"]       = df[col["name"]]    if col["name"]    else ""
+    rows["施設名"]        = df[col["name"]]    if col["name"]    else ""
     rows["医療機関コード"] = df[col["code"]]    if col["code"]    else None
-    rows["lat"]          = pd.to_numeric(df[col["lat"]], errors="coerce")
-    rows["lon"]          = pd.to_numeric(df[col["lon"]], errors="coerce")
-    rows["都道府県名"]    = df[col["pref"]]    if col["pref"]    else ""
-    rows["住所"]          = df[col["address"]] if col["address"] else ""
+    rows["lat"]           = pd.to_numeric(df[col["lat"]], errors="coerce")
+    rows["lon"]           = pd.to_numeric(df[col["lon"]], errors="coerce")
+    rows["都道府県名"]     = df[col["pref"]]    if col["pref"]    else ""
+    rows["住所"]           = df[col["address"]] if col["address"] else ""
 
-    # 緯度経度がない行は除外
     rows = rows.dropna(subset=["lat", "lon"])
-    # 日本の範囲外（明らかに誤値）を除外
     rows = rows[(rows["lat"].between(20, 50)) & (rows["lon"].between(122, 154))]
     return rows.reset_index(drop=True)
 
@@ -102,11 +102,21 @@ def build_locations(data: bytes, db_path: str) -> int:
     Returns: 格納した行数
     """
     print("CSV を解析中...")
-    raw = _load_zip(data)
-    print(f"  合計 {len(raw):,} 行読み込み")
+    raw_list = _load_zip(data)
 
-    df = _normalize(raw)
-    print(f"  緯度経度あり: {len(df):,} 行")
+    # 各 CSV を個別に正規化してから結合（スキーマが CSV ごとに異なるため）
+    frames = []
+    for df in raw_list:
+        n = _normalize(df)
+        if not n.empty:
+            print(f"  → {len(n):,} 行 (緯度経度あり)")
+            frames.append(n)
+
+    if not frames:
+        raise ValueError("緯度経度を含む CSV が見つかりません")
+
+    combined = pd.concat(frames, ignore_index=True)
+    print(f"  合計 {len(combined):,} 行")
 
     con = duckdb.connect(db_path)
     con.execute("""
@@ -124,6 +134,7 @@ def build_locations(data: bytes, db_path: str) -> int:
     # 既存の e-gov データを削除して上書き
     con.execute("DELETE FROM locations WHERE data_source = 'egov'")
 
+    df = combined
     df["data_source"] = "egov"
     df["data_date"]   = "2025-06-01"
 
