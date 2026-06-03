@@ -34,17 +34,23 @@ DB_PATH = Path(__file__).parent / "data" / "byosho.duckdb"
 _COL_CANDIDATES = {
     "name":    ["施設名", "医療機関名称", "名称"],
     "code":    ["医療機関コード", "施設コード", "医療機関番号"],
-    "lat":     ["緯度", "latitude", "lat"],
-    "lon":     ["経度", "longitude", "lon"],
+    "lat":     ["緯度", "所在地標準住所（緯度）", "latitude", "lat"],
+    "lon":     ["経度", "所在地標準住所（経度）", "longitude", "lon"],
     "pref":    ["都道府県名", "都道府県"],
-    "address": ["住所", "所在地"],
+    "address": ["住所", "所在地", "所在地標準住所"],
 }
 
 
 def _pick(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    # 完全一致を優先
     for c in candidates:
         if c in df.columns:
             return c
+    # 部分一致（フォールバック）
+    for kw in candidates:
+        for col in df.columns:
+            if kw in col:
+                return col
     return None
 
 
