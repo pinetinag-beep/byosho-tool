@@ -1249,8 +1249,8 @@ if st.session_state.get("_view_mode") == "region_vision":
             _rv_smask = _rv_smask & (_surg_df_rv["報告年度"] == _rv_year)
         for _, _sr in _surg_df_rv[_rv_smask].iterrows():
             _hn = str(_sr.get("医療機関名", ""))
-            _surg_map_rv[_hn]  = int(_sr.get("手術総数", 0) or 0)
-            _robot_map_rv[_hn] = int(_sr.get("ロボット支援手術数", 0) or 0)
+            _surg_map_rv[_hn]  = _si(_sr.get("手術総数", 0))
+            _robot_map_rv[_hn] = _si(_sr.get("ロボット支援手術数", 0))
 
     # ════════════════════════════════════
     # スコアリング・分類関数
