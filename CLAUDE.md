@@ -75,7 +75,7 @@ app.py          ← Streamlit UI（全タブ・サイドバー）
 
 - `hospitals`: 病院単位・年度別（20,830行 / 2021〜2023）
 - `wards`: 病棟単位（81,687行）
-- `surgery`: 手術実績、病院単位・年度別（7,495行）
+- `surgery`: 手術実績、病院単位・年度別（12,320行 / 2021: 5,419・2022: 3,407・2023: 3,494）
 - `geocache`: Nominatim 取得済み座標キャッシュ
 - `locations`: 厚労省公式座標（`build_master.py` 実行後）
 
@@ -105,19 +105,21 @@ app.py          ← Streamlit UI（全タブ・サイドバー）
 | `_view_mode` | `"detail"`（病院詳細）/ `"search"`（条件検索） |
 | `_yoshiki2_parquet` | 管理者パネルで様式2インポート後の parquet バイト列（ダウンロード用） |
 
-## 既知の未解決問題
+## 手術データの更新手順
 
-**2021年手術データが不完全（594件、本来は約3,400件）**
+手術データ（様式2）を更新する場合（年度追加・データ差し替え等）：
 
-- `surgery_cache.parquet` には 594件しか入っていない（旧来の不正なデータ）
-- 修正手順: アプリの管理者パネルで 2021年様式2 全7ファイルをアップロード → 成功後に表示されるダウンロードボタンで parquet を取得 → Claude Code セッションに貼り付け → 以下を実行してコミット：
+1. アプリの管理者パネルで様式2ファイルをアップロード → 「手術データを取り込む」
+2. 成功後に表示されるダウンロードボタンで `surgery_cache.parquet` を取得
+3. Claude Code セッションに貼り付け → 以下を実行してコミット：
   ```bash
   cp <ダウンロードした parquet> surgery_cache.parquet
   git add surgery_cache.parquet
-  git commit -m "2021年手術データを修正"
+  git commit -m "手術データを更新"
   git push origin HEAD:master && git push origin HEAD:main
   ```
-- 2022/2023年の手術データはparquetに正しく入っており永続。
+
+**2021年は7地域ファイル**（000953885〜000953892.xlsx、891は欠番）を全て選択してアップロードすること。
 
 ## 未実装機能（SPEC.md 参照）
 
