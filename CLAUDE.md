@@ -50,10 +50,12 @@ python build_master.py          # 医療情報ネット座標データ取り込�
 ## Git・デプロイ
 
 **Streamlit Cloud（`byosho-tool-testver.streamlit.app`）は `master` ブランチを参照している。**  
-`git push` は必ず master と main の両方に行う：
+`main` ブランチは削除済み。`master` が唯一の本番ブランチ。
+
+変更をコミットしたら必ず `master` と作業ブランチの両方にプッシュする：
 
 ```bash
-git push origin HEAD:master && git push origin HEAD:main
+git push origin HEAD:master && git push origin HEAD:<作業ブランチ名>
 ```
 
 ## データ管理
