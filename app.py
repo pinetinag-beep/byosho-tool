@@ -696,7 +696,7 @@ with st.sidebar:
         except Exception:
             st.info("DuckDB 接続中...")
     elif _src == "parquet":
-        st.warning("⚠️ 旧データを表示中")
+        st.success("📊 2021〜2023年度データ")
     elif _src == "sample":
         st.info("🎮 サンプルデータ表示中")
 
