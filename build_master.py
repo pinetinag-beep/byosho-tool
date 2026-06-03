@@ -147,7 +147,11 @@ def build_locations(data: bytes, db_path: str) -> int:
     df["data_source"] = "egov"
     df["data_date"]   = "2025-06-01"
 
-    con.execute("INSERT INTO locations SELECT * FROM df")
+    # 列名を明示してINSERT（ALTER TABLEで追加した列の順序ずれを防ぐ）
+    con.execute("""
+        INSERT INTO locations (施設名, 医療機関コード, lat, lon, 都道府県名, 住所, url, data_source, data_date)
+        SELECT 施設名, 医療機関コード, lat, lon, 都道府県名, 住所, url, data_source, data_date FROM df
+    """)
     count = con.execute("SELECT COUNT(*) FROM locations WHERE data_source='egov'").fetchone()[0]
     con.close()
     return count
