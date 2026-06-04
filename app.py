@@ -554,9 +554,9 @@ with st.sidebar:
                     st.caption("🔎 見つかりませんでした")
                 else:
                     st.caption(f"**{len(_matched)}件** 見つかりました（{_latest_year}年度）")
-                    for _, _mrow in _matched.head(12).iterrows():
+                    for _i, (_, _mrow) in enumerate(_matched.head(12).iterrows()):
                         _btn_label = f"🏥 {_mrow['医療機関名']}"
-                        _btn_key   = f"_nbtn_{_mrow['医療機関名']}"
+                        _btn_key   = f"_nbtn_{_i}"
                         if st.button(_btn_label, key=_btn_key, use_container_width=True):
                             st.session_state["_nav_jump"] = {
                                 "year":     int(_mrow["報告年度"]),
