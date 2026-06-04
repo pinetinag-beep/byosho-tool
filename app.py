@@ -1230,6 +1230,7 @@ if st.session_state.get("_view_mode") == "region_vision":
     # ── 地域内全病院データ
     rv_df = df[
         (df["報告年度"] == _rv_year) &
+        (df["都道府県名"] == _rv_pref) &
         (df["二次医療圏名"] == _rv_region)
     ].copy().reset_index(drop=True)
 
