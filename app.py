@@ -2343,6 +2343,7 @@ with tab6:
 
             st.markdown('<div class="section-header">地域内 在宅復帰率比較</div>', unsafe_allow_html=True)
             region_ward = ward_df[
+                (ward_df["都道府県名"] == pref) &
                 (ward_df["二次医療圏名"] == region) &
                 (ward_df["報告年度"] == year)
             ] if "二次医療圏名" in ward_df.columns else ward_df[ward_df["報告年度"] == year]
@@ -2423,6 +2424,8 @@ with tab6:
             # 年度フィルター（複数年度データが混在するとバーが重複するため）
             if "二次医療圏名" in surgery_df.columns:
                 _rsurg_mask = surgery_df["二次医療圏名"] == region
+                if "都道府県名" in surgery_df.columns:
+                    _rsurg_mask = _rsurg_mask & (surgery_df["都道府県名"] == pref)
                 if "報告年度" in surgery_df.columns:
                     _rsurg_mask = _rsurg_mask & (surgery_df["報告年度"] == year)
                 region_surg = surgery_df[_rsurg_mask]
