@@ -501,12 +501,11 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"読み込みエラー: {e}")
 
-    # ── データあり: アコーディオンナビゲーション ──
+    # ── データあり: タブナビゲーション ──
     if st.session_state.df is not None:
         _df_all = st.session_state.df
-        _sb_open = st.session_state.get("_sb_open", "③")
 
-        # ナビゲーションジャンプを最初に処理（どのパネルが開いていても機能する）
+        # ナビゲーションジャンプを最初に処理
         _nav = st.session_state.pop("_nav_jump", None)
         if _nav:
             st.session_state["_sel_year"]     = int(_nav["year"])
@@ -514,50 +513,58 @@ with st.sidebar:
             st.session_state["_sel_region"]   = str(_nav["region"])
             st.session_state["_sel_hospital"] = str(_nav["hospital"])
             st.session_state["_nav_done"]     = str(_nav["hospital"])
-            st.session_state["_sb_open"]      = "③"
             st.rerun()
 
-        # アコーディオンヘッダー補助関数
-        def _sb_section(label: str, key: str) -> bool:
-            is_open = _sb_open == key
-            icon = "－" if is_open else "＋"
-            if st.button(f"{icon} {label}", use_container_width=True, key=f"_sbhdr_{key}",
-                         type="primary" if is_open else "secondary"):
-                st.session_state["_sb_open"] = key if not is_open else None
-                st.rerun()
-            return is_open
+        # ── 現在選択中の病院（常時表示） ──
+        _cur_hospital = st.session_state.get("_sel_hospital", "")
+        _cur_year     = st.session_state.get("_sel_year",     "")
+        _cur_pref     = st.session_state.get("_sel_pref",     "")
+        if _cur_hospital:
+            st.markdown(
+                f"<div style='background:#eef6fb;border:1px solid #bee3f8;border-radius:6px;"
+                f"padding:7px 10px;font-size:0.82rem;margin:6px 0;'>"
+                f"<div style='color:#888;font-size:0.72rem;margin-bottom:2px;'>現在選択中の病院</div>"
+                f"<div style='font-weight:700;color:#1a202c;line-height:1.4;'>{_cur_hospital}</div>"
+                f"<div style='color:#718096;font-size:0.75rem;margin-top:2px;'>"
+                f"{_cur_pref} ｜ {_cur_year}年度</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
+        # ── Ⅰ. 病院の情報を調べる ──
         st.divider()
         st.markdown(
             "<div style='font-size:0.82rem;font-weight:700;color:#2c3e50;"
-            "margin-bottom:4px;'>Ⅰ. 病院の情報を調べる</div>",
+            "margin-bottom:6px;'>Ⅰ. 病院の情報を調べる</div>",
             unsafe_allow_html=True,
         )
 
-        # ── ① 病院名で探す ──
-        if _sb_section("① 病院名で探す", "①"):
+        _tab_name, _tab_region, _tab_search = st.tabs(["🔍 名前", "📋 地域", "🔧 条件"])
+
+        # ── タブ①: 病院名で探す ──
+        with _tab_name:
             _name_q = st.text_input(
                 "病院名で検索",
                 placeholder="例: 大学病院、中央病院",
                 key="_sidebar_name_q",
                 label_visibility="collapsed",
             )
-
             if _name_q:
-                _norm_q = _normalize_name(_name_q)
+                _norm_q      = _normalize_name(_name_q)
                 _latest_year = int(_df_all["報告年度"].max())
-                _name_df = _df_all[_df_all["報告年度"] == _latest_year].copy()
+                _name_df     = _df_all[_df_all["報告年度"] == _latest_year].copy()
                 _name_df["_norm"] = _name_df["医療機関名"].apply(_normalize_name)
-                _matched = _name_df[_name_df["_norm"].str.contains(_norm_q, na=False)]
-
+                _matched     = _name_df[_name_df["_norm"].str.contains(_norm_q, na=False)]
                 if _matched.empty:
                     st.caption("🔎 見つかりませんでした")
                 else:
-                    st.caption(f"**{len(_matched)}件** 見つかりました（{_latest_year}年度）")
+                    st.caption(f"**{len(_matched)}件**（{_latest_year}年度）")
                     for _i, (_, _mrow) in enumerate(_matched.head(12).iterrows()):
-                        _btn_label = f"🏥 {_mrow['医療機関名']}"
-                        _btn_key   = f"_nbtn_{_i}"
-                        if st.button(_btn_label, key=_btn_key, use_container_width=True):
+                        if st.button(
+                            f"🏥 {_mrow['医療機関名']}",
+                            key=f"_nbtn_{_i}",
+                            use_container_width=True,
+                        ):
                             st.session_state["_nav_jump"] = {
                                 "year":     int(_mrow["報告年度"]),
                                 "pref":     str(_mrow["都道府県名"]),
@@ -565,123 +572,112 @@ with st.sidebar:
                                 "hospital": str(_mrow["医療機関名"]),
                             }
                             st.session_state["_view_mode"] = "detail"
-                            st.session_state["_sb_open"]   = "③"
                             st.rerun()
                     if len(_matched) > 12:
                         st.caption(f"… 他 {len(_matched)-12}件（絞り込んでください）")
             else:
                 st.caption("病院名の一部を入力してください")
 
-        # ── ② 条件検索で探す ──
-        if _sb_section("② 条件検索で探す", "②"):
-            st.caption("手術・設備などの条件で絞り込み")
+        # ── タブ②: 地域から探す ──
+        with _tab_region:
+            _years = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
+            _sy = st.selectbox("報告年度", _years, key="_sel_year")
+
+            _prefs = _sort_prefs(_df_all["都道府県名"].unique())
+            if st.session_state.get("_sel_pref") not in _prefs:
+                st.session_state["_sel_pref"] = _prefs[0] if _prefs else None
+            _sp = st.selectbox("都道府県", _prefs, key="_sel_pref")
+
+            _regions = sorted(
+                r for r in _df_all[_df_all["都道府県名"] == _sp]["二次医療圏名"].unique()
+                if r != "不明"
+            )
+            if st.session_state.get("_sel_region") not in _regions:
+                st.session_state["_sel_region"] = _regions[0] if _regions else None
+            _sr = st.selectbox("二次医療圏", _regions, key="_sel_region")
+
+            _hosps = _df_all[
+                (_df_all["報告年度"] == _sy) &
+                (_df_all["都道府県名"] == _sp) &
+                (_df_all["二次医療圏名"] == _sr)
+            ]["医療機関名"].sort_values().tolist()
+            if st.session_state.get("_sel_hospital") not in _hosps:
+                st.session_state["_sel_hospital"] = _hosps[0] if _hosps else None
+            st.selectbox("医療機関名", _hosps, key="_sel_hospital")
+
+            if "_nav_done" in st.session_state:
+                st.success(f"✅ {st.session_state.pop('_nav_done')}")
+
+        # ── タブ③: 条件検索 ──
+        with _tab_search:
             _is_search = st.session_state.get("_view_mode") == "search"
             if _is_search:
                 st.success("条件検索モード中")
-                if st.button("← 病院詳細に戻る", use_container_width=True, type="secondary"):
+                if st.button("← 病院詳細に戻る", use_container_width=True,
+                             type="secondary", key="_search_back_btn"):
                     st.session_state["_view_mode"] = "detail"
-                    st.session_state["_sb_open"]   = "③"
                     st.rerun()
             else:
-                if st.button("🔧 条件検索を開く", use_container_width=True, type="primary"):
+                st.caption("手術件数・設備条件で病院を絞り込み")
+                if st.button("条件検索を開く →", use_container_width=True,
+                             type="primary", key="_search_open_btn"):
                     st.session_state["_view_mode"] = "search"
                     st.rerun()
 
-        # ── ③ 地域から探す ──
-        if _sb_section("③ 地域から探す", "③"):
-            with st.container(border=True):
-                years = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-                sel_year = st.selectbox("報告年度", years, key="_sel_year")
-
-                prefs = _sort_prefs(_df_all["都道府県名"].unique())
-                if st.session_state.get("_sel_pref") not in prefs:
-                    st.session_state["_sel_pref"] = prefs[0] if prefs else None
-                sel_pref = st.selectbox("都道府県", prefs, key="_sel_pref")
-
-                regions = sorted(
-                    r for r in _df_all[_df_all["都道府県名"] == sel_pref]["二次医療圏名"].unique()
-                    if r != "不明"
-                )
-                if st.session_state.get("_sel_region") not in regions:
-                    st.session_state["_sel_region"] = regions[0] if regions else None
-                sel_region = st.selectbox("二次医療圏", regions, key="_sel_region")
-
-                hospitals_in_region = _df_all[
-                    (_df_all["報告年度"] == sel_year) &
-                    (_df_all["都道府県名"] == sel_pref) &
-                    (_df_all["二次医療圏名"] == sel_region)
-                ]["医療機関名"].sort_values().tolist()
-
-                if st.session_state.get("_sel_hospital") not in hospitals_in_region:
-                    st.session_state["_sel_hospital"] = hospitals_in_region[0] if hospitals_in_region else None
-                sel_hospital = st.selectbox("医療機関名", hospitals_in_region, key="_sel_hospital")
-
-                if "_nav_done" in st.session_state:
-                    st.success(f"✅ {st.session_state.pop('_nav_done')}\n「病院概要」タブで確認できます")
-
-        else:
-            # ③が閉じているとき: sel_* をセッションステートから復元
-            _df_years = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-            sel_year   = st.session_state.get("_sel_year",   _df_years[0] if _df_years else 2023)
-            sel_pref   = st.session_state.get("_sel_pref",   _sort_prefs(_df_all["都道府県名"].unique())[0])
-            _r_list    = sorted(
-                r for r in _df_all[_df_all["都道府県名"] == sel_pref]["二次医療圏名"].unique()
-                if r != "不明"
-            )
-            sel_region  = st.session_state.get("_sel_region",  _r_list[0] if _r_list else "")
-            _h_list     = _df_all[
-                (_df_all["報告年度"] == sel_year) &
-                (_df_all["都道府県名"] == sel_pref) &
-                (_df_all["二次医療圏名"] == sel_region)
-            ]["医療機関名"].sort_values().tolist()
-            sel_hospital = st.session_state.get("_sel_hospital", _h_list[0] if _h_list else "")
+        # sel_* 変数をセッションステートから読み出す（タブの外でも参照できるよう）
+        _df_years    = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
+        sel_year     = int(st.session_state.get("_sel_year",     _df_years[0] if _df_years else 2023))
+        sel_pref     = str(st.session_state.get("_sel_pref",     _sort_prefs(_df_all["都道府県名"].unique())[0]))
+        _r_list      = sorted(
+            r for r in _df_all[_df_all["都道府県名"] == sel_pref]["二次医療圏名"].unique()
+            if r != "不明"
+        )
+        sel_region   = str(st.session_state.get("_sel_region",   _r_list[0]  if _r_list  else ""))
+        _h_list      = _df_all[
+            (_df_all["報告年度"] == sel_year) &
+            (_df_all["都道府県名"] == sel_pref) &
+            (_df_all["二次医療圏名"] == sel_region)
+        ]["医療機関名"].sort_values().tolist()
+        sel_hospital = str(st.session_state.get("_sel_hospital", _h_list[0]  if _h_list  else ""))
 
         st.caption(f"全 {len(_df_all[_df_all['報告年度']==sel_year]):,} 病院 | {sel_year}年度")
 
         # ── Ⅱ. 地域医療の状況を調べる ──
-        st.divider()
-        st.markdown(
-            "<div style='font-size:0.82rem;font-weight:700;color:#2c3e50;"
-            "margin-bottom:4px;'>Ⅱ. 地域医療の状況を調べる</div>",
-            unsafe_allow_html=True,
-        )
-
-        _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-        rv_sel_year = st.selectbox(
-            "分析年度", _rv_years_list, key="_rv_sel_year",
-            help="地域構想分析の対象年度（病院選択とは独立して設定できます）",
-        )
-
-        _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
-        if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
-            st.session_state["_rv_sel_pref"] = _rv_all_prefs[0] if _rv_all_prefs else None
-        rv_sel_pref = st.selectbox(
-            "都道府県", _rv_all_prefs, key="_rv_sel_pref",
-            help="地域構想分析の対象都道府県",
-        )
-
-        _rv_regions_list = sorted(
-            r for r in _df_all[_df_all["都道府県名"] == rv_sel_pref]["二次医療圏名"].unique()
-            if r != "不明"
-        )
-        if st.session_state.get("_rv_sel_region") not in _rv_regions_list:
-            st.session_state["_rv_sel_region"] = _rv_regions_list[0] if _rv_regions_list else None
-        rv_sel_region = st.selectbox(
-            "二次医療圏", _rv_regions_list, key="_rv_sel_region",
-            help="地域構想分析の対象二次医療圏",
-        )
-
+        # region_vision モード中は戻るボタンを expander の外に表示
         _is_vision = st.session_state.get("_view_mode") == "region_vision"
         if _is_vision:
+            st.divider()
             if st.button("← 病院詳細に戻る", key="_vision_back_btn",
                          use_container_width=True, type="secondary"):
                 st.session_state["_view_mode"] = "detail"
                 st.rerun()
-        else:
-            if st.button("🗺️ 地域構想分析を見る", key="_vision_open_btn",
-                         use_container_width=True, type="secondary"):
-                st.session_state["_view_mode"] = "region_vision"
-                st.rerun()
+
+        with st.expander("🗺️ Ⅱ. 地域医療の状況を調べる", expanded=_is_vision):
+            _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
+            rv_sel_year = st.selectbox(
+                "分析年度", _rv_years_list, key="_rv_sel_year",
+                help="地域構想分析の対象年度",
+            )
+            _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
+            if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
+                st.session_state["_rv_sel_pref"] = _rv_all_prefs[0] if _rv_all_prefs else None
+            rv_sel_pref = st.selectbox(
+                "都道府県", _rv_all_prefs, key="_rv_sel_pref",
+            )
+            _rv_regions_list = sorted(
+                r for r in _df_all[_df_all["都道府県名"] == rv_sel_pref]["二次医療圏名"].unique()
+                if r != "不明"
+            )
+            if st.session_state.get("_rv_sel_region") not in _rv_regions_list:
+                st.session_state["_rv_sel_region"] = _rv_regions_list[0] if _rv_regions_list else None
+            rv_sel_region = st.selectbox(
+                "二次医療圏", _rv_regions_list, key="_rv_sel_region",
+            )
+            if not _is_vision:
+                if st.button("地域医療構想分析を見る →", key="_vision_open_btn",
+                             use_container_width=True, type="primary"):
+                    st.session_state["_view_mode"] = "region_vision"
+                    st.rerun()
 
     # ── DB ステータス表示（一番下） ──
     st.divider()
