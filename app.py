@@ -107,6 +107,29 @@ def _render_nav_bar(mode: str, pref: str = "", region: str = "", hospital: str =
 
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&display=swap');
+
+/* ── 全体フォント（Material Icons を上書きしないよう text要素のみ対象）── */
+body, .main .block-container,
+p, li, label, input, select, textarea, caption,
+h1, h2, h3, h4, h5, h6,
+[data-testid="stMarkdownContainer"],
+[data-testid="stCaptionContainer"],
+[data-testid="stText"],
+.stSelectbox label, .stTextInput label, .stNumberInput label,
+.stRadio label, .stCheckbox label,
+div[data-testid="stSidebar"] label,
+div[data-testid="stSidebar"] p,
+div[data-testid="stSidebar"] span:not([class*="material"]) {
+    font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif !important;
+}
+
+/* ── KPI数値は等幅フィーチャーを有効化 ── */
+.metric-value {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
 /* ── KPIカード ── */
 .metric-card {
     background: #ffffff;
