@@ -2541,8 +2541,9 @@ with tab7:
 
             # ── キャッシュ済み座標を読み込んで地図を描画 ──
             geo_dict = load_cached_coords(str(DB_PATH), pref)
-            map_df["lat"] = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None))[0])
-            map_df["lon"] = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None))[1])
+            _coords = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None)))
+            map_df["lat"] = _coords.map(lambda c: c[0])
+            map_df["lon"] = _coords.map(lambda c: c[1])
             map_valid = map_df.dropna(subset=["lat", "lon"])
 
             if map_valid.empty:
