@@ -133,10 +133,16 @@ def load_mhlw_byosho(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
     if code_col:
         group_keys = [code_col] + group_keys
 
-    # 機能区分 × 病院 でピボット集計
-    agg_kyoka  = df.groupby(group_keys + [func_col])["_許可病床計"].sum().unstack(fill_value=0)
-    agg_kado   = df.groupby(group_keys + [func_col])["_最大使用計"].sum().unstack(fill_value=0)
-    agg_zaitou = df.groupby(group_keys + [func_col])["_在棟延べ数"].sum().unstack(fill_value=0)
+    # 機能区分 × 病院 でピボット集計（1回の groupby で3指標を同時に取得）
+    agg = (
+        df.groupby(group_keys + [func_col])[["_許可病床計", "_最大使用計", "_在棟延べ数"]]
+        .sum()
+        .unstack(fill_value=0)
+    )
+    # MultiIndex 列を (指標, 機能区分) → 機能区分ごとに参照できるよう整理
+    agg_kyoka  = agg["_許可病床計"]
+    agg_kado   = agg["_最大使用計"]
+    agg_zaitou = agg["_在棟延べ数"]
 
     result = pd.DataFrame(index=agg_kyoka.index)
 
