@@ -905,8 +905,8 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
 
     # ── ① 病院名キーワード検索（メイン） ──
     st.markdown(
-        "<div style='font-size:0.8rem;font-weight:700;color:#374151;"
-        "margin-bottom:6px;'>🔍 病院名で探す</div>",
+        "<p style='font-size:1.05rem;font-weight:700;color:#111827;"
+        "margin:0 0 10px;'>🔍 病院名で探す</p>",
         unsafe_allow_html=True,
     )
     _lnd_kw = st.text_input(
@@ -948,8 +948,8 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
 
         with _la:
             st.markdown(
-                "<div style='font-size:0.8rem;font-weight:700;color:#374151;"
-                "margin-bottom:6px;'>📋 地域から選ぶ</div>",
+                "<p style='font-size:1.05rem;font-weight:700;color:#111827;"
+                "margin:0 0 10px;'>📋 地域から探す</p>",
                 unsafe_allow_html=True,
             )
             _lnd_years = sorted(_lnd_df["報告年度"].dropna().unique(), reverse=True)
@@ -986,8 +986,8 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
 
         with _lb:
             st.markdown(
-                "<div style='font-size:0.8rem;font-weight:700;color:#374151;"
-                "margin-bottom:6px;'>🔧 条件で一括検索</div>",
+                "<p style='font-size:1.05rem;font-weight:700;color:#111827;"
+                "margin:0 0 10px;'>🔧 条件で探す</p>",
                 unsafe_allow_html=True,
             )
             st.markdown(
