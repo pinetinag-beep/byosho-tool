@@ -168,17 +168,17 @@ def share_bar(region_df: pd.DataFrame, highlight: str) -> go.Figure:
 
 
 _COL_FMT = {
-    "合計_許可病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
-    "合計_稼働病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "合計_許可病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
+    "合計_稼働病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "地域シェア(%)":    lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str) + "%",
     "合計稼働率":       lambda s: (pd.to_numeric(s, errors="coerce") * 100).round(1).astype(str) + "%",
-    "常勤医師数":       lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
-    "常勤看護師数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "常勤医師数":       lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
+    "常勤看護師数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "医師数_per100床":  lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str),
     "看護師数_per100床": lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str),
-    "救急搬送件数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
-    "CT台数":           lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
-    "MRI台数":          lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).astype(str),
+    "救急搬送件数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
+    "CT台数":           lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
+    "MRI台数":          lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
 }
 
 

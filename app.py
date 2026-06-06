@@ -1775,7 +1775,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             "許可病床数":     st.column_config.NumberColumn("許可病床", format="%,d 床"),
             "高度急性期床":   st.column_config.NumberColumn("高度急性期", format="%,d 床"),
             "手術総数":       st.column_config.NumberColumn("手術", format="%,d 件"),
-            "常勤医師数":     st.column_config.NumberColumn("医師", format="%d 人"),
+            "常勤医師数":     st.column_config.NumberColumn("医師", format="%,d 人"),
         },
     )
 
@@ -2540,7 +2540,7 @@ with tab6:
                     _adm_tbl,
                     hide_index=True,
                     use_container_width=True,
-                    column_config={"件数（人）": st.column_config.NumberColumn(format="%d 人")},
+                    column_config={"件数（人）": st.column_config.NumberColumn(format="%,d 人")},
                 )
 
             with c2:
@@ -2564,7 +2564,7 @@ with tab6:
                     _dis_tbl,
                     hide_index=True,
                     use_container_width=True,
-                    column_config={"件数（人）": st.column_config.NumberColumn(format="%d 人")},
+                    column_config={"件数（人）": st.column_config.NumberColumn(format="%,d 人")},
                 )
 
             st.markdown('<div class="section-header">在宅復帰率</div>', unsafe_allow_html=True)
@@ -2714,7 +2714,10 @@ with tab6:
 
                 tbl = region_surg[["医療機関名", "手術総数", "全身麻酔手術数", "シェア(%)", "全身麻酔率(%)"]].sort_values("手術総数", ascending=False).reset_index(drop=True)
                 tbl.index += 1
-                st.dataframe(tbl, use_container_width=True)
+                st.dataframe(tbl, use_container_width=True, column_config={
+                    "手術総数":     st.column_config.NumberColumn(format="%,d 件"),
+                    "全身麻酔手術数": st.column_config.NumberColumn(format="%,d 件"),
+                })
             else:
                 st.info("この二次医療圏の手術データがありません。")
 
