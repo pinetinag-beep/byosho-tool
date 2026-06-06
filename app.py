@@ -629,7 +629,7 @@ with st.sidebar:
                 if _matched.empty:
                     st.caption("🔎 見つかりませんでした")
                 else:
-                    st.caption(f"**{len(_matched)}件**（{_latest_year}年度）")
+                    st.caption(f"**{len(_matched):,}件**（{_latest_year}年度）")
                     for _i, (_, _mrow) in enumerate(_matched.head(12).iterrows()):
                         if st.button(
                             f"🏥 {_mrow['医療機関名']}",
@@ -646,7 +646,7 @@ with st.sidebar:
                             st.session_state["_hospital_chosen"] = True
                             st.rerun()
                     if len(_matched) > 12:
-                        st.caption(f"… 他 {len(_matched)-12}件（絞り込んでください）")
+                        st.caption(f"… 他 {len(_matched)-12:,}件（絞り込んでください）")
             else:
                 st.caption("病院名の一部を入力してください")
 
@@ -1371,23 +1371,23 @@ if st.session_state.get("_view_mode") == "search":
     st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
 
     _col_cfg = {
-        "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%d 床"),
-        "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%d 台"),
-        "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%d 台"),
-        "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%d 台"),
-        "MRI_3T以上":       st.column_config.NumberColumn("MRI 3T以上",       format="%d 台"),
-        "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%d 台"),
-        "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%d 台"),
-        "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%d 台"),
+        "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%,d 床"),
+        "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%,d 台"),
+        "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%,d 台"),
+        "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%,d 台"),
+        "MRI_3T以上":       st.column_config.NumberColumn("MRI 3T以上",       format="%,d 台"),
+        "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%,d 台"),
+        "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%,d 台"),
+        "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%,d 台"),
     }
     for _c in _sshow:
-        _col_cfg[_c] = st.column_config.NumberColumn(format="%d 件")
+        _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 件")
     for _c in _organ_show:
         _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
-        _col_cfg[_c] = st.column_config.NumberColumn(_label, format="%d 件")
+        _col_cfg[_c] = st.column_config.NumberColumn(_label, format="%,d 件")
     for _c in _eshow:
         if _c not in _col_cfg:
-            _col_cfg[_c] = st.column_config.NumberColumn(format="%d 台")
+            _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
 
     st.dataframe(result_s, hide_index=True, use_container_width=True, column_config=_col_cfg)
 
@@ -1427,7 +1427,7 @@ if st.session_state.get("_view_mode") == "search":
                         st.rerun()
 
         if len(_nav_hospitals) > 30:
-            st.caption(f"※ 先頭30件を表示。全{len(_nav_hospitals)}件はCSVをダウンロードしてください。")
+            st.caption(f"※ 先頭30件を表示。全{len(_nav_hospitals):,}件はCSVをダウンロードしてください。")
 
     # 検索モードはここで終了
     st.stop()
@@ -1569,7 +1569,7 @@ if st.session_state.get("_view_mode") == "region_vision":
                 "🔴 地域急性期",
                 f"急性期系病床 {acute_r*100:.0f}%（{int(beds*acute_r):,}床）。"
                 f"地域急性期機能を担いつつ、急性期拠点病院との役割分担・連携強化が重要。"
-                f"{'手術実績 ' + str(surg_cnt) + '件/年。' if surg_cnt > 0 else ''}"
+                f"{f'手術実績 {surg_cnt:,}件/年。' if surg_cnt > 0 else ''}"
             )
 
         # 高齢者救急: 急性期と回復期を両方持ち高齢患者対応に適した構成
@@ -1601,7 +1601,7 @@ if st.session_state.get("_view_mode") == "region_vision":
         if beds < 100:
             return (
                 "🏠 専門・外来特化",
-                f"小規模（{beds}床）。外来・専門診療への特化や在宅支援機能の強化、"
+                f"小規模（{beds:,}床）。外来・専門診療への特化や在宅支援機能の強化、"
                 f"大病院との連携・後方ベッドとしての役割が有効。"
             )
 
@@ -1661,7 +1661,7 @@ if st.session_state.get("_view_mode") == "region_vision":
     _rvc1, _rvc2, _rvc3, _rvc4 = st.columns(4)
     _rvc1.metric(
         "地域内病院数",
-        f"{_n_hosp_rv} 病院",
+        f"{_n_hosp_rv:,} 病院",
         f"許可病床計 {_rv_beds_total:,}床",
         help="選択中の二次医療圏・年度のデータ（病床機能報告）",
     )
@@ -1679,7 +1679,7 @@ if st.session_state.get("_view_mode") == "region_vision":
     )
     _rv_doc_sub = (
         f"地域計 {_rv_docs_total:,}人"
-        + (f"（{_rv_docs_reported}/{_n_hosp_rv}病院が報告）" if _rv_docs_reported < _n_hosp_rv else f"（{_rv_docs_reported}病院）")
+        + (f"（{_rv_docs_reported:,}/{_n_hosp_rv:,}病院が報告）" if _rv_docs_reported < _n_hosp_rv else f"（{_rv_docs_reported:,}病院）")
     )
     _rvc4.metric(
         "医師密度（100床あたり）",
@@ -1772,9 +1772,9 @@ if st.session_state.get("_view_mode") == "region_vision":
             "③手術実績":     st.column_config.ProgressColumn("③手術(25)", max_value=25, format="%d"),
             "④医師密度":     st.column_config.ProgressColumn("④医師密度(20)", max_value=20, format="%d"),
             "⑤高度設備":     st.column_config.ProgressColumn("⑤設備(10)", max_value=10, format="%d"),
-            "許可病床数":     st.column_config.NumberColumn("許可病床", format="%d 床"),
-            "高度急性期床":   st.column_config.NumberColumn("高度急性期", format="%d 床"),
-            "手術総数":       st.column_config.NumberColumn("手術", format="%d 件"),
+            "許可病床数":     st.column_config.NumberColumn("許可病床", format="%,d 床"),
+            "高度急性期床":   st.column_config.NumberColumn("高度急性期", format="%,d 床"),
+            "手術総数":       st.column_config.NumberColumn("手術", format="%,d 件"),
             "常勤医師数":     st.column_config.NumberColumn("医師", format="%d 人"),
         },
     )
@@ -1926,7 +1926,7 @@ if st.session_state.get("_view_mode") == "region_vision":
 
         _surg_txt = f" | 手術 {_surg_r:,}件/年" if _surg_r > 0 else ""
         _docs_r   = _si(_rr.get("常勤医師数", 0))
-        _docs_txt = f" | 医師 {_docs_r}人" if _docs_r > 0 else ""
+        _docs_txt = f" | 医師 {_docs_r:,}人" if _docs_r > 0 else ""
 
         st.markdown(f"""
         <div style="border-left:4px solid {_bc_r}; padding:10px 14px; margin:8px 0;
@@ -2001,8 +2001,8 @@ if st.session_state.get("_view_mode") == "region_vision":
             hide_index=True,
             use_container_width=True,
             column_config={
-                "現状（床）":      st.column_config.NumberColumn(format="%d 床"),
-                "2040年試算（床）": st.column_config.NumberColumn(format="%d 床"),
+                "現状（床）":      st.column_config.NumberColumn(format="%,d 床"),
+                "2040年試算（床）": st.column_config.NumberColumn(format="%,d 床"),
                 "増減（床）":      st.column_config.NumberColumn(format="%+d 床"),
             },
         )
@@ -2177,7 +2177,7 @@ kpi_card(m1, "許可病床数",  f"{total_kyoka:,}床",         kado_sub,       
 kpi_card(m2, "総稼働率",    f"{_occ_pct:.1f}%",           "",                      color=_occ_color)
 kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_df)}院中", color="#8b5cf6")
 kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース",       color="#0ea5e9")
-kpi_card(m5, "常勤医師数",  f"{doctors}人",               f"看護師 {nurses}人",     color="#14b8a6")
+kpi_card(m5, "常勤医師数",  f"{doctors:,}人",               f"看護師 {nurses:,}人",     color="#14b8a6")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2235,7 +2235,7 @@ with tab1:
             hide_index=True,
             use_container_width=True,
             column_config={
-                "許可病床数（床）": st.column_config.NumberColumn(format="%d 床"),
+                "許可病床数（床）": st.column_config.NumberColumn(format="%,d 床"),
             },
         )
 
@@ -2446,7 +2446,7 @@ with tab4:
             )
             if "常勤医師数" in trend_df.columns:
                 delta_doc = int(last_y["常勤医師数"]) - int(first_y["常勤医師数"])
-                sc3.metric("常勤医師数変化", f"{int(last_y['常勤医師数'])}人", f"{delta_doc:+,}人")
+                sc3.metric("常勤医師数変化", f"{int(last_y['常勤医師数']):,}人", f"{delta_doc:+,}人")
 
 
 # ── TAB 5: スタッフ分析 ────────────────────────────────────
