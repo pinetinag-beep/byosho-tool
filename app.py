@@ -820,7 +820,9 @@ if st.session_state.df is None:
 
 # ── 病院未選択: ランディング画面 ──────────────────────────────
 
-if not st.session_state.get("_hospital_chosen"):
+# 病院未選択 かつ 詳細表示モードの時だけランディング画面を表示
+# （条件検索モードは _hospital_chosen=False でも通過させる）
+if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_mode", "detail") == "detail":
     _lnd_df   = st.session_state.df
     _lnd_n    = len(_lnd_df["医療機関名"].unique())
     _lnd_pref = len(_lnd_df["都道府県名"].unique())
@@ -838,20 +840,27 @@ if not st.session_state.get("_hospital_chosen"):
   <p style="font-size:1rem;color:#6b7280;margin:0 0 32px;line-height:1.6;">
     全国の病院データをもとに、病床構成・稼働率・スタッフ配置を<br>直感的に比較・分析できます。
   </p>
-  <div style="display:inline-flex;gap:24px;justify-content:center;flex-wrap:wrap;">
+  <div style="display:inline-flex;gap:32px;justify-content:center;flex-wrap:wrap;
+              background:#f9fafb;border-radius:16px;padding:20px 36px;margin-top:4px;">
     <div style="text-align:center;">
-      <div style="font-size:2rem;font-weight:900;color:#3b82f6;">{_lnd_n:,}</div>
-      <div style="font-size:0.75rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;">病院</div>
+      <span style="display:block;font-size:2.2rem;font-weight:900;
+                   color:#2563eb;line-height:1;font-family:sans-serif;">{_lnd_n:,}</span>
+      <span style="display:block;font-size:0.72rem;color:#9ca3af;
+                   text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">病院</span>
     </div>
-    <div style="width:1px;background:#e5e7eb;"></div>
+    <div style="width:1px;background:#e5e7eb;align-self:stretch;"></div>
     <div style="text-align:center;">
-      <div style="font-size:2rem;font-weight:900;color:#3b82f6;">{_lnd_pref}</div>
-      <div style="font-size:0.75rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;">都道府県</div>
+      <span style="display:block;font-size:2.2rem;font-weight:900;
+                   color:#2563eb;line-height:1;font-family:sans-serif;">{_lnd_pref}</span>
+      <span style="display:block;font-size:0.72rem;color:#9ca3af;
+                   text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">都道府県</span>
     </div>
-    <div style="width:1px;background:#e5e7eb;"></div>
+    <div style="width:1px;background:#e5e7eb;align-self:stretch;"></div>
     <div style="text-align:center;">
-      <div style="font-size:2rem;font-weight:900;color:#3b82f6;">{_lnd_ymin}–{_lnd_ymax}</div>
-      <div style="font-size:0.75rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;">年度</div>
+      <span style="display:block;font-size:2.2rem;font-weight:900;
+                   color:#2563eb;line-height:1;font-family:sans-serif;">{_lnd_ymin}–{_lnd_ymax}</span>
+      <span style="display:block;font-size:0.72rem;color:#9ca3af;
+                   text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">年度</span>
     </div>
   </div>
 </div>
