@@ -67,6 +67,44 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
+
+def _render_nav_bar(mode: str, pref: str = "", region: str = "", hospital: str = "") -> None:
+    """DETAIL / SEARCH / REGION_VISION 共通のナビゲーションバー（メインエリア最上部）"""
+    _sep = "<span style='color:#d1d5db;margin:0 6px;'>›</span>"
+    if mode == "detail":
+        _crumb = (
+            f"{_sep}{pref}{_sep}{region}"
+            f"{_sep}<strong style='color:#111827'>{hospital}</strong>"
+        )
+    elif mode == "search":
+        _crumb = f"{_sep}<strong style='color:#111827'>条件検索</strong>"
+    elif mode == "region_vision":
+        _crumb = (
+            f"{_sep}<strong style='color:#111827'>地域医療構想</strong>"
+            f"{_sep}{pref}　{region}"
+        )
+    else:
+        _crumb = ""
+
+    _nb1, _nb2 = st.columns([1.4, 8.6])
+    with _nb1:
+        if st.button("🏠 ホーム", key=f"_navhome_{mode}", type="secondary",
+                     use_container_width=True):
+            st.session_state["_hospital_chosen"] = False
+            st.session_state["_view_mode"] = "detail"
+            st.rerun()
+    with _nb2:
+        st.markdown(
+            f"<div style='padding:7px 0 0;font-size:0.82rem;color:#9ca3af;'>"
+            f"ホーム{_crumb}</div>",
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        "<hr style='margin:6px 0 18px;border:none;border-top:1px solid #f3f4f6;'>",
+        unsafe_allow_html=True,
+    )
+
+
 st.markdown("""
 <style>
 /* ── KPIカード ── */
@@ -627,11 +665,7 @@ with st.sidebar:
         with _tab_search:
             _is_search = st.session_state.get("_view_mode") == "search"
             if _is_search:
-                st.success("条件検索モード中")
-                if st.button("← 病院詳細に戻る", use_container_width=True,
-                             type="secondary", key="_search_back_btn"):
-                    st.session_state["_view_mode"] = "detail"
-                    st.rerun()
+                st.info("条件検索モード中\n\nメインエリアの「🏠 ホーム」ボタンでホームに戻れます")
             else:
                 st.caption("手術件数・設備条件で病院を絞り込み")
                 if st.button("条件検索を開く →", use_container_width=True,
@@ -958,6 +992,7 @@ hospital = sel_hospital
 
 if st.session_state.get("_view_mode") == "search":
 
+    _render_nav_bar("search")
     st.markdown("## 🔧 詳細条件で病院を検索")
     st.caption("手術件数・医療設備の条件で全国の病院を絞り込んで一覧表示します")
 
@@ -1354,6 +1389,8 @@ if st.session_state.get("_view_mode") == "region_vision":
     _rv_year   = int(st.session_state.get("_rv_sel_year",  year))
     _rv_pref   = str(st.session_state.get("_rv_sel_pref",  pref))
     _rv_region = str(st.session_state.get("_rv_sel_region", region))
+
+    _render_nav_bar("region_vision", pref=_rv_pref, region=_rv_region)
 
     # ── ヘッダー
     st.markdown(f"## 🗺️ {_rv_region} 地域医療構想分析")
@@ -1985,6 +2022,8 @@ else:
     trend_df = df[df["医療機関名"] == hospital].copy()
     trend_df = add_derived_columns(trend_df).sort_values("報告年度")
 
+
+_render_nav_bar("detail", pref=pref, region=region, hospital=hospital)
 
 # ── ページヘッダー ─────────────────────────────────────────
 
