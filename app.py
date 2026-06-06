@@ -968,16 +968,21 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
                     (_lnd_df["二次医療圏名"] == _lnd_sel_region)
                 ]["医療機関名"].sort_values().tolist()
             )
-            _lnd_sel_hosp = st.selectbox("医療機関名", _lnd_hosps, key="_lnd_hosp")
-            if st.button("この病院の詳細を見る →", type="primary", use_container_width=True,
-                         key="_lnd_region_go"):
-                st.session_state["_sel_year"]       = _lnd_sel_year
-                st.session_state["_sel_pref"]       = _lnd_sel_pref
-                st.session_state["_sel_region"]     = _lnd_sel_region
-                st.session_state["_sel_hospital"]   = _lnd_sel_hosp
-                st.session_state["_hospital_chosen"] = True
-                st.session_state["_view_mode"]      = "detail"
-                st.rerun()
+            if _lnd_hosps:
+                _lnd_sel_hosp = st.selectbox("医療機関名", _lnd_hosps, key="_lnd_hosp")
+                if st.button("この病院の詳細を見る →", type="primary", use_container_width=True,
+                             key="_lnd_region_go"):
+                    st.session_state["_nav_jump"] = {
+                        "year":     int(_lnd_sel_year),
+                        "pref":     str(_lnd_sel_pref),
+                        "region":   str(_lnd_sel_region),
+                        "hospital": str(_lnd_sel_hosp),
+                    }
+                    st.session_state["_hospital_chosen"] = True
+                    st.session_state["_view_mode"]      = "detail"
+                    st.rerun()
+            else:
+                st.caption("この年度・地域のデータがありません")
 
         with _lb:
             st.markdown(
