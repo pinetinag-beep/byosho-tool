@@ -1182,23 +1182,21 @@ if st.session_state.get("_view_mode") == "search":
 
     if _surg_state is not None and not _surg_state.empty:
         _sy = _surg_state[_surg_state["報告年度"] == s_year] if "報告年度" in _surg_state.columns else _surg_state
-        _avail = [c for c in _surg_cols_all if c in _sy.columns]
-        if _avail:
-            _join = "医療機関コード" if ("医療機関コード" in _sy.columns and "医療機関コード" in s_df.columns) else "医療機関名"
-            _sy_m = _sy[[_join] + _avail].copy()
-            _sy_m[_join] = _sy_m[_join].astype(str).str.strip()
-            if _join == "医療機関コード" and "医療機関コード" in s_df.columns:
-                s_df = s_df.copy()
-                s_df["医療機関コード"] = s_df["医療機関コード"].astype(str).str.strip()
-            s_df = s_df.merge(
-                _sy_m.drop_duplicates(_join),
-                on=_join, how="left", suffixes=("", "_sy"),
-            )
-        for c in _avail:
-            s_df[c] = pd.to_numeric(s_df[c], errors="coerce").fillna(0).astype(int)
-    else:
-        for c in _surg_cols_all:
-            s_df[c] = 0
+        if not _sy.empty:
+            _avail = [c for c in _surg_cols_all if c in _sy.columns]
+            if _avail:
+                _join = "医療機関コード" if ("医療機関コード" in _sy.columns and "医療機関コード" in s_df.columns) else "医療機関名"
+                _sy_m = _sy[[_join] + _avail].copy()
+                _sy_m[_join] = _sy_m[_join].astype(str).str.strip()
+                if _join == "医療機関コード" and "医療機関コード" in s_df.columns:
+                    s_df = s_df.copy()
+                    s_df["医療機関コード"] = s_df["医療機関コード"].astype(str).str.strip()
+                s_df = s_df.merge(
+                    _sy_m.drop_duplicates(_join),
+                    on=_join, how="left", suffixes=("", "_sy"),
+                )
+            for c in _avail:
+                s_df[c] = pd.to_numeric(s_df[c], errors="coerce").fillna(0).astype(int)
 
     # ── 臓器別手術フィルター ──
     _organ_prefix = "全麻_" if s_surg_mode == "全身麻酔の手術" else "手術_"
@@ -1218,9 +1216,22 @@ if st.session_state.get("_view_mode") == "search":
     ]
 
     _organ_cols_exist = any(f"手術_{lb}" in s_df.columns for lb in _ORGAN_LABELS)
+    _shiki_cols_exist = any(c in s_df.columns for c in ["ロボット支援手術数", "腹腔鏡下手術数", "胸腔鏡下手術数"])
     _any_organ_checked = any(ck for ck, _ in _organ_checks)
+    _any_shiki_checked = s_ck_robot_s or s_ck_fuku or s_ck_kyou
 
-    if _any_organ_checked and not _organ_cols_exist:
+    _surg_filter_used = _any_organ_checked or _any_shiki_checked
+    _surg_no_data = _surg_state is None or (hasattr(_surg_state, "empty") and _surg_state.empty)
+    _surg_no_year = (
+        not _surg_no_data
+        and "報告年度" in _surg_state.columns
+        and (not (_surg_state["報告年度"] == s_year).any())
+    )
+
+    if _surg_filter_used and (_surg_no_data or _surg_no_year):
+        _reason = f"{s_year}年度の手術データがありません" if _surg_no_year else "手術データが読み込まれていません"
+        st.warning(f"⚠️ {_reason}。手術フィルターは無効です（絞り込みは行われません）。")
+    elif _any_organ_checked and not _organ_cols_exist:
         st.warning(
             "⚠️ 臓器別の手術データはまだ読み込まれていません。\n\n"
             "**「起動_build.bat」を再実行**して DuckDB を再ビルドしてください。"
