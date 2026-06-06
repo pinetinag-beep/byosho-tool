@@ -828,82 +828,118 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
     _lnd_pref = len(_lnd_df["都道府県名"].unique())
     _lnd_ymin = int(_lnd_df["報告年度"].min())
     _lnd_ymax = int(_lnd_df["報告年度"].max())
+    _lnd_latest = int(_lnd_df["報告年度"].max())
 
+    # ── ヒーロー ──
     st.markdown(
         f"""
-<div style="text-align:center;padding:48px 0 32px;">
-  <p style="font-size:0.85rem;color:#6b7280;font-weight:600;letter-spacing:0.12em;
-             text-transform:uppercase;margin-bottom:10px;">厚生労働省 病床機能報告</p>
-  <h1 style="font-size:2.2rem;font-weight:900;color:#111827;margin:0 0 12px;line-height:1.2;">
-    地域の医療提供体制を<br>可視化する
+<div style="text-align:center;padding:40px 0 24px;">
+  <p style="font-size:0.78rem;color:#9ca3af;font-weight:700;letter-spacing:0.14em;
+             text-transform:uppercase;margin-bottom:8px;">厚生労働省 病床機能報告</p>
+  <h1 style="font-size:2.1rem;font-weight:900;color:#111827;margin:0 0 10px;line-height:1.25;">
+    地域の医療提供体制を可視化する
   </h1>
-  <p style="font-size:1rem;color:#6b7280;margin:0 0 32px;line-height:1.6;">
-    全国の病院データをもとに、病床構成・稼働率・スタッフ配置を<br>直感的に比較・分析できます。
+  <p style="font-size:0.95rem;color:#6b7280;margin:0 0 28px;line-height:1.7;">
+    全国 <strong style="color:#2563eb;">{_lnd_n:,}</strong> 病院 ／ {_lnd_pref} 都道府県 ／ {_lnd_ymin}〜{_lnd_ymax}年度
   </p>
-  <div style="display:inline-flex;gap:32px;justify-content:center;flex-wrap:wrap;
-              background:#f9fafb;border-radius:16px;padding:20px 36px;margin-top:4px;">
-    <div style="text-align:center;">
-      <span style="display:block;font-size:2.2rem;font-weight:900;
-                   color:#2563eb;line-height:1;font-family:sans-serif;">{_lnd_n:,}</span>
-      <span style="display:block;font-size:0.72rem;color:#9ca3af;
-                   text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">病院</span>
-    </div>
-    <div style="width:1px;background:#e5e7eb;align-self:stretch;"></div>
-    <div style="text-align:center;">
-      <span style="display:block;font-size:2.2rem;font-weight:900;
-                   color:#2563eb;line-height:1;font-family:sans-serif;">{_lnd_pref}</span>
-      <span style="display:block;font-size:0.72rem;color:#9ca3af;
-                   text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">都道府県</span>
-    </div>
-    <div style="width:1px;background:#e5e7eb;align-self:stretch;"></div>
-    <div style="text-align:center;">
-      <span style="display:block;font-size:2.2rem;font-weight:900;
-                   color:#2563eb;line-height:1;font-family:sans-serif;">{_lnd_ymin}–{_lnd_ymax}</span>
-      <span style="display:block;font-size:0.72rem;color:#9ca3af;
-                   text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">年度</span>
-    </div>
-  </div>
-</div>
-""",
+</div>""",
         unsafe_allow_html=True,
     )
 
-    _lc1, _lc2, _lc3 = st.columns(3)
-    _card_style = (
-        "background:#ffffff;border-radius:14px;padding:24px 20px;"
-        "box-shadow:0 1px 4px rgba(0,0,0,0.07),0 4px 14px rgba(0,0,0,0.05);"
-        "height:100%;"
+    # ── ① 病院名キーワード検索（メイン） ──
+    st.markdown(
+        "<div style='font-size:0.8rem;font-weight:700;color:#374151;"
+        "margin-bottom:6px;'>🔍 病院名で探す</div>",
+        unsafe_allow_html=True,
     )
-    with _lc1:
-        st.markdown(
-            f'<div style="{_card_style}">'
-            '<div style="font-size:1.6rem;margin-bottom:10px;">🔍</div>'
-            '<div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:8px;">病院名で探す</div>'
-            '<div style="font-size:0.85rem;color:#6b7280;line-height:1.6;">'
-            'サイドバーの「🔍 名前」タブに病院名の一部を入力してください。'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
-    with _lc2:
-        st.markdown(
-            f'<div style="{_card_style}">'
-            '<div style="font-size:1.6rem;margin-bottom:10px;">📋</div>'
-            '<div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:8px;">地域から絞り込む</div>'
-            '<div style="font-size:0.85rem;color:#6b7280;line-height:1.6;">'
-            '「📋 地域」タブで都道府県 › 二次医療圏 › 医療機関名を順に選択してください。'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
-    with _lc3:
-        st.markdown(
-            f'<div style="{_card_style}">'
-            '<div style="font-size:1.6rem;margin-bottom:10px;">🔧</div>'
-            '<div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:8px;">条件で一括検索</div>'
-            '<div style="font-size:0.85rem;color:#6b7280;line-height:1.6;">'
-            '「🔧 条件」タブから手術件数・設備条件で全国の病院を絞り込み検索できます。'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
+    _lnd_kw = st.text_input(
+        "病院名で探す",
+        placeholder="例：大学病院、旭川、聖路加",
+        key="_lnd_kw",
+        label_visibility="collapsed",
+    )
+    if _lnd_kw:
+        _lnd_norm = _normalize_name(_lnd_kw)
+        _lnd_latest_df = _lnd_df[_lnd_df["報告年度"] == _lnd_latest].copy()
+        _lnd_latest_df["_norm"] = _lnd_latest_df["医療機関名"].apply(_normalize_name)
+        _lnd_hits = _lnd_latest_df[_lnd_latest_df["_norm"].str.contains(_lnd_norm, na=False)]
+        if _lnd_hits.empty:
+            st.info("一致する病院が見つかりませんでした")
+        else:
+            st.caption(f"{len(_lnd_hits):,}件ヒット（{_lnd_latest}年度）")
+            for _li, (_, _lr) in enumerate(_lnd_hits.head(10).iterrows()):
+                if st.button(
+                    f"🏥 {_lr['医療機関名']}　　{_lr['都道府県名']} {_lr['二次医療圏名']}",
+                    key=f"_lnd_btn_{_li}",
+                    use_container_width=True,
+                ):
+                    st.session_state["_nav_jump"] = {
+                        "year": int(_lr["報告年度"]),
+                        "pref": str(_lr["都道府県名"]),
+                        "region": str(_lr["二次医療圏名"]),
+                        "hospital": str(_lr["医療機関名"]),
+                    }
+                    st.session_state["_hospital_chosen"] = True
+                    st.session_state["_view_mode"] = "detail"
+                    st.rerun()
+            if len(_lnd_hits) > 10:
+                st.caption(f"… 他 {len(_lnd_hits)-10:,}件。もっと絞り込んでください。")
+    else:
+        # ── ② 地域から選ぶ ／ ③ 条件検索 ──
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        _la, _lb = st.columns([3, 2])
+
+        with _la:
+            st.markdown(
+                "<div style='font-size:0.8rem;font-weight:700;color:#374151;"
+                "margin-bottom:6px;'>📋 地域から選ぶ</div>",
+                unsafe_allow_html=True,
+            )
+            _lnd_years = sorted(_lnd_df["報告年度"].dropna().unique(), reverse=True)
+            _lnd_sel_year = st.selectbox("年度", [int(y) for y in _lnd_years], key="_lnd_year")
+            _lnd_all_prefs = _sort_prefs(_lnd_df["都道府県名"].unique())
+            _lnd_sel_pref = st.selectbox("都道府県", _lnd_all_prefs, key="_lnd_pref")
+            _lnd_regions = sorted(
+                r for r in _lnd_df[_lnd_df["都道府県名"] == _lnd_sel_pref]["二次医療圏名"].unique()
+                if r != "不明"
+            )
+            _lnd_sel_region = st.selectbox("二次医療圏", _lnd_regions, key="_lnd_region")
+            _lnd_hosps = (
+                _lnd_df[
+                    (_lnd_df["報告年度"] == _lnd_sel_year) &
+                    (_lnd_df["都道府県名"] == _lnd_sel_pref) &
+                    (_lnd_df["二次医療圏名"] == _lnd_sel_region)
+                ]["医療機関名"].sort_values().tolist()
+            )
+            _lnd_sel_hosp = st.selectbox("医療機関名", _lnd_hosps, key="_lnd_hosp")
+            if st.button("この病院の詳細を見る →", type="primary", use_container_width=True,
+                         key="_lnd_region_go"):
+                st.session_state["_sel_year"]       = _lnd_sel_year
+                st.session_state["_sel_pref"]       = _lnd_sel_pref
+                st.session_state["_sel_region"]     = _lnd_sel_region
+                st.session_state["_sel_hospital"]   = _lnd_sel_hosp
+                st.session_state["_hospital_chosen"] = True
+                st.session_state["_view_mode"]      = "detail"
+                st.rerun()
+
+        with _lb:
+            st.markdown(
+                "<div style='font-size:0.8rem;font-weight:700;color:#374151;"
+                "margin-bottom:6px;'>🔧 条件で一括検索</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "<div style='font-size:0.85rem;color:#6b7280;line-height:1.65;margin-bottom:16px;'>"
+                "手術件数・CT/MRI保有・スタッフ数などの条件で"
+                "全国の病院を絞り込んで一覧表示します。"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("条件で一括検索を開く →", type="primary", use_container_width=True,
+                         key="_lnd_search_go"):
+                st.session_state["_view_mode"] = "search"
+                st.rerun()
+
     st.stop()
 
 
