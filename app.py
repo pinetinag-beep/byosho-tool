@@ -429,6 +429,9 @@ if "_view_mode" not in st.session_state:
     st.session_state["_view_mode"] = "detail"
 if "_sb_open" not in st.session_state:
     st.session_state["_sb_open"] = "③"
+# ユーザーが病院を明示的に選択したかどうか
+if "_hospital_chosen" not in st.session_state:
+    st.session_state["_hospital_chosen"] = False
 
 
 # ── NaN → int ヘルパー ─────────────────────────────────────
@@ -508,11 +511,12 @@ with st.sidebar:
         # ナビゲーションジャンプを最初に処理
         _nav = st.session_state.pop("_nav_jump", None)
         if _nav:
-            st.session_state["_sel_year"]     = int(_nav["year"])
-            st.session_state["_sel_pref"]     = str(_nav["pref"])
-            st.session_state["_sel_region"]   = str(_nav["region"])
-            st.session_state["_sel_hospital"] = str(_nav["hospital"])
-            st.session_state["_nav_done"]     = str(_nav["hospital"])
+            st.session_state["_sel_year"]       = int(_nav["year"])
+            st.session_state["_sel_pref"]       = str(_nav["pref"])
+            st.session_state["_sel_region"]     = str(_nav["region"])
+            st.session_state["_sel_hospital"]   = str(_nav["hospital"])
+            st.session_state["_nav_done"]       = str(_nav["hospital"])
+            st.session_state["_hospital_chosen"] = True
             st.rerun()
 
         # ── 現在選択中の病院（常時表示） ──
@@ -571,7 +575,8 @@ with st.sidebar:
                                 "region":   str(_mrow["二次医療圏名"]),
                                 "hospital": str(_mrow["医療機関名"]),
                             }
-                            st.session_state["_view_mode"] = "detail"
+                            st.session_state["_view_mode"]      = "detail"
+                            st.session_state["_hospital_chosen"] = True
                             st.rerun()
                     if len(_matched) > 12:
                         st.caption(f"… 他 {len(_matched)-12}件（絞り込んでください）")
@@ -603,7 +608,12 @@ with st.sidebar:
             ]["医療機関名"].sort_values().tolist()
             if st.session_state.get("_sel_hospital") not in _hosps:
                 st.session_state["_sel_hospital"] = _hosps[0] if _hosps else None
-            st.selectbox("医療機関名", _hosps, key="_sel_hospital")
+
+            def _on_hospital_select():
+                st.session_state["_hospital_chosen"] = True
+
+            st.selectbox("医療機関名", _hosps, key="_sel_hospital",
+                         on_change=_on_hospital_select)
 
             if "_nav_done" in st.session_state:
                 st.success(f"✅ {st.session_state.pop('_nav_done')}")
@@ -800,6 +810,35 @@ if st.session_state.df is None:
 - 厚生労働省 病床機能報告 CSVファイル
 - 独自整備のExcelファイル（列名が一致する場合）
         """)
+    st.stop()
+
+
+# ── 病院未選択: ランディング画面 ──────────────────────────────
+
+if not st.session_state.get("_hospital_chosen"):
+    st.markdown("## 🏥 病床機能報告 分析・比較ツール")
+    st.caption("厚生労働省「病床機能報告」データをもとに、地域の医療提供体制を可視化します。")
+    st.divider()
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("#### 🔍 病院を名前で探す")
+        st.markdown("左サイドバーの「🔍 名前」タブに病院名を入力してください。")
+    with c2:
+        st.markdown("#### 📋 地域から絞り込む")
+        st.markdown("「📋 地域」タブで都道府県・二次医療圏・医療機関名を順番に選択してください。")
+    with c3:
+        st.markdown("#### 🔧 条件で一括検索")
+        st.markdown("「🔧 条件」タブから手術件数・設備条件で全国病院を検索できます。")
+
+    st.divider()
+    st.markdown(
+        "<div style='color:#888;font-size:0.82rem;text-align:center;'>"
+        f"データ: {len(st.session_state.df):,} 病院 ｜ "
+        f"{int(st.session_state.df['報告年度'].min())}〜{int(st.session_state.df['報告年度'].max())}年度"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.stop()
 
 
