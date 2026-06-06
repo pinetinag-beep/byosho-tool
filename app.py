@@ -69,19 +69,24 @@ st.markdown("""
 
 st.markdown("""
 <style>
+/* ── KPIカード ── */
 .metric-card {
-    background: #f8f9fa;
-    border-radius: 10px;
-    padding: 16px 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 18px 12px 14px;
     text-align: center;
-    border-left: 4px solid #3498db;
+    border-top: 3px solid #3b82f6;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 14px rgba(0,0,0,0.05);
 }
-.metric-label { font-size: 0.85rem; color: #666; margin-bottom: 4px; }
-.metric-value { font-size: 1.8rem; font-weight: 700; color: #2c3e50; }
-.metric-sub   { font-size: 0.8rem;  color: #999; margin-top: 2px; }
+.metric-label {
+    font-size: 0.7rem; color: #6b7280; margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700;
+}
+.metric-value { font-size: 1.75rem; font-weight: 800; color: #111827; line-height: 1.1; }
+.metric-sub   { font-size: 0.75rem; color: #9ca3af; margin-top: 5px; }
 .section-header {
-    font-size: 1.1rem; font-weight: 600; color: #2c3e50;
-    border-bottom: 2px solid #3498db; padding-bottom: 6px; margin: 20px 0 12px;
+    font-size: 1.05rem; font-weight: 700; color: #111827;
+    border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin: 24px 0 14px;
 }
 /* ── サイドバー 共通 ── */
 div[data-testid="stSidebar"] .stButton button {
@@ -245,10 +250,10 @@ div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"
     }
 
     /* ── KPI カード: 5列を小画面向けに縮小 ── */
-    .metric-card  { padding: 10px 6px !important; }
+    .metric-card  { padding: 10px 6px !important; border-top-width: 2px !important; }
     .metric-value { font-size: 1.1rem !important; }
-    .metric-label { font-size: 0.65rem !important; }
-    .metric-sub   { font-size: 0.6rem  !important; }
+    .metric-label { font-size: 0.6rem !important; }
+    .metric-sub   { font-size: 0.6rem !important; }
 
     /* ── セクションヘッダー ── */
     .section-header { font-size: 0.92rem !important; }
@@ -816,29 +821,80 @@ if st.session_state.df is None:
 # ── 病院未選択: ランディング画面 ──────────────────────────────
 
 if not st.session_state.get("_hospital_chosen"):
-    st.markdown("## 🏥 病床機能報告 分析・比較ツール")
-    st.caption("厚生労働省「病床機能報告」データをもとに、地域の医療提供体制を可視化します。")
-    st.divider()
+    _lnd_df   = st.session_state.df
+    _lnd_n    = len(_lnd_df["医療機関名"].unique())
+    _lnd_pref = len(_lnd_df["都道府県名"].unique())
+    _lnd_ymin = int(_lnd_df["報告年度"].min())
+    _lnd_ymax = int(_lnd_df["報告年度"].max())
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### 🔍 病院を名前で探す")
-        st.markdown("左サイドバーの「🔍 名前」タブに病院名を入力してください。")
-    with c2:
-        st.markdown("#### 📋 地域から絞り込む")
-        st.markdown("「📋 地域」タブで都道府県・二次医療圏・医療機関名を順番に選択してください。")
-    with c3:
-        st.markdown("#### 🔧 条件で一括検索")
-        st.markdown("「🔧 条件」タブから手術件数・設備条件で全国病院を検索できます。")
-
-    st.divider()
     st.markdown(
-        "<div style='color:#888;font-size:0.82rem;text-align:center;'>"
-        f"データ: {len(st.session_state.df):,} 病院 ｜ "
-        f"{int(st.session_state.df['報告年度'].min())}〜{int(st.session_state.df['報告年度'].max())}年度"
-        "</div>",
+        f"""
+<div style="text-align:center;padding:48px 0 32px;">
+  <p style="font-size:0.85rem;color:#6b7280;font-weight:600;letter-spacing:0.12em;
+             text-transform:uppercase;margin-bottom:10px;">厚生労働省 病床機能報告</p>
+  <h1 style="font-size:2.2rem;font-weight:900;color:#111827;margin:0 0 12px;line-height:1.2;">
+    地域の医療提供体制を<br>可視化する
+  </h1>
+  <p style="font-size:1rem;color:#6b7280;margin:0 0 32px;line-height:1.6;">
+    全国の病院データをもとに、病床構成・稼働率・スタッフ配置を<br>直感的に比較・分析できます。
+  </p>
+  <div style="display:inline-flex;gap:24px;justify-content:center;flex-wrap:wrap;">
+    <div style="text-align:center;">
+      <div style="font-size:2rem;font-weight:900;color:#3b82f6;">{_lnd_n:,}</div>
+      <div style="font-size:0.75rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;">病院</div>
+    </div>
+    <div style="width:1px;background:#e5e7eb;"></div>
+    <div style="text-align:center;">
+      <div style="font-size:2rem;font-weight:900;color:#3b82f6;">{_lnd_pref}</div>
+      <div style="font-size:0.75rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;">都道府県</div>
+    </div>
+    <div style="width:1px;background:#e5e7eb;"></div>
+    <div style="text-align:center;">
+      <div style="font-size:2rem;font-weight:900;color:#3b82f6;">{_lnd_ymin}–{_lnd_ymax}</div>
+      <div style="font-size:0.75rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;">年度</div>
+    </div>
+  </div>
+</div>
+""",
         unsafe_allow_html=True,
     )
+
+    _lc1, _lc2, _lc3 = st.columns(3)
+    _card_style = (
+        "background:#ffffff;border-radius:14px;padding:24px 20px;"
+        "box-shadow:0 1px 4px rgba(0,0,0,0.07),0 4px 14px rgba(0,0,0,0.05);"
+        "height:100%;"
+    )
+    with _lc1:
+        st.markdown(
+            f'<div style="{_card_style}">'
+            '<div style="font-size:1.6rem;margin-bottom:10px;">🔍</div>'
+            '<div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:8px;">病院名で探す</div>'
+            '<div style="font-size:0.85rem;color:#6b7280;line-height:1.6;">'
+            'サイドバーの「🔍 名前」タブに病院名の一部を入力してください。'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+    with _lc2:
+        st.markdown(
+            f'<div style="{_card_style}">'
+            '<div style="font-size:1.6rem;margin-bottom:10px;">📋</div>'
+            '<div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:8px;">地域から絞り込む</div>'
+            '<div style="font-size:0.85rem;color:#6b7280;line-height:1.6;">'
+            '「📋 地域」タブで都道府県 › 二次医療圏 › 医療機関名を順に選択してください。'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+    with _lc3:
+        st.markdown(
+            f'<div style="{_card_style}">'
+            '<div style="font-size:1.6rem;margin-bottom:10px;">🔧</div>'
+            '<div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:8px;">条件で一括検索</div>'
+            '<div style="font-size:0.85rem;color:#6b7280;line-height:1.6;">'
+            '「🔧 条件」タブから手術件数・設備条件で全国の病院を絞り込み検索できます。'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
     st.stop()
 
 
@@ -1887,19 +1943,32 @@ else:
 
 # ── ページヘッダー ─────────────────────────────────────────
 
+_h_address = hosp_row.get("住所", "") if isinstance(hosp_row, pd.Series) else ""
+_h_address = "" if str(_h_address) in ("nan", "None", "") else str(_h_address)
+_h_url = hosp_row.get("url", "") if isinstance(hosp_row, pd.Series) else ""
+_h_url = "" if str(_h_url) in ("nan", "None", "") else str(_h_url).strip()
+_addr_part = f"<span>📍 {_h_address}</span>" if _h_address else ""
+_url_part  = f'<a href="{_h_url}" target="_blank" style="color:#3b82f6;text-decoration:none;">🔗 公式サイト</a>' if _h_url else ""
+_meta_parts = " &nbsp;·&nbsp; ".join(p for p in [_addr_part, _url_part] if p)
+
 _hdr_col, _btn_col = st.columns([8, 1])
 with _hdr_col:
-    st.markdown(f"## 🏥 {hospital}")
-    st.caption(f"{year}年度　|　{pref}　{region}")
-    _h_address = hosp_row.get("住所", "") if isinstance(hosp_row, pd.Series) else ""
-    _h_address = "" if str(_h_address) in ("nan", "None", "") else str(_h_address)
-    _h_url = hosp_row.get("url", "") if isinstance(hosp_row, pd.Series) else ""
-    _h_url = "" if str(_h_url) in ("nan", "None", "") else str(_h_url).strip()
-    _addr_html = f"📍 {_h_address}" if _h_address else "📍 －"
-    _url_html  = f'<a href="{_h_url}" target="_blank">🔗 公式サイト</a>' if _h_url else "🔗 －"
     st.markdown(
-        f"<div style='font-size:0.85rem;color:#555;margin-top:2px;'>{_addr_html}</div>"
-        f"<div style='font-size:0.85rem;margin-top:2px;'>{_url_html}</div>",
+        f"""
+<div style="margin-bottom:4px;">
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+    <span style="background:#eff6ff;color:#1d4ed8;border-radius:20px;
+                 padding:2px 10px;font-size:0.75rem;font-weight:700;">{year}年度</span>
+    <span style="color:#d1d5db;font-size:0.8rem;">›</span>
+    <span style="background:#f0fdf4;color:#15803d;border-radius:20px;
+                 padding:2px 10px;font-size:0.75rem;font-weight:700;">{pref}</span>
+    <span style="color:#d1d5db;font-size:0.8rem;">›</span>
+    <span style="background:#fefce8;color:#92400e;border-radius:20px;
+                 padding:2px 10px;font-size:0.75rem;font-weight:700;">{region}</span>
+  </div>
+  <h2 style="font-size:1.65rem;font-weight:800;color:#111827;margin:0 0 6px;line-height:1.25;">{hospital}</h2>
+  <div style="font-size:0.82rem;color:#6b7280;">{_meta_parts}</div>
+</div>""",
         unsafe_allow_html=True,
     )
 with _btn_col:
@@ -1907,18 +1976,19 @@ with _btn_col:
         """
         <style>
         button {
-            background: #f0f2f6;
-            border: 1px solid #d0d3db;
-            border-radius: 6px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
             padding: 6px 14px;
-            font-size: 0.84rem;
-            color: #444;
+            font-size: 0.82rem;
+            color: #374151;
             cursor: pointer;
             float: right;
-            margin-top: 14px;
+            margin-top: 18px;
             font-family: sans-serif;
+            transition: background 0.15s;
         }
-        button:hover { background: #e0e3ea; }
+        button:hover { background: #f3f4f6; border-color: #d1d5db; }
         </style>
         <button onclick="window.parent.print()">🖨️ 印刷</button>
         """,
@@ -1948,19 +2018,27 @@ region_rank_row = region_df[region_df["医療機関名"] == hospital]
 region_rank = int(region_rank_row["地域内順位"].values[0]) if len(region_rank_row) > 0 else "-"
 region_share_val = float(region_rank_row["地域シェア(%)"].values[0]) if len(region_rank_row) > 0 else 0
 
-def kpi_card(col, label, value, sub="", color="#3498db"):
-    col.markdown(f"""
-    <div class="metric-card" style="border-left-color:{color}">
-      <div class="metric-label">{label}</div>
-      <div class="metric-value">{value}</div>
-      <div class="metric-sub">{sub}</div>
-    </div>""", unsafe_allow_html=True)
+def kpi_card(col, label, value, sub="", color="#3b82f6"):
+    col.markdown(
+        f'<div class="metric-card" style="border-top-color:{color};">'
+        f'<div class="metric-label">{label}</div>'
+        f'<div class="metric-value">{value}</div>'
+        f'<div class="metric-sub">{sub}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-kpi_card(m1, "許可病床数", f"{total_kyoka:,}床", kado_sub)
-kpi_card(m2, "総稼働率", f"{occ*100:.1f}%", "")
-kpi_card(m3, "地域内順位", f"{region_rank}位", f"/ {len(region_df)}院中")
-kpi_card(m4, "地域シェア", f"{region_share_val:.1f}%", "許可病床数ベース")
-kpi_card(m5, "常勤医師数", f"{doctors}人", f"看護師 {nurses}人")
+_occ_pct = occ * 100
+_occ_color = (
+    "#10b981" if _occ_pct >= 80 else
+    "#3b82f6" if _occ_pct >= 60 else
+    "#f59e0b" if _occ_pct >= 40 else "#ef4444"
+)
+kpi_card(m1, "許可病床数",  f"{total_kyoka:,}床",         kado_sub,                color="#6366f1")
+kpi_card(m2, "総稼働率",    f"{_occ_pct:.1f}%",           "",                      color=_occ_color)
+kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_df)}院中", color="#8b5cf6")
+kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース",       color="#0ea5e9")
+kpi_card(m5, "常勤医師数",  f"{doctors}人",               f"看護師 {nurses}人",     color="#14b8a6")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
