@@ -5,7 +5,10 @@
   1. locations テーブル（厚労省 医療情報ネット 公式座標）
   2. geocache テーブル（Nominatim でジオコーディングした結果）
 """
+import json
+import math
 import time
+import urllib.request
 import duckdb
 
 
@@ -198,3 +201,95 @@ def geocode_batch(df, db_path: str, progress_cb=None):
         lambda r: results.get((r["医療機関名"], r["都道府県名"]), (None, None))[1], axis=1
     )
     return df
+
+
+# ── 所要時間計算ユーティリティ ────────────────────────────────
+
+
+def geocode_address(text: str) -> tuple[float, float] | None:
+    """住所・ランドマーク文字列を緯度経度に変換（Nominatim）"""
+    from geopy.geocoders import Nominatim
+    geolocator = Nominatim(user_agent="byosho-tool-geocoder/1.0")
+    try:
+        loc = geolocator.geocode(text, timeout=10)
+        if loc:
+            return (loc.latitude, loc.longitude)
+    except Exception:
+        pass
+    return None
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """2点間の直線距離（km）"""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def osrm_durations(
+    origin_lat: float,
+    origin_lon: float,
+    destinations: list[tuple[float, float]],
+    batch_size: int = 300,
+) -> list[float | None]:
+    """
+    OSRM Table API（無料公開サーバー）で出発地→各病院の所要時間（秒）を返す。
+    取得失敗の病院は None。バッチ処理で大量座標に対応。
+    """
+    if not destinations:
+        return []
+
+    results: list[float | None] = []
+    for i in range(0, len(destinations), batch_size):
+        batch = destinations[i : i + batch_size]
+        coords_str = f"{origin_lon},{origin_lat};" + ";".join(
+            f"{lon},{lat}" for lat, lon in batch
+        )
+        dest_indices = ";".join(str(j + 1) for j in range(len(batch)))
+        url = (
+            "https://router.project-osrm.org/table/v1/driving/"
+            f"{coords_str}?sources=0&destinations={dest_indices}"
+        )
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "byosho-tool/1.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read())
+            if data.get("code") == "Ok":
+                results.extend(data["durations"][0])
+            else:
+                results.extend([None] * len(batch))
+        except Exception:
+            results.extend([None] * len(batch))
+
+    return results
+
+
+def load_all_hospital_coords(db_path: str) -> dict[str, tuple[float, float]]:
+    """
+    全病院の座標を {医療機関名: (lat, lon)} で返す。
+    locations テーブル（公式座標）が geocache より優先。
+    """
+    con = duckdb.connect(db_path)
+    _ensure_tables(con)
+    result: dict[str, tuple[float, float]] = {}
+
+    for r in con.execute(
+        "SELECT hospital_name, lat, lon FROM geocache WHERE found = TRUE"
+    ).fetchall():
+        result[r[0]] = (r[1], r[2])
+
+    try:
+        for r in con.execute(
+            "SELECT 施設名, lat, lon FROM locations WHERE lat IS NOT NULL"
+        ).fetchall():
+            if r[0]:
+                result[r[0]] = (r[1], r[2])
+    except Exception:
+        pass
+
+    con.close()
+    return result

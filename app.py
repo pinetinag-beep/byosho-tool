@@ -46,6 +46,15 @@ from charts import (
 )
 from sample_data import generate_sample_data
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_geocode_address(text: str):
+    """住所テキストを緯度経度に変換（1時間キャッシュ）"""
+    try:
+        from geocoder import geocode_address
+        return geocode_address(text)
+    except Exception:
+        return None
+
 # ── ページ設定 ─────────────────────────────────────────────
 
 st.set_page_config(
@@ -1064,6 +1073,30 @@ if st.session_state.get("_view_mode") == "search":
             s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw",
                 help="医療機関名の部分一致検索\n全角/半角・スペース・中点などの表記揺れを自動正規化\nデータ列: 医療機関名")
 
+            st.markdown("---")
+            st.markdown("**🚗 所要時間フィルター**")
+            _tt_db_ok = DB_PATH.exists()
+            if not _tt_db_ok:
+                st.caption("※ DuckDB + 公式座標データがある場合のみ有効")
+            s_tt_addr = st.text_input(
+                "出発地（住所・ランドマーク）",
+                placeholder="例: 東京都新宿区西新宿2丁目8",
+                key="s_tt_addr",
+                disabled=not _tt_db_ok,
+                help="入力した地点からN分以内の病院のみ表示します",
+            )
+            if s_tt_addr and _tt_db_ok:
+                s_tt_mode = st.radio(
+                    "移動手段",
+                    ["車（OSRM）", "公共交通（近似）"],
+                    horizontal=True,
+                    key="s_tt_mode",
+                )
+                s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
+            else:
+                s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
+                s_tt_max  = st.session_state.get("s_tt_max",  30)
+
         with fc2:
             st.markdown("**✂️ 手術**")
             s_surg_mode = st.radio(
@@ -1322,6 +1355,56 @@ if st.session_state.get("_view_mode") == "search":
     if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
         s_df = s_df[pd.to_numeric(s_df["ガンマナイフ台数"], errors="coerce").fillna(0) > 0]
 
+    # ── 所要時間フィルター ──
+    _tt_applied = False
+    _tt_dist_col: dict[str, float] = {}   # {医療機関名: 分}
+    _tt_km_col:   dict[str, float] = {}   # {医療機関名: km}
+    if s_tt_addr and DB_PATH.exists():
+        _origin = _cached_geocode_address(s_tt_addr)
+        if _origin is None:
+            st.warning(f"⚠️ 出発地「{s_tt_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
+        else:
+            _all_coords = load_all_hospital_coords(str(DB_PATH))
+            _hosp_names = s_df["医療機関名"].tolist()
+            _known_pairs = [(n, _all_coords[n]) for n in _hosp_names if n in _all_coords]
+            _no_coord = [n for n in _hosp_names if n not in _all_coords]
+            if _no_coord:
+                st.caption(f"ℹ️ 座標未取得のため除外対象外: {len(_no_coord)}病院")
+
+            if _known_pairs:
+                _dests = [coords for _, coords in _known_pairs]
+                _max_sec = s_tt_max * 60
+
+                if s_tt_mode == "車（OSRM）":
+                    with st.spinner("OSRM で所要時間を計算中..."):
+                        _durations = osrm_durations(_origin[0], _origin[1], _dests)
+                    _transit_note = False
+                else:
+                    _speed_kmph = 25.0
+                    _durations = [
+                        haversine_km(_origin[0], _origin[1], lat, lon) / _speed_kmph * 3600
+                        for lat, lon in _dests
+                    ]
+                    _transit_note = True
+
+                _keep_names: set[str] = set()
+                for (name, (lat, lon)), dur in zip(_known_pairs, _durations):
+                    km = haversine_km(_origin[0], _origin[1], lat, lon)
+                    _tt_km_col[name] = round(km, 1)
+                    if dur is not None:
+                        mins = round(dur / 60, 1)
+                        _tt_dist_col[name] = mins
+                        if dur <= _max_sec:
+                            _keep_names.add(name)
+                    else:
+                        _tt_dist_col[name] = None
+
+                s_df = s_df[s_df["医療機関名"].isin(_keep_names)]
+                _tt_applied = True
+
+                if _transit_note:
+                    st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
+
     # ── 表示列の決定 ──
     _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
     _any_surg = any(ck for ck, _ in _organ_checks) or s_ck_robot_s or s_ck_fuku or s_ck_kyou
@@ -1367,6 +1450,12 @@ if st.session_state.get("_view_mode") == "search":
         .reset_index(drop=True)
     )
 
+    # 所要時間列を追加（フィルター適用時）
+    if _tt_applied:
+        result_s["直線距離(km)"] = result_s["医療機関名"].map(_tt_km_col)
+        result_s["所要時間(分)"] = result_s["医療機関名"].map(_tt_dist_col)
+        result_s = result_s.sort_values("所要時間(分)").reset_index(drop=True)
+
     # ── 結果表示 ──
     st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
 
@@ -1388,6 +1477,9 @@ if st.session_state.get("_view_mode") == "search":
     for _c in _eshow:
         if _c not in _col_cfg:
             _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
+    if _tt_applied:
+        _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
+        _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
 
     st.dataframe(result_s, hide_index=True, use_container_width=True, column_config=_col_cfg)
 
@@ -2731,7 +2823,10 @@ with tab7:
     try:
         import folium
         from streamlit_folium import st_folium as _st_folium
-        from geocoder import geocode_batch, load_cached_coords, count_uncached, has_official_locations
+        from geocoder import (
+            geocode_batch, load_cached_coords, count_uncached, has_official_locations,
+            geocode_address, haversine_km, osrm_durations, load_all_hospital_coords,
+        )
         _MAP_OK = True
     except ImportError as _e:
         _MAP_OK = False
@@ -2875,3 +2970,96 @@ with tab7:
                 _m.get_root().html.add_child(folium.Element(_legend))
 
                 _st_folium(_m, width="100%", height=600, returned_objects=[])
+
+            # ── 2点間距離・所要時間計算 ────────────────────────────
+            if not map_valid.empty:
+                st.markdown("---")
+                st.markdown("### 📍 任意の地点からの距離・所要時間")
+                st.caption("住所やランドマークを入力すると、地図内の各病院までの距離と所要時間を計算します。")
+
+                _pt_col1, _pt_col2 = st.columns([3, 1])
+                with _pt_col1:
+                    _pt_addr = st.text_input(
+                        "出発地（住所・ランドマーク）",
+                        placeholder="例: 東京都渋谷区渋谷2丁目24",
+                        key="map_pt_addr",
+                    )
+                with _pt_col2:
+                    _pt_mode = st.radio(
+                        "移動手段",
+                        ["車（OSRM）", "公共交通（近似）"],
+                        key="map_pt_mode",
+                        horizontal=False,
+                    )
+
+                if _pt_addr:
+                    if st.button("計算する", key="map_pt_calc", type="primary"):
+                        st.session_state["_map_pt_cache"] = None  # 再計算
+
+                    _pt_cached = st.session_state.get("_map_pt_cache")
+                    _pt_cached_valid = (
+                        _pt_cached is not None
+                        and _pt_cached.get("addr") == _pt_addr
+                        and _pt_cached.get("mode") == _pt_mode
+                        and _pt_cached.get("scope") == map_scope
+                    )
+
+                    if not _pt_cached_valid:
+                        _pt_origin = _cached_geocode_address(_pt_addr)
+                        if _pt_origin is None:
+                            st.warning(f"⚠️ 「{_pt_addr}」の座標が取得できませんでした。より具体的な住所を入力してください。")
+                        else:
+                            _all_map_coords = load_all_hospital_coords(str(DB_PATH))
+                            _pt_rows = []
+                            for _, _pr in map_valid.iterrows():
+                                _nm = _pr["医療機関名"]
+                                _coords_h = _all_map_coords.get(_nm)
+                                _km = haversine_km(_pt_origin[0], _pt_origin[1], *_coords_h) if _coords_h else None
+                                _pt_rows.append({"医療機関名": _nm, "直線距離(km)": _km, "_coords": _coords_h})
+
+                            _known_pt = [r for r in _pt_rows if r["_coords"] is not None]
+                            if _known_pt and _pt_mode == "車（OSRM）":
+                                with st.spinner("OSRM で所要時間を計算中..."):
+                                    _durs = osrm_durations(
+                                        _pt_origin[0], _pt_origin[1],
+                                        [r["_coords"] for r in _known_pt],
+                                    )
+                                for r, d in zip(_known_pt, _durs):
+                                    r["所要時間(分)"] = round(d / 60, 1) if d is not None else None
+                            else:
+                                for r in _known_pt:
+                                    r["所要時間(分)"] = (
+                                        round(r["直線距離(km)"] / 25.0 * 60, 1)
+                                        if r["直線距離(km)"] is not None else None
+                                    )
+
+                            for r in _pt_rows:
+                                del r["_coords"]
+                                r.setdefault("所要時間(分)", None)
+
+                            _pt_df = (
+                                pd.DataFrame(_pt_rows)
+                                .sort_values("所要時間(分)")
+                                .reset_index(drop=True)
+                            )
+                            _pt_df.index += 1
+                            st.session_state["_map_pt_cache"] = {
+                                "addr": _pt_addr, "mode": _pt_mode, "scope": map_scope,
+                                "df": _pt_df,
+                            }
+                            _pt_cached = st.session_state["_map_pt_cache"]
+                            _pt_cached_valid = True
+
+                    if _pt_cached_valid and _pt_cached and "df" in _pt_cached:
+                        _pt_result = _pt_cached["df"]
+                        st.markdown(f"**{len(_pt_result):,}病院 — 出発地: {_pt_addr}**")
+                        if _pt_mode == "公共交通（近似）":
+                            st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
+                        st.dataframe(
+                            _pt_result,
+                            use_container_width=True,
+                            column_config={
+                                "直線距離(km)": st.column_config.NumberColumn("直線距離", format="%.1f km"),
+                                "所要時間(分)": st.column_config.NumberColumn("所要時間", format="%.1f 分"),
+                            },
+                        )
