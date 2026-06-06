@@ -455,7 +455,10 @@ def discharge_route_pie(ward_df: pd.DataFrame, hospital_name: str) -> go.Figure:
 def home_return_rate_bar(ward_df: pd.DataFrame, hospital_name: str, secondary_region: str) -> go.Figure:
     """
     同二次医療圏の在宅復帰率横棒グラフ（選択病院をハイライト）。
-    在宅復帰率 = 家庭退院数 / (退棟患者数 - 死亡退院数)  ← 正しい計算式
+
+    計算式: 在宅復帰率 = 家庭退院数 ÷ (退棟患者数 − 死亡退院数) × 100
+    出典: 病床機能報告 様式1（厚生労働省）病棟票 退棟先区分に準拠
+    ゼロ除算対策: 分母 (退棟患者数 − 死亡退院数) = 0 の場合は NaN として除外する。
     """
     sub = ward_df[ward_df["二次医療圏名"] == secondary_region].copy() if "二次医療圏名" in ward_df.columns else ward_df.copy()
 

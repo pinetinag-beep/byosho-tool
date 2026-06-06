@@ -692,18 +692,26 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 def occupancy_rate(df: pd.DataFrame, bed_type: str = "合計") -> pd.Series:
     """
     病床稼働率を計算する。
-    ・在棟患者延べ数がある場合: 在棟延べ数 / 365 / 許可病床数  ← 正しい計算式
-    ・ない場合（サンプルデータ等）: 稼働病床数 / 許可病床数（後方互換）
+
+    計算式: 延べ入院患者数 ÷ (許可病床数 × 365日) × 100
+    出典: 病床機能報告 様式1（厚生労働省）定義に準拠
+
+    優先順位:
+      1. 在棟延べ数が存在する場合: 在棟延べ数 ÷ (許可病床数 × 365)
+      2. 在棟延べ数が欠損の場合（サンプルデータ等）: 稼働病床数 ÷ 許可病床数（後方互換）
+
+    ゼロ除算対策: 許可病床数 = 0 の行は np.nan に変換し、結果を 0 で補完する。
     """
     kyoka_col  = f"{bed_type}_許可病床数"
     zaitou_col = f"{bed_type}_在棟延べ数"
     kado_col   = f"{bed_type}_稼働病床数"
 
+    # 許可病床数 = 0 をゼロ除算防止のため NaN に変換
     kyoka = pd.to_numeric(df[kyoka_col], errors="coerce").replace(0, np.nan)
 
     if zaitou_col in df.columns:
         zaitou = pd.to_numeric(df[zaitou_col], errors="coerce").fillna(0)
-        # 在棟延べ数が全て0ならフォールバック（データ欠損の可能性）
+        # 在棟延べ数が全て 0 の場合はデータ欠損とみなしてフォールバック
         if zaitou.sum() > 0:
             return (zaitou / 365 / kyoka).fillna(0)
 
@@ -715,25 +723,53 @@ def occupancy_rate(df: pd.DataFrame, bed_type: str = "合計") -> pd.Series:
 
 
 def add_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    病院単位 DataFrame に派生指標列を追加して返す。
+
+    追加する指標と計算式:
+      - 合計稼働率 / 各病床種稼働率:
+          延べ入院患者数 ÷ (許可病床数 × 365日) × 100  ← occupancy_rate() を参照
+      - 医師数_per100床:
+          常勤医師数 ÷ 合計_許可病床数 × 100
+          出典: 病床機能報告 施設票（厚生労働省）
+      - 看護師数_per100床:
+          常勤看護師数 ÷ 合計_許可病床数 × 100
+          出典: 病床機能報告 施設票（厚生労働省）
+
+    ゼロ除算対策: 許可病床数 = 0 の行は np.nan に変換し結果を NaN とする。
+    """
     df = df.copy()
+
+    # 病床稼働率（病床種別）
     df["合計稼働率"] = occupancy_rate(df)
     for t in BED_TYPES:
         if f"{t}_許可病床数" in df.columns and f"{t}_稼働病床数" in df.columns:
             df[f"{t}_稼働率"] = occupancy_rate(df, t)
+
+    # 100床あたり医師数: 許可病床数 = 0 の場合は NaN
     if "常勤医師数" in df.columns and "合計_許可病床数" in df.columns:
         df["医師数_per100床"] = (
             pd.to_numeric(df["常勤医師数"], errors="coerce") /
             pd.to_numeric(df["合計_許可病床数"], errors="coerce").replace(0, np.nan) * 100
         ).round(1)
+
+    # 100床あたり看護師数: 許可病床数 = 0 の場合は NaN
     if "常勤看護師数" in df.columns and "合計_許可病床数" in df.columns:
         df["看護師数_per100床"] = (
             pd.to_numeric(df["常勤看護師数"], errors="coerce") /
             pd.to_numeric(df["合計_許可病床数"], errors="coerce").replace(0, np.nan) * 100
         ).round(1)
+
     return df
 
 
 def region_share(df: pd.DataFrame, year: int, pref: str, region: str) -> pd.DataFrame:
+    """
+    二次医療圏内の病院別 地域シェア・地域内順位を付与して返す。
+
+    地域シェア: 各病院の合計許可病床数 ÷ 地域内合計許可病床数 × 100
+    ゼロ除算対策: 地域内の合計許可病床数が 0 の場合はシェアを 0 とする。
+    """
     sub = df[
         (df["報告年度"] == year) &
         (df["都道府県名"] == pref) &
@@ -741,9 +777,13 @@ def region_share(df: pd.DataFrame, year: int, pref: str, region: str) -> pd.Data
     ].copy()
     sub = add_derived_columns(sub)
     total = pd.to_numeric(sub["合計_許可病床数"], errors="coerce").sum()
-    sub["地域シェア(%)"] = (
-        pd.to_numeric(sub["合計_許可病床数"], errors="coerce") / total * 100
-    ).round(1)
+    # 地域内に病床が存在しない場合（total=0）はシェアを 0 とする
+    if total == 0:
+        sub["地域シェア(%)"] = 0.0
+    else:
+        sub["地域シェア(%)"] = (
+            pd.to_numeric(sub["合計_許可病床数"], errors="coerce") / total * 100
+        ).round(1)
     sub["地域内順位"] = (
         pd.to_numeric(sub["合計_許可病床数"], errors="coerce")
         .rank(ascending=False, method="min").astype(int)
