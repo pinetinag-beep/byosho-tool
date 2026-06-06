@@ -90,8 +90,9 @@ def _render_nav_bar(mode: str, pref: str = "", region: str = "", hospital: str =
     with _nb1:
         if st.button("🏠 ホーム", key=f"_navhome_{mode}", type="secondary",
                      use_container_width=True):
-            st.session_state["_hospital_chosen"] = False
             st.session_state["_view_mode"] = "detail"
+            if mode == "detail":
+                st.session_state["_hospital_chosen"] = False
             st.rerun()
     with _nb2:
         st.markdown(
