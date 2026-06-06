@@ -961,11 +961,15 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
         _lnd_years = sorted(_lnd_df["報告年度"].dropna().unique(), reverse=True)
         _lnd_sel_year = st.selectbox("年度", [int(y) for y in _lnd_years], key="_lnd_year")
         _lnd_all_prefs = _sort_prefs(_lnd_df["都道府県名"].unique())
+        if st.session_state.get("_lnd_pref") not in _lnd_all_prefs:
+            st.session_state["_lnd_pref"] = _lnd_all_prefs[0] if _lnd_all_prefs else None
         _lnd_sel_pref = st.selectbox("都道府県", _lnd_all_prefs, key="_lnd_pref")
         _lnd_regions = sorted(
             r for r in _lnd_df[_lnd_df["都道府県名"] == _lnd_sel_pref]["二次医療圏名"].unique()
             if r != "不明"
         )
+        if st.session_state.get("_lnd_region") not in _lnd_regions:
+            st.session_state["_lnd_region"] = _lnd_regions[0] if _lnd_regions else None
         _lnd_sel_region = st.selectbox("二次医療圏", _lnd_regions, key="_lnd_region")
         _lnd_hosps = (
             _lnd_df[
@@ -975,6 +979,8 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
             ]["医療機関名"].sort_values().tolist()
         )
         if _lnd_hosps:
+            if st.session_state.get("_lnd_hosp") not in _lnd_hosps:
+                st.session_state["_lnd_hosp"] = _lnd_hosps[0]
             _lnd_sel_hosp = st.selectbox("医療機関名", _lnd_hosps, key="_lnd_hosp")
             if st.button("この病院の詳細を見る →", type="primary", use_container_width=True,
                          key="_lnd_region_go"):
@@ -1051,6 +1057,8 @@ if st.session_state.get("_view_mode") == "search":
                 )
             else:
                 s_all_regions = ["全二次医療圏"]
+            if st.session_state.get("s_region") not in s_all_regions:
+                st.session_state["s_region"] = "全二次医療圏"
             s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region",
                 help="二次医療圏で絞り込み\nデータ列: 二次医療圏名")
             s_kw     = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw",
