@@ -1103,6 +1103,22 @@ if st.session_state.get("_view_mode") == "distance":
     elif not _dist_addr:
         st.info("出発地を入力してください。")
     else:
+        with st.expander("＋ 詳細条件を追加", expanded=False):
+            _fca, _fcb, _fcc = st.columns(3)
+            with _fca:
+                st.number_input("許可病床数（〇床以上）", min_value=0, step=50, key="_dist_f_beds",
+                    help="合計_許可病床数が指定値以上の病院に絞り込みます（0で条件なし）")
+                st.number_input("常勤医師数（〇人以上）", min_value=0, step=10, key="_dist_f_doc",
+                    help="常勤医師数が指定値以上の病院に絞り込みます（0で条件なし）")
+            with _fcb:
+                st.checkbox("CT 保有（1台以上）", key="_dist_f_ct",
+                    help="CT台数 ≥ 1 の病院のみ表示（様式1 施設票）")
+                st.checkbox("MRI 保有（1台以上）", key="_dist_f_mri",
+                    help="MRI台数 ≥ 1 の病院のみ表示（様式1 施設票）")
+            with _fcc:
+                st.checkbox("救急搬送受入（件数 > 0）", key="_dist_f_emg",
+                    help="救急搬送件数 > 0 の病院のみ表示（様式1 施設票）")
+
         if st.button("🔍 検索する", type="primary", key="_dist_search_btn"):
             _origin = _cached_geocode_address(_dist_addr)
             if _origin is None:
@@ -1112,6 +1128,32 @@ if st.session_state.get("_view_mode") == "distance":
                 _dist_df_base = _df_all[_df_all["報告年度"] == _dist_year].copy()
                 if _dist_pref != "全都道府県":
                     _dist_df_base = _dist_df_base[_dist_df_base["都道府県名"] == _dist_pref]
+                # 詳細条件フィルター
+                _f_beds = int(st.session_state.get("_dist_f_beds") or 0)
+                _f_ct   = bool(st.session_state.get("_dist_f_ct"))
+                _f_mri  = bool(st.session_state.get("_dist_f_mri"))
+                _f_emg  = bool(st.session_state.get("_dist_f_emg"))
+                _f_doc  = int(st.session_state.get("_dist_f_doc") or 0)
+                if _f_beds > 0 and "合計_許可病床数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[
+                        pd.to_numeric(_dist_df_base["合計_許可病床数"], errors="coerce").fillna(0) >= _f_beds
+                    ]
+                if _f_ct and "CT台数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[
+                        pd.to_numeric(_dist_df_base["CT台数"], errors="coerce").fillna(0) >= 1
+                    ]
+                if _f_mri and "MRI台数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[
+                        pd.to_numeric(_dist_df_base["MRI台数"], errors="coerce").fillna(0) >= 1
+                    ]
+                if _f_emg and "救急搬送件数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[
+                        pd.to_numeric(_dist_df_base["救急搬送件数"], errors="coerce").fillna(0) > 0
+                    ]
+                if _f_doc > 0 and "常勤医師数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[
+                        pd.to_numeric(_dist_df_base["常勤医師数"], errors="coerce").fillna(0) >= _f_doc
+                    ]
 
                 from geocoder import load_all_hospital_coords as _dist_lac
                 _dist_all_coords = _dist_lac(
