@@ -669,6 +669,24 @@ if st.session_state.df is None:
 # ── _nav_jump 処理（サイドバー廃止に伴い、メインエリアで処理）────
 _df_all = st.session_state.df
 
+# ?hospital=NAME クエリパラメータ経由のナビゲーション（地図ポップアップリンク）
+_qp_hosp = st.query_params.get("hospital")
+if _qp_hosp:
+    import urllib.parse as _uparse
+    _qp_hosp = _uparse.unquote(_qp_hosp)
+    _qp_latest = int(_df_all["報告年度"].max())
+    _qp_row = _df_all[(_df_all["医療機関名"] == _qp_hosp) & (_df_all["報告年度"] == _qp_latest)]
+    if not _qp_row.empty:
+        _qpr = _qp_row.iloc[0]
+        st.session_state["_nav_jump"] = {
+            "year":     int(_qpr["報告年度"]),
+            "pref":     str(_qpr["都道府県名"]),
+            "region":   str(_qpr["二次医療圏名"]),
+            "hospital": _qp_hosp,
+        }
+    st.query_params.clear()
+    st.rerun()
+
 _nav = st.session_state.pop("_nav_jump", None)
 if _nav:
     st.session_state["_sel_year"]        = int(_nav["year"])
@@ -1048,14 +1066,19 @@ if st.session_state.get("_view_mode") == "map":
                         radius=_mrad, color="#555", weight=1,
                         fill=True, fill_color=_mcol, fill_opacity=0.75,
                         popup=folium.Popup(
-                            f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
-                            f'<b style="font-size:13px">{_mr["医療機関名"]}</b><br>'
-                            f'<span style="color:#666;font-size:11px">{_mr["都道府県名"]} {_mr["二次医療圏名"]}</span>'
-                            f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
-                            f'<div style="margin-top:8px;padding:6px 10px;background:#2563eb;color:#fff;'
-                            f'border-radius:6px;text-align:center;font-size:12px;font-weight:600;">'
-                            f'↓ 下の「詳細を見る」ボタンへ</div>'
-                            f'</div>',
+                            (lambda _n, _mb, _mo, _pref, _reg: (
+                                f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
+                                f'<b style="font-size:13px">{_n}</b><br>'
+                                f'<span style="color:#666;font-size:11px">{_pref} {_reg}</span>'
+                                f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
+                                f'<br><a href="?hospital={__import__("urllib.parse",fromlist=["parse"]).parse.quote(_n)}"'
+                                f' target="_top"'
+                                f' style="display:block;margin-top:10px;padding:7px 12px;'
+                                f'background:#2563eb;color:#fff;border-radius:6px;'
+                                f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
+                                f'詳細を見る →</a>'
+                                f'</div>'
+                            ))(_mr["医療機関名"], _mb, _mo, _mr["都道府県名"], _mr["二次医療圏名"]),
                             max_width=260
                         ),
                         tooltip=f"{_mr['医療機関名']}（{_mb:,}床）",
