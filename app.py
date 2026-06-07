@@ -3014,19 +3014,7 @@ with tab7:
                 """
                 _m.get_root().html.add_child(folium.Element(_legend))
 
-                _map_data = _st_folium(
-                    _m, width="100%", height=600,
-                    returned_objects=["last_object_clicked_tooltip"],
-                )
-
-                # ── クリックされたマーカーから病院詳細へナビゲーション ──
-                _clicked_tip = (_map_data or {}).get("last_object_clicked_tooltip") or ""
-                if _clicked_tip:
-                    # ツールチップ形式: "病院名（X,XXX床）"
-                    _clicked_name = re.sub(r"（[\d,]+床）$", "", _clicked_tip).strip()
-                    if _clicked_name and (_clicked_name in map_valid["医療機関名"].values):
-                        st.session_state["_map_last_clicked"] = _clicked_name
-
+                # ── クリック済み病院を地図の上部に表示 ──
                 _last_clicked = st.session_state.get("_map_last_clicked")
                 if _last_clicked and (_last_clicked in map_valid["医療機関名"].values):
                     _cr = map_valid[map_valid["医療機関名"] == _last_clicked].iloc[0]
@@ -3045,6 +3033,18 @@ with tab7:
                             st.session_state["_hospital_chosen"] = True
                             st.session_state.pop("_map_last_clicked", None)
                             st.rerun()
+
+                _map_data = _st_folium(
+                    _m, width="100%", height=600,
+                    returned_objects=["last_object_clicked_tooltip"],
+                )
+
+                # ── クリックされたマーカーを session_state に保存（次の rerun で上部に表示） ──
+                _clicked_tip = (_map_data or {}).get("last_object_clicked_tooltip") or ""
+                if _clicked_tip:
+                    _clicked_name = re.sub(r"（[\d,]+床）$", "", _clicked_tip).strip()
+                    if _clicked_name and (_clicked_name in map_valid["医療機関名"].values):
+                        st.session_state["_map_last_clicked"] = _clicked_name
 
             # ── 2点間距離・所要時間計算 ────────────────────────────
             if not map_valid.empty:
