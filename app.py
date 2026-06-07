@@ -1048,24 +1048,37 @@ if st.session_state.get("_view_mode") == "map":
                         radius=_mrad, color="#555", weight=1,
                         fill=True, fill_color=_mcol, fill_opacity=0.75,
                         popup=folium.Popup(
-                            f'<div style="font-family:Meiryo,sans-serif;min-width:180px">'
-                            f'<b>{_mr["医療機関名"]}</b><br>'
+                            f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
+                            f'<b style="font-size:13px">{_mr["医療機関名"]}</b><br>'
                             f'<span style="color:#666;font-size:11px">{_mr["都道府県名"]} {_mr["二次医療圏名"]}</span>'
-                            f'<hr style="margin:4px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b></div>',
-                            max_width=240
+                            f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
+                            f'<div style="margin-top:8px;padding:6px 10px;background:#2563eb;color:#fff;'
+                            f'border-radius:6px;text-align:center;font-size:12px;font-weight:600;">'
+                            f'↓ 下の「詳細を見る」ボタンへ</div>'
+                            f'</div>',
+                            max_width=260
                         ),
                         tooltip=f"{_mr['医療機関名']}（{_mb:,}床）",
                     ).add_to(_ms_m)
 
-                # クリック済みマーカーの表示（地図の上）
                 _ms_last = st.session_state.get("_ms_last_clicked")
+
+                _ms_map_data = _st_folium_ms(_ms_m, width="100%", height=600, returned_objects=["last_object_clicked_tooltip"])
+                _ms_tip = (_ms_map_data or {}).get("last_object_clicked_tooltip") or ""
+                if _ms_tip:
+                    _ms_clicked_name = re.sub(r"（[\d,]+床）$", "", _ms_tip).strip()
+                    if _ms_clicked_name and (_ms_clicked_name in _ms_valid["医療機関名"].values):
+                        st.session_state["_ms_last_clicked"] = _ms_clicked_name
+                        _ms_last = _ms_clicked_name
+
+                # クリック済みマーカーのアクション（地図の下）
                 if _ms_last and (_ms_last in _ms_valid["医療機関名"].values):
                     _ms_cr = _ms_valid[_ms_valid["医療機関名"] == _ms_last].iloc[0]
                     _ms_nc1, _ms_nc2 = st.columns([4, 1])
                     with _ms_nc1:
-                        st.info(f"🏥 **{_ms_last}** をクリック中")
+                        st.info(f"🏥 **{_ms_last}**　{_ms_cr['都道府県名']} {_ms_cr['二次医療圏名']}")
                     with _ms_nc2:
-                        if st.button("詳細を見る →", key="_ms_goto_detail", type="primary"):
+                        if st.button("詳細を見る →", key="_ms_goto_detail", type="primary", use_container_width=True):
                             st.session_state["_nav_jump"] = {
                                 "hospital": _ms_last,
                                 "pref": str(_ms_cr["都道府県名"]),
@@ -1074,13 +1087,6 @@ if st.session_state.get("_view_mode") == "map":
                             }
                             st.session_state.pop("_ms_last_clicked", None)
                             st.rerun()
-
-                _ms_map_data = _st_folium_ms(_ms_m, width="100%", height=600, returned_objects=["last_object_clicked_tooltip"])
-                _ms_tip = (_ms_map_data or {}).get("last_object_clicked_tooltip") or ""
-                if _ms_tip:
-                    _ms_clicked_name = re.sub(r"（[\d,]+床）$", "", _ms_tip).strip()
-                    if _ms_clicked_name and (_ms_clicked_name in _ms_valid["医療機関名"].values):
-                        st.session_state["_ms_last_clicked"] = _ms_clicked_name
 
     _render_footer()
     st.stop()
