@@ -268,6 +268,26 @@ def osrm_durations(
     return results
 
 
+def load_coords_from_parquet(parquet_path: str, pref: str) -> dict[str, tuple[float, float]]:
+    """
+    locations_cache.parquet から指定都道府県の座標を {施設名: (lat, lon)} で返す。
+    Streamlit Cloud（DB なし）用フォールバック。
+    """
+    import pandas as _pd
+    from pathlib import Path as _Path
+    if not _Path(parquet_path).exists():
+        return {}
+    try:
+        _df = _pd.read_parquet(parquet_path, columns=["施設名", "lat", "lon", "都道府県名"])
+        _df = _df[_df["都道府県名"] == pref].dropna(subset=["施設名", "lat", "lon"])
+        return dict(zip(
+            _df["施設名"].astype(str),
+            zip(_df["lat"].astype(float), _df["lon"].astype(float)),
+        ))
+    except Exception:
+        return {}
+
+
 def load_all_hospital_coords(
     db_path: str | None = None,
     parquet_path: str | None = None,

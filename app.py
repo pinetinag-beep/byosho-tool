@@ -2829,7 +2829,8 @@ with tab7:
         from streamlit_folium import st_folium as _st_folium
         from geocoder import (
             geocode_batch, load_cached_coords, count_uncached, has_official_locations,
-            geocode_address, haversine_km, osrm_durations, load_all_hospital_coords,
+            geocode_address, haversine_km, osrm_durations,
+            load_all_hospital_coords, load_coords_from_parquet,
         )
         _MAP_OK = True
     except ImportError as _e:
@@ -2837,19 +2838,25 @@ with tab7:
         st.error(f"地図表示に必要なライブラリが見つかりません: {_e}")
 
     if _MAP_OK:
-        if not DB_PATH.exists():
-            st.warning("地図機能はDuckDBデータ使用時のみ利用できます。")
+        _map_has_db  = DB_PATH.exists()
+        _map_has_loc = _LOCS_PARQUET.exists()
+
+        if not _map_has_db and not _map_has_loc:
+            st.warning("地図機能は公式座標データ（locations_cache.parquet）またはDuckDBがある場合のみ利用できます。")
         else:
-            # 公式座標（医療情報ネット）の有無を表示
-            if has_official_locations(str(DB_PATH)):
-                st.success("✅ 厚労省 医療情報ネットの公式座標データ読み込み済み")
-            else:
-                st.info(
-                    "💡 **公式座標データを取り込むと精度が大幅に向上します**\n\n"
-                    "ローカルで以下を実行してください:\n"
-                    "```\npython build_master.py\n```\n"
-                    "（厚労省 医療情報ネット オープンデータを自動ダウンロードします）"
-                )
+            # ── 座標ソース表示 ──
+            if _map_has_db:
+                if has_official_locations(str(DB_PATH)):
+                    st.success("✅ 厚労省 医療情報ネットの公式座標データ読み込み済み（DuckDB）")
+                else:
+                    st.info(
+                        "💡 **公式座標データを取り込むと精度が大幅に向上します**\n\n"
+                        "ローカルで以下を実行してください:\n"
+                        "```\npython build_master.py\n```\n"
+                    )
+            elif _map_has_loc:
+                st.success("✅ 厚労省 医療情報ネットの公式座標データ読み込み済み（parquet）")
+
             # ── 表示範囲の選択 ──
             map_scope = st.radio(
                 "表示範囲",
@@ -2869,36 +2876,44 @@ with tab7:
                 ].copy()
                 map_title = f"{pref} {region}（{year}年度）"
 
-            n_total = len(map_df)
-            n_uncached = count_uncached(str(DB_PATH), map_df["医療機関名"].tolist(), pref)
-            n_cached = n_total - n_uncached
+            st.markdown(f"**対象: {map_title} — {len(map_df):,}病院**")
 
-            st.markdown(f"**対象: {map_title} — {n_total:,}病院**")
+            # ── DB ありの場合のみ geocoding 統計・ボタンを表示 ──
+            if _map_has_db:
+                n_uncached = count_uncached(str(DB_PATH), map_df["医療機関名"].tolist(), pref)
+                n_cached = len(map_df) - n_uncached
+                mi1, mi2 = st.columns(2)
+                mi1.metric("キャッシュ済み", f"{n_cached:,}件")
+                mi2.metric("未ジオコーディング", f"{n_uncached:,}件")
 
-            mi1, mi2 = st.columns(2)
-            mi1.metric("キャッシュ済み", f"{n_cached:,}件")
-            mi2.metric("未ジオコーディング", f"{n_uncached:,}件")
+                if n_uncached > 0:
+                    est_min = n_uncached * 1.2 / 60
+                    st.warning(
+                        f"⏱️ {n_uncached:,}件のジオコーディングが必要です（推定 {est_min:.1f}〜{est_min*1.5:.1f}分）。\n\n"
+                        "結果はDBにキャッシュされるため、次回以降は即座に表示されます。"
+                    )
+                    if st.button("📍 ジオコーディング実行", type="primary", key="run_geocoding"):
+                        _prog_bar = st.progress(0)
+                        _prog_txt = st.empty()
 
-            if n_uncached > 0:
-                est_min = n_uncached * 1.2 / 60
-                st.warning(
-                    f"⏱️ {n_uncached:,}件のジオコーディングが必要です（推定 {est_min:.1f}〜{est_min*1.5:.1f}分）。\n\n"
-                    "結果はDBにキャッシュされるため、次回以降は即座に表示されます。"
-                )
-                if st.button("📍 ジオコーディング実行", type="primary", key="run_geocoding"):
-                    _prog_bar = st.progress(0)
-                    _prog_txt = st.empty()
+                        def _prog_cb(done, total):
+                            _prog_bar.progress(done / total)
+                            _prog_txt.text(f"処理中... {done}/{total}")
 
-                    def _prog_cb(done, total):
-                        _prog_bar.progress(done / total)
-                        _prog_txt.text(f"処理中... {done}/{total}")
+                        geocode_batch(map_df, str(DB_PATH), progress_cb=_prog_cb)
+                        _prog_txt.text("✅ 完了!")
+                        st.rerun()
 
-                    geocode_batch(map_df, str(DB_PATH), progress_cb=_prog_cb)
-                    _prog_txt.text("✅ 完了!")
-                    st.rerun()
-
-            # ── キャッシュ済み座標を読み込んで地図を描画 ──
-            geo_dict = load_cached_coords(str(DB_PATH), pref)
+            # ── 座標を読み込んで地図を描画 ──
+            if _map_has_db:
+                geo_dict = load_cached_coords(str(DB_PATH), pref)
+                # parquet でも補完（DB の geocache にない病院を補う）
+                if _map_has_loc:
+                    _parquet_dict = load_coords_from_parquet(str(_LOCS_PARQUET), pref)
+                    _parquet_dict.update(geo_dict)  # DB が優先
+                    geo_dict = _parquet_dict
+            else:
+                geo_dict = load_coords_from_parquet(str(_LOCS_PARQUET), pref)
             _coords = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None)))
             map_df["lat"] = _coords.map(lambda c: c[0])
             map_df["lon"] = _coords.map(lambda c: c[1])
