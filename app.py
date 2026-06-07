@@ -803,6 +803,38 @@ if st.session_state.get("_view_mode") == "home":
             st.session_state["_view_mode"] = "region_vision"
             st.rerun()
 
+    # ── よく探される条件（クイックプリセット）────────────────────
+    st.markdown("<div style='padding-top:32px;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#6b7280;font-size:0.82rem;margin-bottom:8px;'>よく探される条件</p>",
+        unsafe_allow_html=True,
+    )
+    _pq1, _pq2, _pq3, _pq4, _pq5 = st.columns(5)
+    with _pq1:
+        if st.button("🏥 急性期病院", use_container_width=True, key="_pq_kyusei"):
+            st.session_state["_view_mode"] = "search"
+            st.session_state["s_kw"] = "急性期"
+            st.rerun()
+    with _pq2:
+        if st.button("🚑 救急搬送受入", use_container_width=True, key="_pq_emg"):
+            st.session_state["_view_mode"] = "search"
+            st.session_state["s_kw"] = ""
+            st.rerun()
+    with _pq3:
+        if st.button("🎓 大学病院", use_container_width=True, key="_pq_univ"):
+            st.session_state["_view_mode"] = "search"
+            st.session_state["s_kw"] = "大学病院"
+            st.rerun()
+    with _pq4:
+        if st.button("📍 高度急性期あり", use_container_width=True, key="_pq_kodokyu"):
+            st.session_state["_view_mode"] = "search"
+            st.session_state["s_kw"] = ""
+            st.rerun()
+    with _pq5:
+        if st.button("🗺️ 地域で比較", use_container_width=True, key="_pq_region"):
+            st.session_state["_view_mode"] = "region"
+            st.rerun()
+
     _render_footer()
     st.stop()
 
@@ -851,12 +883,16 @@ if st.session_state.get("_view_mode") == "region":
     st.markdown("---")
 
     # 病院一覧
+    _rg_extra_cols = ["医療機関名", "合計_許可病床数"]
+    for _ec in ["合計稼働率", "救急搬送件数"]:
+        if _ec in _df_all.columns:
+            _rg_extra_cols.append(_ec)
     _rg_list = (
         _df_all[
             (_df_all["報告年度"] == _rg_year) &
             (_df_all["都道府県名"] == _rg_pref) &
             (_df_all["二次医療圏名"] == _rg_region)
-        ][["医療機関名", "合計_許可病床数"]]
+        ][_rg_extra_cols]
         .sort_values("合計_許可病床数", ascending=False)
         .reset_index(drop=True)
     )
@@ -866,10 +902,22 @@ if st.session_state.get("_view_mode") == "region":
     else:
         st.markdown(f"**{_rg_region}　{len(_rg_list)}院**")
         _rg_cols = st.columns(3)
-        for _ri, (_rname, _rbeds) in enumerate(_rg_list.itertuples(index=False)):
+        for _ri, _rrow in enumerate(_rg_list.itertuples(index=False)):
+            _rname = _rg_list.iloc[_ri]["医療機関名"]
+            _rbeds = _rg_list.iloc[_ri]["合計_許可病床数"]
             with _rg_cols[_ri % 3]:
+                _stat_parts = [f"🛏 {int(_rbeds):,}床"]
+                if "合計稼働率" in _rg_list.columns:
+                    _rocc = _rg_list.iloc[_ri]["合計稼働率"]
+                    if _rocc is not None and not pd.isna(_rocc):
+                        _stat_parts.append(f"稼働{_rocc:.0f}%")
+                if "救急搬送件数" in _rg_list.columns:
+                    _remg = _rg_list.iloc[_ri]["救急搬送件数"]
+                    if _remg is not None and not pd.isna(_remg) and _remg > 0:
+                        _stat_parts.append("🚑救急")
+                st.caption("　".join(_stat_parts))
                 if st.button(
-                    f"🏥 {_rname}　{int(_rbeds):,}床",
+                    f"🏥 {_rname}",
                     key=f"_rg_nav_{_ri}",
                     use_container_width=True,
                 ):
@@ -1295,7 +1343,7 @@ if st.session_state.get("_view_mode") == "distance":
                             "急性期_許可病床数":     st.column_config.NumberColumn("急性期",       format="%,d 床"),
                             "回復期_許可病床数":     st.column_config.NumberColumn("回復期",       format="%,d 床"),
                             "慢性期_許可病床数":     st.column_config.NumberColumn("慢性期",       format="%,d 床"),
-                            "合計稼働率":            st.column_config.NumberColumn("稼働率",       format="%.1f %%"),
+                            "合計稼働率":            st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
                             "救急搬送件数":          st.column_config.NumberColumn("救急搬送",     format="%,d 件"),
                             "常勤医師数":            st.column_config.NumberColumn("常勤医師数",   format="%,d 人"),
                             "CT台数":               st.column_config.NumberColumn("CT台数",       format="%,d 台"),
@@ -1703,6 +1751,8 @@ if st.session_state.get("_view_mode") == "search":
 
     # ── 表示列の決定 ──
     _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
+    if "合計稼働率" in s_df.columns:
+        _base.append("合計稼働率")
     _any_surg = any(ck for ck, _ in _organ_checks) or s_ck_robot_s or s_ck_fuku or s_ck_kyou
     _sshow = []
     if _any_surg and "手術総数" in s_df.columns:
@@ -1757,6 +1807,7 @@ if st.session_state.get("_view_mode") == "search":
 
     _col_cfg = {
         "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%,d 床"),
+        "合計稼働率":       st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
         "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%,d 台"),
         "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%,d 台"),
         "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%,d 台"),
