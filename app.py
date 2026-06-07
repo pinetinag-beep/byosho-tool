@@ -1071,7 +1071,7 @@ if st.session_state.get("_view_mode") == "map":
                                 f'<b style="font-size:13px">{_n}</b><br>'
                                 f'<span style="color:#666;font-size:11px">{_pref} {_reg}</span>'
                                 f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
-                                f'<br><a href="?hospital={__import__("urllib.parse",fromlist=["parse"]).parse.quote(_n)}"'
+                                f'<br><a href="?hospital={__import__("urllib.parse",fromlist=["parse"]).quote(_n)}"'
                                 f' target="_top"'
                                 f' style="display:block;margin-top:10px;padding:7px 12px;'
                                 f'background:#2563eb;color:#fff;border-radius:6px;'
