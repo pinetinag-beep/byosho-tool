@@ -1224,6 +1224,7 @@ if st.session_state.get("_view_mode") == "distance":
                 _any_surg_filter = _f_surg_min > 0 or _f_zensui_min > 0 or any(
                     bool(st.session_state.get(k)) for k, _ in _dist_organ_map
                 )
+                _dist_auto_surg_cols = []  # 結果テーブルに自動追加する手術列
                 if _any_surg_filter:
                     _surg_state = st.session_state.get("surgery_df")
                     if _surg_state is not None and not _surg_state.empty:
@@ -1245,14 +1246,17 @@ if st.session_state.get("_view_mode") == "distance":
                         if _f_surg_min > 0 and "手術総数" in _dist_df_base.columns:
                             _dist_df_base = _dist_df_base[
                                 pd.to_numeric(_dist_df_base["手術総数"], errors="coerce").fillna(0) >= _f_surg_min]
+                            _dist_auto_surg_cols.append("手術総数")
                         if _f_zensui_min > 0 and "全身麻酔手術数" in _dist_df_base.columns:
                             _dist_df_base = _dist_df_base[
                                 pd.to_numeric(_dist_df_base["全身麻酔手術数"], errors="coerce").fillna(0) >= _f_zensui_min]
+                            _dist_auto_surg_cols.append("全身麻酔手術数")
                         for _okey, _olabel in _dist_organ_map:
                             _ocol = f"手術_{_olabel}"
                             if bool(st.session_state.get(_okey)) and _ocol in _dist_df_base.columns:
                                 _dist_df_base = _dist_df_base[
                                     pd.to_numeric(_dist_df_base[_ocol], errors="coerce").fillna(0) >= 1]
+                                _dist_auto_surg_cols.append(_ocol)
                     else:
                         st.warning("⚠️ 手術条件を指定しましたが手術データが読み込まれていません。手術フィルターは無効です。")
 
@@ -1300,6 +1304,9 @@ if st.session_state.get("_view_mode") == "distance":
                             _sel_col = _dist_col_options.get(_sel_label)
                             if _sel_col and _sel_col in _dist_df_base.columns:
                                 _dist_extra_cols.append(_sel_col)
+                        for _asc in _dist_auto_surg_cols:
+                            if _asc not in _dist_extra_cols and _asc in _dist_df_base.columns:
+                                _dist_extra_cols.append(_asc)
                         _dist_result = _dist_result.merge(
                             _dist_df_base[_dist_extra_cols].drop_duplicates("医療機関名"),
                             on="医療機関名", how="left"
@@ -1309,26 +1316,27 @@ if st.session_state.get("_view_mode") == "distance":
                         if _transit_note:
                             st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
                         st.markdown(f"**{len(_dist_result):,}病院が {_dist_max}分以内 — 出発地: {_dist_addr}**")
-                        st.dataframe(
-                            _dist_result,
-                            use_container_width=True,
-                            column_config={
-                                "直線距離(km)":         st.column_config.NumberColumn("直線距離",     format="%.1f km"),
-                                "所要時間(分)":         st.column_config.NumberColumn("所要時間",     format="%.1f 分"),
-                                "合計_許可病床数":       st.column_config.NumberColumn("許可病床数",   format="%,d 床"),
-                                "高度急性期_許可病床数": st.column_config.NumberColumn("高度急性期",   format="%,d 床"),
-                                "急性期_許可病床数":     st.column_config.NumberColumn("急性期",       format="%,d 床"),
-                                "回復期_許可病床数":     st.column_config.NumberColumn("回復期",       format="%,d 床"),
-                                "慢性期_許可病床数":     st.column_config.NumberColumn("慢性期",       format="%,d 床"),
-                                "合計稼働率":            st.column_config.NumberColumn("稼働率",       format="%.1f %%"),
-                                "救急搬送件数":          st.column_config.NumberColumn("救急搬送",     format="%,d 件"),
-                                "常勤医師数":            st.column_config.NumberColumn("常勤医師数",   format="%,d 人"),
-                                "CT台数":               st.column_config.NumberColumn("CT台数",       format="%,d 台"),
-                                "MRI台数":              st.column_config.NumberColumn("MRI台数",      format="%,d 台"),
-                                "手術総数":              st.column_config.NumberColumn("手術総数",     format="%,d 件"),
-                                "全身麻酔手術数":        st.column_config.NumberColumn("全身麻酔手術", format="%,d 件"),
-                            },
-                        )
+                        _dist_col_cfg = {
+                            "直線距離(km)":         st.column_config.NumberColumn("直線距離",     format="%.1f km"),
+                            "所要時間(分)":         st.column_config.NumberColumn("所要時間",     format="%.1f 分"),
+                            "合計_許可病床数":       st.column_config.NumberColumn("許可病床数",   format="%,d 床"),
+                            "高度急性期_許可病床数": st.column_config.NumberColumn("高度急性期",   format="%,d 床"),
+                            "急性期_許可病床数":     st.column_config.NumberColumn("急性期",       format="%,d 床"),
+                            "回復期_許可病床数":     st.column_config.NumberColumn("回復期",       format="%,d 床"),
+                            "慢性期_許可病床数":     st.column_config.NumberColumn("慢性期",       format="%,d 床"),
+                            "合計稼働率":            st.column_config.NumberColumn("稼働率",       format="%.1f %%"),
+                            "救急搬送件数":          st.column_config.NumberColumn("救急搬送",     format="%,d 件"),
+                            "常勤医師数":            st.column_config.NumberColumn("常勤医師数",   format="%,d 人"),
+                            "CT台数":               st.column_config.NumberColumn("CT台数",       format="%,d 台"),
+                            "MRI台数":              st.column_config.NumberColumn("MRI台数",      format="%,d 台"),
+                            "手術総数":              st.column_config.NumberColumn("手術総数",     format="%,d 件"),
+                            "全身麻酔手術数":        st.column_config.NumberColumn("全身麻酔手術", format="%,d 件"),
+                        }
+                        for _asc in _dist_auto_surg_cols:
+                            if _asc.startswith("手術_"):
+                                _dist_col_cfg[_asc] = st.column_config.NumberColumn(
+                                    _asc.replace("手術_", ""), format="%,d 件")
+                        st.dataframe(_dist_result, use_container_width=True, column_config=_dist_col_cfg)
                         st.divider()
                         st.markdown("### 🏥 病院を選んで詳細を見る")
                         _dist_nav_cols = st.columns(3)
