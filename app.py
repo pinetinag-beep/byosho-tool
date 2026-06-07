@@ -1076,25 +1076,19 @@ if st.session_state.get("_view_mode") == "distance":
 
     st.markdown("## 📍 距離・所要時間で病院を探す")
 
-    _dist_c1, _dist_c2 = st.columns([5, 1])
-    with _dist_c1:
-        _dist_addr = st.text_input(
-            "出発地（住所・ランドマーク）",
-            placeholder="例: 東京都新宿区西新宿2丁目8",
-            key="_dist_addr",
-            label_visibility="collapsed",
-        )
-    with _dist_c2:
-        _dist_mode = st.radio("移動手段", ["車", "公共交通（近似）"], horizontal=False, key="_dist_mode",
-            label_visibility="collapsed")
+    _dist_addr = st.text_input(
+        "出発地（住所・ランドマーク）",
+        placeholder="例: 東京都新宿区西新宿2丁目8",
+        key="_dist_addr",
+    )
 
-    _dist_c3, _dist_c4 = st.columns([1, 5])
-    with _dist_c3:
+    _dist_c1, _dist_c2 = st.columns([2, 4])
+    with _dist_c1:
         _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
             key="_dist_max")
-    with _dist_c4:
-        st.markdown("<div style='padding-top:28px;color:#6b7280;font-size:0.85rem;'>分以内の病院を表示</div>",
-            unsafe_allow_html=True)
+    with _dist_c2:
+        _dist_mode = st.radio("移動手段", ["🚗 車（OSRM）", "🚌 公共交通（近似）"],
+            horizontal=True, key="_dist_mode")
 
     _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
     _dist_year  = _dist_years[0]
@@ -1279,7 +1273,7 @@ if st.session_state.get("_view_mode") == "distance":
                     st.warning("座標データが取得できる病院がありません。")
                 else:
                     _dist_dests = [coords for _, coords in _dist_known]
-                    if _dist_mode == "車（OSRM）":
+                    if "車" in _dist_mode:
                         with st.spinner("OSRM で所要時間を計算中..."):
                             _dist_durs = _dist_osrm(_origin[0], _origin[1], _dist_dests)
                         _transit_note = False
