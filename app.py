@@ -673,16 +673,16 @@ _df_all = st.session_state.df
 _qp_hosp = st.query_params.get("hospital")
 if _qp_hosp:
     import urllib.parse as _uparse
-    _qp_hosp = _uparse.unquote(_qp_hosp)
-    _qp_latest = int(_df_all["報告年度"].max())
-    _qp_row = _df_all[(_df_all["医療機関名"] == _qp_hosp) & (_df_all["報告年度"] == _qp_latest)]
-    if not _qp_row.empty:
-        _qpr = _qp_row.iloc[0]
+    _qp_hosp_decoded = _uparse.unquote(_qp_hosp)
+    _qp_rows = _df_all[_df_all["医療機関名"] == _qp_hosp_decoded].sort_values("報告年度", ascending=False)
+    st.error(f"DEBUG: received={_qp_hosp!r} decoded={_qp_hosp_decoded!r} found={len(_qp_rows)}件")
+    if not _qp_rows.empty:
+        _qpr = _qp_rows.iloc[0]
         st.session_state["_nav_jump"] = {
             "year":     int(_qpr["報告年度"]),
             "pref":     str(_qpr["都道府県名"]),
             "region":   str(_qpr["二次医療圏名"]),
-            "hospital": _qp_hosp,
+            "hospital": _qp_hosp_decoded,
         }
     st.query_params.clear()
     st.rerun()
