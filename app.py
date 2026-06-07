@@ -593,6 +593,7 @@ with st.sidebar:
             st.session_state["_sel_region"]     = str(_nav["region"])
             st.session_state["_sel_hospital"]   = str(_nav["hospital"])
             st.session_state["_nav_done"]       = str(_nav["hospital"])
+            st.session_state["_scroll_to_top"]  = True
             st.session_state["_hospital_chosen"] = True
             st.rerun()
 
@@ -1030,6 +1031,12 @@ if not st.session_state.get("_hospital_chosen") and st.session_state.get("_view_
 
 
 # ── データ準備 ─────────────────────────────────────────────
+
+if st.session_state.pop("_scroll_to_top", False):
+    components.html(
+        "<script>window.parent.document.querySelector('.main .block-container').scrollTo(0,0);</script>",
+        height=0,
+    )
 
 df = st.session_state.df
 year     = sel_year
