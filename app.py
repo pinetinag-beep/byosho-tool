@@ -1087,7 +1087,7 @@ if st.session_state.get("_view_mode") == "distance":
         _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
             key="_dist_max")
     with _dist_c2:
-        _dist_mode = st.radio("移動手段", ["🚗 車（OSRM）", "🚌 公共交通（近似）"],
+        _dist_mode = st.radio("移動手段", ["🚗 車", "🚌 電車・バス"],
             horizontal=True, key="_dist_mode")
 
     _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
