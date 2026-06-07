@@ -1075,27 +1075,30 @@ if st.session_state.get("_view_mode") == "distance":
     from geocoder import geocode_address as _dist_gc, haversine_km as _dist_hkm, osrm_durations as _dist_osrm
 
     st.markdown("## 📍 距離・所要時間で病院を探す")
-    st.caption("出発地から一定時間以内の病院を一覧表示します。")
 
-    _dist_c1, _dist_c2 = st.columns([3, 1])
+    _dist_c1, _dist_c2 = st.columns([5, 1])
     with _dist_c1:
         _dist_addr = st.text_input(
             "出発地（住所・ランドマーク）",
             placeholder="例: 東京都新宿区西新宿2丁目8",
             key="_dist_addr",
+            label_visibility="collapsed",
         )
     with _dist_c2:
-        _dist_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=False, key="_dist_mode")
+        _dist_mode = st.radio("移動手段", ["車", "公共交通（近似）"], horizontal=False, key="_dist_mode",
+            label_visibility="collapsed")
 
-    _dist_c3, _dist_c4, _dist_c5 = st.columns(3)
+    _dist_c3, _dist_c4 = st.columns([1, 5])
     with _dist_c3:
-        _dist_max = st.slider("上限（分）", 15, 90, 30, step=15, key="_dist_max")
+        _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
+            key="_dist_max")
     with _dist_c4:
-        _dist_all_prefs = ["全都道府県"] + _sort_prefs(_df_all["都道府県名"].unique())
-        _dist_pref = st.selectbox("都道府県（任意）", _dist_all_prefs, key="_dist_pref")
-    with _dist_c5:
-        _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-        _dist_year = st.selectbox("年度", _dist_years, key="_dist_year")
+        st.markdown("<div style='padding-top:28px;color:#6b7280;font-size:0.85rem;'>分以内の病院を表示</div>",
+            unsafe_allow_html=True)
+
+    _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
+    _dist_year  = _dist_years[0]
+    _dist_pref  = "全都道府県"
 
     _dist_has_coords = DB_PATH.exists() or _LOCS_PARQUET.exists()
     if not _dist_has_coords:
@@ -1117,6 +1120,11 @@ if st.session_state.get("_view_mode") == "distance":
             "全身麻酔手術数":       "全身麻酔手術数",
         }
         with st.expander("＋ 詳細条件を追加", expanded=False):
+            _fcy1, _fcy2 = st.columns([1, 5])
+            with _fcy1:
+                _dist_year = st.selectbox("年度", _dist_years, key="_dist_year",
+                    help="使用するデータの報告年度（デフォルト: 最新年度）")
+            st.divider()
             _fca, _fcb, _fcc = st.columns(3)
             with _fca:
                 st.markdown("**🚑 救急**")
