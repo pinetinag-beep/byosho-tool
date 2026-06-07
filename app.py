@@ -1071,10 +1071,12 @@ if st.session_state.get("_view_mode") == "map":
                                 f'<b style="font-size:13px">{_n}</b><br>'
                                 f'<span style="color:#666;font-size:11px">{_pref} {_reg}</span>'
                                 f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
-                                f'<div style="margin-top:10px;padding:7px 10px;background:#f0f9ff;'
-                                f'border:1px solid #bae6fd;border-radius:6px;'
-                                f'text-align:center;font-size:11px;color:#0369a1;font-weight:600;">'
-                                f'↓ 地図の下のボタンで詳細を開く</div>'
+                                f'<br><a href="?hospital={__import__("urllib.parse",fromlist=["parse"]).quote(_n)}"'
+                                f' target="_blank"'
+                                f' style="display:block;margin-top:10px;padding:7px 12px;'
+                                f'background:#2563eb;color:#fff;border-radius:6px;'
+                                f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
+                                f'詳細を見る →</a>'
                                 f'</div>'
                             ))(_mr["医療機関名"], _mb, _mo, _mr["都道府県名"], _mr["二次医療圏名"]),
                             max_width=260
