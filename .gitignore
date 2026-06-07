@@ -8,6 +8,7 @@ __pycache__/
 !data_cache.parquet
 !ward_cache.parquet
 !surgery_cache.parquet
+!locations_cache.parquet
 
 # DuckDB（バイナリ、大きいため除外）
 data/*.duckdb
