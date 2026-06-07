@@ -288,13 +288,26 @@ def load_coords_from_parquet(parquet_path: str, pref: str) -> dict[str, tuple[fl
         return {}
 
 
+def _norm(name: str) -> str:
+    """病院名を正規化（全角→半角、空白・中点除去、小文字化）"""
+    import unicodedata as _ud
+    import re as _re
+    if not isinstance(name, str):
+        return ""
+    name = _ud.normalize("NFKC", name)
+    name = _re.sub(r"[\s　・]", "", name)
+    return name.lower()
+
+
 def load_all_hospital_coords(
     db_path: str | None = None,
     parquet_path: str | None = None,
 ) -> dict[str, tuple[float, float]]:
     """
-    全病院の座標を {医療機関名: (lat, lon)} で返す。
-    parquet（Streamlit Cloud 用）→ DuckDB の順で読み込み、後者が優先。
+    全病院の座標を {名前: (lat, lon)} で返す。
+    - parquet からは施設名（正規化済みキー）で登録
+    - DuckDB からは geocache（医療機関名）と locations（施設名）で上書き
+    呼び出し側は _norm() で正規化したキーで検索すること（geocache キーは正規化不要）。
     """
     import pandas as _pd
     from pathlib import Path as _Path
@@ -302,33 +315,36 @@ def load_all_hospital_coords(
     result: dict[str, tuple[float, float]] = {}
 
     # 1. locations_cache.parquet（Streamlit Cloud 用）
+    # キー = 正規化された施設名（表記ゆれ対応）
     if parquet_path and _Path(parquet_path).exists():
         try:
             _ldf = _pd.read_parquet(parquet_path, columns=["施設名", "lat", "lon"])
             _ldf = _ldf.dropna(subset=["施設名", "lat", "lon"])
-            result.update(
-                zip(
-                    _ldf["施設名"].astype(str),
-                    zip(_ldf["lat"].astype(float), _ldf["lon"].astype(float)),
-                )
-            )
+            _ldf["_norm"] = _ldf["施設名"].apply(_norm)
+            for nm, lat, lon in zip(
+                _ldf["_norm"], _ldf["lat"].astype(float), _ldf["lon"].astype(float)
+            ):
+                if nm:
+                    result[nm] = (lat, lon)
         except Exception:
             pass
 
-    # 2. DuckDB（ローカル環境 — geocache / locations で上書き）
+    # 2. DuckDB（ローカル環境 — 医療機関名・施設名で上書き）
     if db_path and _Path(db_path).exists():
         con = duckdb.connect(db_path)
         _ensure_tables(con)
         for r in con.execute(
             "SELECT hospital_name, lat, lon FROM geocache WHERE found = TRUE"
         ).fetchall():
-            result[r[0]] = (r[1], r[2])
+            if r[0]:
+                result[r[0]] = (r[1], r[2])         # 元の名前で登録
+                result[_norm(r[0])] = (r[1], r[2])  # 正規化名でも登録
         try:
             for r in con.execute(
                 "SELECT 施設名, lat, lon FROM locations WHERE lat IS NOT NULL"
             ).fetchall():
                 if r[0]:
-                    result[r[0]] = (r[1], r[2])
+                    result[_norm(r[0])] = (r[1], r[2])
         except Exception:
             pass
         con.close()
