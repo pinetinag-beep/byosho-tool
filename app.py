@@ -1370,8 +1370,11 @@ if st.session_state.get("_view_mode") == "search":
                 parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
             )
             _hosp_names = s_df["医療機関名"].tolist()
-            _known_pairs = [(n, _all_coords[n]) for n in _hosp_names if n in _all_coords]
-            _no_coord = [n for n in _hosp_names if n not in _all_coords]
+            # 正規化名でも検索（施設名と医療機関名の表記ゆれ対策）
+            def _tt_lookup(name):
+                return _all_coords.get(name) or _all_coords.get(_normalize_name(name))
+            _known_pairs = [(n, _tt_lookup(n)) for n in _hosp_names if _tt_lookup(n)]
+            _no_coord = [n for n in _hosp_names if not _tt_lookup(n)]
             if _no_coord:
                 st.caption(f"ℹ️ 座標未取得のため除外対象外: {len(_no_coord)}病院")
 
@@ -2905,18 +2908,41 @@ with tab7:
                         st.rerun()
 
             # ── 座標を読み込んで地図を描画 ──
+            # parquet: 都道府県コード（"01"等）で絞り込み + 施設名を正規化してマッチ
+            _pref_code = _PREF_ORDER.get(pref, pref)
+            _norm_geo: dict[str, tuple] = {}
+            if _map_has_loc:
+                try:
+                    _lp = pd.read_parquet(
+                        str(_LOCS_PARQUET),
+                        columns=["施設名", "lat", "lon", "都道府県名"],
+                    )
+                    _lp = _lp[_lp["都道府県名"] == _pref_code].dropna(subset=["施設名", "lat", "lon"])
+                    _lp["_norm"] = _lp["施設名"].apply(_normalize_name)
+                    _norm_geo = dict(zip(
+                        _lp["_norm"],
+                        zip(_lp["lat"].astype(float), _lp["lon"].astype(float)),
+                    ))
+                except Exception:
+                    pass
+
+            # geocache（DB）から名前直接マッチ
+            _geo_cache: dict[str, tuple] = {}
             if _map_has_db:
-                geo_dict = load_cached_coords(str(DB_PATH), pref)
-                # parquet でも補完（DB の geocache にない病院を補う）
-                if _map_has_loc:
-                    _parquet_dict = load_coords_from_parquet(str(_LOCS_PARQUET), pref)
-                    _parquet_dict.update(geo_dict)  # DB が優先
-                    geo_dict = _parquet_dict
-            else:
-                geo_dict = load_coords_from_parquet(str(_LOCS_PARQUET), pref)
-            _coords = map_df["医療機関名"].map(lambda n: geo_dict.get(n, (None, None)))
-            map_df["lat"] = _coords.map(lambda c: c[0])
-            map_df["lon"] = _coords.map(lambda c: c[1])
+                _geo_cache = load_cached_coords(str(DB_PATH), pref)
+
+            def _lookup_coords(name: str) -> tuple:
+                # 1. geocache（DB・高精度）
+                if name in _geo_cache:
+                    return _geo_cache[name]
+                # 2. parquet（正規化名前マッチ）
+                norm = _normalize_name(name)
+                if norm in _norm_geo:
+                    return _norm_geo[norm]
+                return (None, None)
+
+            map_df["lat"] = map_df["医療機関名"].map(lambda n: _lookup_coords(n)[0])
+            map_df["lon"] = map_df["医療機関名"].map(lambda n: _lookup_coords(n)[1])
             map_valid = map_df.dropna(subset=["lat", "lon"])
 
             if map_valid.empty:
@@ -3028,14 +3054,12 @@ with tab7:
                         if _pt_origin is None:
                             st.warning(f"⚠️ 「{_pt_addr}」の座標が取得できませんでした。より具体的な住所を入力してください。")
                         else:
-                            _all_map_coords = load_all_hospital_coords(
-                                db_path=str(DB_PATH) if DB_PATH.exists() else None,
-                                parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
-                            )
+                            # map_valid には既に lat/lon がセット済み → 再読み込み不要
                             _pt_rows = []
                             for _, _pr in map_valid.iterrows():
                                 _nm = _pr["医療機関名"]
-                                _coords_h = _all_map_coords.get(_nm)
+                                _lat_h, _lon_h = _pr.get("lat"), _pr.get("lon")
+                                _coords_h = (_lat_h, _lon_h) if pd.notna(_lat_h) and pd.notna(_lon_h) else None
                                 _km = haversine_km(_pt_origin[0], _pt_origin[1], *_coords_h) if _coords_h else None
                                 _pt_rows.append({"医療機関名": _nm, "直線距離(km)": _km, "_coords": _coords_h})
 
