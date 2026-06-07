@@ -61,7 +61,7 @@ st.set_page_config(
     page_title="病床機能報告 分析ツール",
     page_icon="🏥",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Google Analytics ───────────────────────────────────────
@@ -77,40 +77,123 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def _render_nav_bar(mode: str, pref: str = "", region: str = "", hospital: str = "") -> None:
-    """DETAIL / SEARCH / REGION_VISION 共通のナビゲーションバー（メインエリア最上部）"""
-    _sep = "<span style='color:#d1d5db;margin:0 6px;'>›</span>"
-    if mode == "detail":
-        _crumb = (
-            f"{_sep}{pref}{_sep}{region}"
-            f"{_sep}<strong style='color:#111827'>{hospital}</strong>"
-        )
-    elif mode == "search":
-        _crumb = f"{_sep}<strong style='color:#111827'>条件検索</strong>"
-    elif mode == "region_vision":
-        _crumb = (
-            f"{_sep}<strong style='color:#111827'>地域医療構想</strong>"
-            f"{_sep}{pref}　{region}"
-        )
-    else:
-        _crumb = ""
+def _render_header():
+    """常時表示のステップ型ヘッダー"""
+    mode = st.session_state.get("_view_mode", "home")
+    _hospital = st.session_state.get("_sel_hospital", "")
+    _pref = st.session_state.get("_sel_pref", "")
+    _region = st.session_state.get("_sel_region", "")
 
-    _nb1, _nb2 = st.columns([1.4, 8.6])
-    with _nb1:
-        if st.button("🏠 ホーム", key=f"_navhome_{mode}", type="secondary",
-                     use_container_width=True):
-            st.session_state["_view_mode"] = "detail"
-            if mode == "detail":
-                st.session_state["_hospital_chosen"] = False
+    STEP = {"home": 1, "map": 2, "distance": 2, "search": 2, "region_vision": 2, "detail": 4}
+    current = STEP.get(mode, 1)
+
+    _h1, _h2 = st.columns([2, 8])
+    with _h1:
+        if st.button("🏥 病床機能報告", key="_hdr_home_btn", use_container_width=True):
+            st.session_state["_view_mode"] = "home"
+            st.session_state["_hospital_chosen"] = False
             st.rerun()
-    with _nb2:
-        st.markdown(
-            f"<div style='padding:7px 0 0;font-size:0.82rem;color:#9ca3af;'>"
-            f"ホーム{_crumb}</div>",
-            unsafe_allow_html=True,
-        )
+    with _h2:
+        _parts = []
+        for i, label in enumerate(["① 検索方法", "② 絞り込み", "③ 結果", "④ 病院詳細"], 1):
+            color = "#2563eb" if i == current else ("#6b7280" if i < current else "#d1d5db")
+            weight = "700" if i == current else "400"
+            _parts.append(f"<span style='color:{color};font-weight:{weight};font-size:0.85rem;'>{label}</span>")
+        _sep = "<span style='color:#e5e7eb;margin:0 8px;'>›</span>"
+        _crumb = _sep.join(_parts)
+        if _hospital and mode == "detail":
+            _crumb += f"<br><span style='font-size:0.75rem;color:#9ca3af;margin-top:2px;display:block;'>{_pref}&nbsp;›&nbsp;{_region}&nbsp;›&nbsp;<strong style='color:#374151;'>{_hospital}</strong></span>"
+        st.markdown(f"<div style='padding:6px 0 0;'>{_crumb}</div>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin:4px 0 14px;border:none;border-top:1px solid #e5e7eb;'>", unsafe_allow_html=True)
+
+
+def _render_footer():
+    """全ページ共通のフッター"""
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    _fa, _fb = st.columns(2)
+    with _fa:
+        with st.expander("⚠️ 免責事項"):
+            st.markdown("""
+<div style="font-size:0.75rem; color:#555; line-height:1.6;">
+
+本ツールは、厚生労働省が公表する**病床機能報告**のデータをもとに集計・分析を行うものです。
+
+**ご利用にあたっての注意事項：**
+
+- 原データ（報告値）に誤りや未報告が含まれる場合があり、分析結果が実態と異なることがあります。
+- 本ツールの分析結果は参考情報であり、医療機関の評価・優劣を示すものではありません。
+- 経営判断・医療政策の立案などに利用する場合は、必ず一次データや専門家の助言を合わせてご確認ください。
+- 本ツールの利用によって生じたいかなる損害についても、作成者は責任を負いません。
+- データは報告年度時点のものであり、現在の状況と異なる場合があります。
+
+</div>
+""", unsafe_allow_html=True)
+
+    with _fb:
+        with st.expander("🔧 管理者"):
+            st.caption("データの再読み込み / キャッシュ管理")
+            if st.button("キャッシュをクリアして再読み込み", use_container_width=True, key="_ftr_cache_clear"):
+                st.cache_data.clear()
+                for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
+                    st.session_state.pop(key, None)
+                st.rerun()
+            st.divider()
+            st.caption("🔬 2021年 手術データ（様式2 全7ファイル）を更新")
+            _y2_files = st.file_uploader(
+                "000953885〜000953892.xlsx（7ファイル、複数選択可）",
+                type=["xlsx", "xls"],
+                accept_multiple_files=True,
+                key="_ftr_yoshiki2_upload",
+            )
+            if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_ftr_yoshiki2_import"):
+                _prog = st.progress(0, text="処理開始...")
+                _status = st.empty()
+                try:
+                    _parts = []
+                    for _i, _f in enumerate(_y2_files):
+                        _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
+                        _fb_bytes = _f.read()
+                        _part = load_mhlw_yoshiki2(_fb_bytes, year=2021)
+                        _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
+                        _parts.append(_part)
+                    _prog.progress(1.0, text="集計中...")
+                    if not _parts:
+                        _prog.empty()
+                        st.error("データが空です。")
+                    else:
+                        _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
+                        _existing = st.session_state.get("surgery_df")
+                        if _existing is not None and not _existing.empty:
+                            _existing = _existing[_existing["報告年度"] != 2021]
+                            _merged = pd.concat([_existing, _surg_new], ignore_index=True)
+                        else:
+                            _merged = _surg_new
+                        st.session_state["surgery_df"] = _merged
+                        import io as _io2
+                        _pbuf = _io2.BytesIO()
+                        _merged.to_parquet(_pbuf, index=False)
+                        st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
+                        _prog.empty()
+                        _status.empty()
+                        st.success(f"✅ 2021年: {len(_surg_new):,} 病院取り込み完了")
+                except Exception as _e:
+                    st.error(f"エラー: {_e}")
+            if st.session_state.get("_yoshiki2_parquet"):
+                st.download_button(
+                    "📥 surgery_cache.parquet をダウンロード",
+                    data=st.session_state["_yoshiki2_parquet"],
+                    file_name="surgery_cache.parquet",
+                    mime="application/octet-stream",
+                    use_container_width=True,
+                    type="primary",
+                    key="_ftr_dl_parquet",
+                )
+
     st.markdown(
-        "<hr style='margin:6px 0 18px;border:none;border-top:1px solid #f3f4f6;'>",
+        "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
+        "© 病床機能報告 分析ツール — データ出典: 厚生労働省「病床機能報告」</div>",
         unsafe_allow_html=True,
     )
 
@@ -159,51 +242,6 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
     font-size: 1.05rem; font-weight: 700; color: #111827;
     border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin: 24px 0 14px;
 }
-/* ── サイドバー 共通 ── */
-div[data-testid="stSidebar"] .stButton button {
-    text-align: left;
-    font-size: 0.82rem;
-    padding: 4px 8px;
-    height: auto;
-    white-space: normal;
-    word-break: break-all;
-}
-
-/* ── アコーディオン: 非アクティブ（▶） ── */
-div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-secondary"] {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
-    border-left: 3px solid transparent !important;
-    color: #64748b !important;
-    font-weight: 500 !important;
-    border-radius: 6px !important;
-    font-size: 0.84rem !important;
-    padding: 9px 12px !important;
-}
-div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-secondary"]:hover {
-    background: #f1f5f9 !important;
-    color: #1e293b !important;
-    border-left-color: #94a3b8 !important;
-}
-
-/* ── アコーディオン: アクティブ（▼） ── */
-div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
-    background: #eff6ff !important;
-    border: 1px solid #bfdbfe !important;
-    border-left: 4px solid #2563eb !important;
-    color: #1e40af !important;
-    font-weight: 700 !important;
-    border-radius: 6px !important;
-    font-size: 0.84rem !important;
-    padding: 9px 11px !important;
-    box-shadow: 0 1px 4px rgba(37,99,235,0.10) !important;
-}
-div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
-    background: #dbeafe !important;
-    border-left-color: #1d4ed8 !important;
-    box-shadow: 0 2px 8px rgba(37,99,235,0.18) !important;
-}
-
 /* ── 印刷ボタン（画面表示用） ── */
 .print-btn {
     display: inline-block;
