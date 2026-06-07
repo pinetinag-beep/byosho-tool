@@ -3039,6 +3039,7 @@ with tab7:
                                 "hospital": _last_clicked,
                                 "pref": _cr["都道府県名"],
                                 "region": _cr["二次医療圏名"],
+                                "year": int(year),
                             }
                             st.session_state["_view_mode"] = "detail"
                             st.session_state["_hospital_chosen"] = True
