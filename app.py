@@ -778,17 +778,15 @@ if st.session_state.get("_view_mode") == "home":
             st.session_state["_view_mode"] = "region_vision"
             st.rerun()
 
-    # ── 病院名で直接検索（補助的な位置づけ）────────────────────
-    st.markdown(
-        "<div style='text-align:center;color:#9ca3af;font-size:0.8rem;padding:36px 0 8px;'>"
-        "病院名が分かる場合は直接検索</div>",
-        unsafe_allow_html=True,
-    )
-    _sb_l, _sb_c, _sb_r = st.columns([2, 6, 2])
+    # ── 病院名で直接検索 ────────────────────────────────────────
+    st.markdown("<div style='padding-top:44px;'></div>", unsafe_allow_html=True)
+    st.divider()
+    st.markdown("### 🔍 病院名で直接検索")
+    _sb_l, _sb_c, _sb_r = st.columns([1, 8, 1])
     with _sb_c:
         _lnd_kw = st.text_input(
             "病院名を検索",
-            placeholder="病院名を入力（例：聖路加、旭川赤十字）",
+            placeholder="病院名を入力（例：聖路加、旭川赤十字、東大病院）",
             key="_lnd_kw",
             label_visibility="collapsed",
         )
