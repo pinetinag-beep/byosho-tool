@@ -3014,7 +3014,36 @@ with tab7:
                 """
                 _m.get_root().html.add_child(folium.Element(_legend))
 
-                _st_folium(_m, width="100%", height=600, returned_objects=[])
+                _map_data = _st_folium(
+                    _m, width="100%", height=600,
+                    returned_objects=["last_object_clicked_tooltip"],
+                )
+
+                # ── クリックされたマーカーから病院詳細へナビゲーション ──
+                _clicked_tip = (_map_data or {}).get("last_object_clicked_tooltip") or ""
+                if _clicked_tip:
+                    # ツールチップ形式: "病院名（X,XXX床）"
+                    _clicked_name = re.sub(r"（[\d,]+床）$", "", _clicked_tip).strip()
+                    if _clicked_name and (_clicked_name in map_valid["医療機関名"].values):
+                        st.session_state["_map_last_clicked"] = _clicked_name
+
+                _last_clicked = st.session_state.get("_map_last_clicked")
+                if _last_clicked and (_last_clicked in map_valid["医療機関名"].values):
+                    _cr = map_valid[map_valid["医療機関名"] == _last_clicked].iloc[0]
+                    _nav_c1, _nav_c2 = st.columns([4, 1])
+                    with _nav_c1:
+                        st.info(f"🏥 **{_last_clicked}** をクリック中")
+                    with _nav_c2:
+                        if st.button("詳細を見る →", key="map_goto_detail", type="primary"):
+                            st.session_state["_nav_jump"] = {
+                                "hospital": _last_clicked,
+                                "pref": _cr["都道府県名"],
+                                "region": _cr["二次医療圏名"],
+                            }
+                            st.session_state["_view_mode"] = "detail"
+                            st.session_state["_hospital_chosen"] = True
+                            st.session_state.pop("_map_last_clicked", None)
+                            st.rerun()
 
             # ── 2点間距離・所要時間計算 ────────────────────────────
             if not map_valid.empty:
