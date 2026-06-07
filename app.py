@@ -673,16 +673,15 @@ _df_all = st.session_state.df
 _qp_hosp = st.query_params.get("hospital")
 if _qp_hosp:
     import urllib.parse as _uparse
-    _qp_hosp_decoded = _uparse.unquote(_qp_hosp)
-    _qp_rows = _df_all[_df_all["医療機関名"] == _qp_hosp_decoded].sort_values("報告年度", ascending=False)
-    st.error(f"DEBUG: received={_qp_hosp!r} decoded={_qp_hosp_decoded!r} found={len(_qp_rows)}件")
+    _qp_hosp = _uparse.unquote(_qp_hosp)
+    _qp_rows = _df_all[_df_all["医療機関名"] == _qp_hosp].sort_values("報告年度", ascending=False)
     if not _qp_rows.empty:
         _qpr = _qp_rows.iloc[0]
         st.session_state["_nav_jump"] = {
             "year":     int(_qpr["報告年度"]),
             "pref":     str(_qpr["都道府県名"]),
             "region":   str(_qpr["二次医療圏名"]),
-            "hospital": _qp_hosp_decoded,
+            "hospital": _qp_hosp,
         }
     st.query_params.clear()
     st.rerun()
@@ -1071,8 +1070,8 @@ if st.session_state.get("_view_mode") == "map":
                                 f'<b style="font-size:13px">{_n}</b><br>'
                                 f'<span style="color:#666;font-size:11px">{_pref} {_reg}</span>'
                                 f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
-                                f'<br><a href="?hospital={__import__("urllib.parse",fromlist=["parse"]).quote(_n)}"'
-                                f' target="_blank"'
+                                f'<br><a href="#"'
+                                f' onclick="window.open(window.top.location.origin+\'/?hospital=\'+encodeURIComponent(\'{_n}\'),\'_blank\');return false;"'
                                 f' style="display:block;margin-top:10px;padding:7px 12px;'
                                 f'background:#2563eb;color:#fff;border-radius:6px;'
                                 f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
