@@ -1103,6 +1103,19 @@ if st.session_state.get("_view_mode") == "distance":
     elif not _dist_addr:
         st.info("出発地を入力してください。")
     else:
+        _dist_col_options = {
+            "救急搬送件数":         "救急搬送件数",
+            "稼働率":               "合計稼働率",
+            "高度急性期（病床数）": "高度急性期_許可病床数",
+            "急性期（病床数）":     "急性期_許可病床数",
+            "回復期（病床数）":     "回復期_許可病床数",
+            "慢性期（病床数）":     "慢性期_許可病床数",
+            "常勤医師数":           "常勤医師数",
+            "CT台数":              "CT台数",
+            "MRI台数":             "MRI台数",
+            "手術総数":             "手術総数",
+            "全身麻酔手術数":       "全身麻酔手術数",
+        }
         with st.expander("＋ 詳細条件を追加", expanded=False):
             _fca, _fcb, _fcc = st.columns(3)
             with _fca:
@@ -1150,6 +1163,16 @@ if st.session_state.get("_view_mode") == "distance":
                     st.checkbox("尿路系・副腎", key="_dist_f_nyo")
                     st.checkbox("性器",       key="_dist_f_seiki")
                     st.checkbox("歯科",       key="_dist_f_shika")
+            st.divider()
+            st.markdown("**📊 結果テーブルの追加列**")
+            st.caption("固定列: 医療機関名 / 直線距離 / 所要時間 / 都道府県 / 二次医療圏 / 許可病床数")
+            st.multiselect(
+                "追加表示列",
+                options=list(_dist_col_options.keys()),
+                default=["救急搬送件数", "稼働率"],
+                key="_dist_result_cols",
+                label_visibility="collapsed",
+            )
 
         if st.button("🔍 検索する", type="primary", key="_dist_search_btn"):
             _origin = _cached_geocode_address(_dist_addr)
@@ -1271,13 +1294,10 @@ if st.session_state.get("_view_mode") == "distance":
                     else:
                         _dist_result = pd.DataFrame(_dist_rows).sort_values("所要時間(分)").reset_index(drop=True)
                         _dist_extra_cols = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
-                        for _ec in [
-                            "高度急性期_許可病床数", "急性期_許可病床数", "回復期_許可病床数", "慢性期_許可病床数",
-                            "合計稼働率", "救急搬送件数", "常勤医師数", "CT台数", "MRI台数",
-                            "手術総数", "全身麻酔手術数",
-                        ]:
-                            if _ec in _dist_df_base.columns:
-                                _dist_extra_cols.append(_ec)
+                        for _sel_label in st.session_state.get("_dist_result_cols", []):
+                            _sel_col = _dist_col_options.get(_sel_label)
+                            if _sel_col and _sel_col in _dist_df_base.columns:
+                                _dist_extra_cols.append(_sel_col)
                         _dist_result = _dist_result.merge(
                             _dist_df_base[_dist_extra_cols].drop_duplicates("医療機関名"),
                             on="医療機関名", how="left"
