@@ -437,7 +437,8 @@ div[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"
 
 # ── DuckDB パス ────────────────────────────────────────────
 
-DB_PATH = Path(__file__).parent / "data" / "byosho.duckdb"
+DB_PATH      = Path(__file__).parent / "data" / "byosho.duckdb"
+_LOCS_PARQUET = Path(__file__).parent / "locations_cache.parquet"
 
 CACHE_FILE         = Path(__file__).parent / "data_cache.parquet"
 CACHE_FILE_WARD    = Path(__file__).parent / "ward_cache.parquet"
@@ -1075,9 +1076,9 @@ if st.session_state.get("_view_mode") == "search":
 
             st.markdown("---")
             st.markdown("**🚗 所要時間フィルター**")
-            _tt_db_ok = DB_PATH.exists()
+            _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
             if not _tt_db_ok:
-                st.caption("※ DuckDB + 公式座標データがある場合のみ有効")
+                st.caption("※ 公式座標データ（locations_cache.parquet）がある場合のみ有効")
             s_tt_addr = st.text_input(
                 "出発地（住所・ランドマーク）",
                 placeholder="例: 東京都新宿区西新宿2丁目8",
@@ -1359,12 +1360,15 @@ if st.session_state.get("_view_mode") == "search":
     _tt_applied = False
     _tt_dist_col: dict[str, float] = {}   # {医療機関名: 分}
     _tt_km_col:   dict[str, float] = {}   # {医療機関名: km}
-    if s_tt_addr and DB_PATH.exists():
+    if s_tt_addr and (DB_PATH.exists() or _LOCS_PARQUET.exists()):
         _origin = _cached_geocode_address(s_tt_addr)
         if _origin is None:
             st.warning(f"⚠️ 出発地「{s_tt_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
         else:
-            _all_coords = load_all_hospital_coords(str(DB_PATH))
+            _all_coords = load_all_hospital_coords(
+                db_path=str(DB_PATH) if DB_PATH.exists() else None,
+                parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
+            )
             _hosp_names = s_df["医療機関名"].tolist()
             _known_pairs = [(n, _all_coords[n]) for n in _hosp_names if n in _all_coords]
             _no_coord = [n for n in _hosp_names if n not in _all_coords]
@@ -3009,7 +3013,10 @@ with tab7:
                         if _pt_origin is None:
                             st.warning(f"⚠️ 「{_pt_addr}」の座標が取得できませんでした。より具体的な住所を入力してください。")
                         else:
-                            _all_map_coords = load_all_hospital_coords(str(DB_PATH))
+                            _all_map_coords = load_all_hospital_coords(
+                                db_path=str(DB_PATH) if DB_PATH.exists() else None,
+                                parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
+                            )
                             _pt_rows = []
                             for _, _pr in map_valid.iterrows():
                                 _nm = _pr["医療機関名"]

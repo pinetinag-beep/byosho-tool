@@ -268,28 +268,49 @@ def osrm_durations(
     return results
 
 
-def load_all_hospital_coords(db_path: str) -> dict[str, tuple[float, float]]:
+def load_all_hospital_coords(
+    db_path: str | None = None,
+    parquet_path: str | None = None,
+) -> dict[str, tuple[float, float]]:
     """
     全病院の座標を {医療機関名: (lat, lon)} で返す。
-    locations テーブル（公式座標）が geocache より優先。
+    parquet（Streamlit Cloud 用）→ DuckDB の順で読み込み、後者が優先。
     """
-    con = duckdb.connect(db_path)
-    _ensure_tables(con)
+    import pandas as _pd
+    from pathlib import Path as _Path
+
     result: dict[str, tuple[float, float]] = {}
 
-    for r in con.execute(
-        "SELECT hospital_name, lat, lon FROM geocache WHERE found = TRUE"
-    ).fetchall():
-        result[r[0]] = (r[1], r[2])
+    # 1. locations_cache.parquet（Streamlit Cloud 用）
+    if parquet_path and _Path(parquet_path).exists():
+        try:
+            _ldf = _pd.read_parquet(parquet_path, columns=["施設名", "lat", "lon"])
+            _ldf = _ldf.dropna(subset=["施設名", "lat", "lon"])
+            result.update(
+                zip(
+                    _ldf["施設名"].astype(str),
+                    zip(_ldf["lat"].astype(float), _ldf["lon"].astype(float)),
+                )
+            )
+        except Exception:
+            pass
 
-    try:
+    # 2. DuckDB（ローカル環境 — geocache / locations で上書き）
+    if db_path and _Path(db_path).exists():
+        con = duckdb.connect(db_path)
+        _ensure_tables(con)
         for r in con.execute(
-            "SELECT 施設名, lat, lon FROM locations WHERE lat IS NOT NULL"
+            "SELECT hospital_name, lat, lon FROM geocache WHERE found = TRUE"
         ).fetchall():
-            if r[0]:
-                result[r[0]] = (r[1], r[2])
-    except Exception:
-        pass
+            result[r[0]] = (r[1], r[2])
+        try:
+            for r in con.execute(
+                "SELECT 施設名, lat, lon FROM locations WHERE lat IS NOT NULL"
+            ).fetchall():
+                if r[0]:
+                    result[r[0]] = (r[1], r[2])
+        except Exception:
+            pass
+        con.close()
 
-    con.close()
     return result
