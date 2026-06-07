@@ -1071,12 +1071,10 @@ if st.session_state.get("_view_mode") == "map":
                                 f'<b style="font-size:13px">{_n}</b><br>'
                                 f'<span style="color:#666;font-size:11px">{_pref} {_reg}</span>'
                                 f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
-                                f'<br><a href="?hospital={__import__("urllib.parse",fromlist=["parse"]).quote(_n)}"'
-                                f' target="_top"'
-                                f' style="display:block;margin-top:10px;padding:7px 12px;'
-                                f'background:#2563eb;color:#fff;border-radius:6px;'
-                                f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
-                                f'詳細を見る →</a>'
+                                f'<div style="margin-top:10px;padding:7px 10px;background:#f0f9ff;'
+                                f'border:1px solid #bae6fd;border-radius:6px;'
+                                f'text-align:center;font-size:11px;color:#0369a1;font-weight:600;">'
+                                f'↓ 地図の下のボタンで詳細を開く</div>'
                                 f'</div>'
                             ))(_mr["医療機関名"], _mb, _mo, _mr["都道府県名"], _mr["二次医療圏名"]),
                             max_width=260
@@ -1097,19 +1095,29 @@ if st.session_state.get("_view_mode") == "map":
                 # クリック済みマーカーのアクション（地図の下）
                 if _ms_last and (_ms_last in _ms_valid["医療機関名"].values):
                     _ms_cr = _ms_valid[_ms_valid["医療機関名"] == _ms_last].iloc[0]
-                    _ms_nc1, _ms_nc2 = st.columns([4, 1])
-                    with _ms_nc1:
-                        st.info(f"🏥 **{_ms_last}**　{_ms_cr['都道府県名']} {_ms_cr['二次医療圏名']}")
-                    with _ms_nc2:
-                        if st.button("詳細を見る →", key="_ms_goto_detail", type="primary", use_container_width=True):
-                            st.session_state["_nav_jump"] = {
-                                "hospital": _ms_last,
-                                "pref": str(_ms_cr["都道府県名"]),
-                                "region": str(_ms_cr["二次医療圏名"]),
-                                "year": int(_ms_year),
-                            }
-                            st.session_state.pop("_ms_last_clicked", None)
-                            st.rerun()
+                    _ms_beds = int(_ms_cr["合計_許可病床数"]) if pd.notna(_ms_cr.get("合計_許可病床数")) else 0
+                    _ms_occ  = f'{_ms_cr["合計稼働率"]:.0f}%' if "合計稼働率" in _ms_cr and pd.notna(_ms_cr["合計稼働率"]) else "—"
+                    st.markdown(
+                        f'<div style="margin-top:12px;padding:16px 20px;'
+                        f'background:#eff6ff;border:2px solid #2563eb;border-radius:10px;'
+                        f'display:flex;align-items:center;gap:16px;">'
+                        f'<div style="flex:1;">'
+                        f'<div style="font-size:0.75rem;color:#2563eb;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
+                        f'<div style="font-size:1rem;font-weight:800;color:#111827;">{_ms_last}</div>'
+                        f'<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">'
+                        f'{_ms_cr["都道府県名"]} {_ms_cr["二次医療圏名"]}　🛏 {_ms_beds:,}床　稼働率 {_ms_occ}</div>'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    if st.button("この病院の詳細を見る →", key="_ms_goto_detail", type="primary", use_container_width=True):
+                        st.session_state["_nav_jump"] = {
+                            "hospital": _ms_last,
+                            "pref": str(_ms_cr["都道府県名"]),
+                            "region": str(_ms_cr["二次医療圏名"]),
+                            "year": int(_ms_year),
+                        }
+                        st.session_state.pop("_ms_last_clicked", None)
+                        st.rerun()
 
     _render_footer()
     st.stop()
