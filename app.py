@@ -2358,21 +2358,29 @@ if st.session_state.get("_view_mode") == "region_vision":
             if (_rv_pref, _rv_region, _rv_year, rr["医療機関名"]) not in _rv_ai_cache
         ]
         if _need_gen:
-            with st.spinner(f"AI短評を生成中… {len(_need_gen)}病院"):
+            with st.spinner(f"AI短評を生成中… {len(_need_gen)}病院（並列処理）"):
                 try:
                     import anthropic as _ant_mod
+                    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
                     _ant_client = _ant_mod.Anthropic(api_key=_ant_key)
-                    for _rr in _need_gen:
-                        _ck = (_rv_pref, _rv_region, _rv_year, _rr["医療機関名"])
+
+                    def _gen_one(rr):
+                        _ck = (_rv_pref, _rv_region, _rv_year, rr["医療機関名"])
                         try:
                             _resp = _ant_client.messages.create(
                                 model="claude-haiku-4-5-20251001",
                                 max_tokens=150,
-                                messages=[{"role": "user", "content": _build_rv_prompt(_rr)}],
+                                messages=[{"role": "user", "content": _build_rv_prompt(rr)}],
                             )
-                            _rv_ai_cache[_ck] = _resp.content[0].text.strip()
+                            return _ck, _resp.content[0].text.strip()
                         except Exception:
-                            _rv_ai_cache[_ck] = None
+                            return _ck, None
+
+                    with ThreadPoolExecutor(max_workers=8) as _pool:
+                        _futures = {_pool.submit(_gen_one, rr): rr for rr in _need_gen}
+                        for _fut in _as_completed(_futures):
+                            _ck, _text = _fut.result()
+                            _rv_ai_cache[_ck] = _text
                 except Exception:
                     pass
 
