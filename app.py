@@ -1,6 +1,7 @@
 """
 病床機能報告 分析・比較ツール
 """
+import os
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -2282,6 +2283,99 @@ if st.session_state.get("_view_mode") == "region_vision":
         axis=1,
     )
 
+    # ── AI短評生成（ANTHROPIC_API_KEY が設定されている場合） ──────
+    _rv_ai_cache = st.session_state.setdefault("_rv_ai_cache", {})
+    _ant_key = (st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else "") \
+               or os.environ.get("ANTHROPIC_API_KEY", "")
+    if _ant_key:
+        _rv_total_beds = int(rv_df["合計_許可病床数"].fillna(0).sum())
+        def _rv_avg(col):
+            v = pd.to_numeric(rv_df[col], errors="coerce")
+            return float(v.mean()) if v.notna().any() else 0.0
+        _avg_koudo_r  = _rv_avg("高度急性期_許可病床数") / max(1, _rv_avg("合計_許可病床数")) * 100
+        _avg_kyusei_r = _rv_avg("急性期_許可病床数")    / max(1, _rv_avg("合計_許可病床数")) * 100
+        _avg_kaifu_r  = _rv_avg("回復期_許可病床数")    / max(1, _rv_avg("合計_許可病床数")) * 100
+        _avg_mansei_r = _rv_avg("慢性期_許可病床数")    / max(1, _rv_avg("合計_許可病床数")) * 100
+        _avg_doc100_rv = (_rv_avg("常勤医師数") / max(1, _rv_avg("合計_許可病床数"))) * 100
+        _avg_emg_rv    = float(pd.to_numeric(rv_df.get("救急搬送件数", pd.Series()), errors="coerce").mean() or 0)
+
+        def _build_rv_prompt(rr):
+            beds  = _si(rr.get("合計_許可病床数", 0))
+            docs  = _si(rr.get("常勤医師数", 0))
+            nrs   = _si(rr.get("常勤看護師数", 0))
+            emg   = _si(rr.get("救急搬送件数", 0))
+            hn    = str(rr.get("医療機関名", ""))
+            rnk   = int(rr.get("_rank", 0))
+            role  = str(rr.get("_role", ""))
+            scr   = int(rr.get("_score", 0))
+            koudo = _si(rr.get("高度急性期_許可病床数", 0))
+            kyusei= _si(rr.get("急性期_許可病床数", 0))
+            kaif  = _si(rr.get("回復期_許可病床数", 0))
+            mans  = _si(rr.get("慢性期_許可病床数", 0))
+            surg  = _surg_map_rv.get(hn, 0)
+            zmac  = _zenmac_map_rv.get(hn, 0)
+            robo  = _robot_map_rv.get(hn, 0)
+            doc100= docs / beds * 100 if beds else 0
+            occ_v = None
+            _ov = rr.get("合計稼働率")
+            if pd.notna(_ov) and float(_ov or 0) > 0:
+                occ_v = float(_ov)
+            else:
+                stay = _si(rr.get("合計_在棟延べ数", 0))
+                if stay > 0:
+                    occ_v = min(150.0, stay / (beds * 365) * 100)
+            occ_s = f"{occ_v:.0f}%" if occ_v else "不明"
+            robo_s = f"あり（{robo}件）" if robo > 0 else "なし"
+            krate = (koudo + kyusei) / beds * 100 if beds else 0
+            return f"""あなたは地域医療構想の専門アナリストです。
+以下のデータをもとに、この病院の短評を60〜100文字の日本語で書いてください。
+
+要件：
+- 地域平均との差異・病院固有の特徴・数値の組み合わせから読み取れる現況を指摘すること
+- 「〜が重要」「〜が期待される」など抽象的な結論だけで終わらないこと
+- 短評のみ返すこと（見出し・前置き不要）
+
+【地域：{_rv_region}（{_rv_year}年度・全{_n_hosp_rv}院）】
+合計許可病床 {_rv_total_beds:,}床
+地域平均病床構成: 高度急性期{_avg_koudo_r:.0f}% 急性期{_avg_kyusei_r:.0f}% 回復期{_avg_kaifu_r:.0f}% 慢性期{_avg_mansei_r:.0f}%
+地域平均医師密度: {_avg_doc100_rv:.1f}人/100床
+地域平均救急搬送: {_avg_emg_rv:.0f}件/年
+
+【病院：{hn}（急性期拠点スコア{scr}点・地域{rnk}位）】
+許可病床: {beds}床
+病床構成: 高度急性期{koudo}床({koudo/beds*100 if beds else 0:.0f}%) 急性期{kyusei}床 回復期{kaif}床 慢性期{mans}床
+急性期系合計: {krate:.0f}%（地域平均{_avg_koudo_r+_avg_kyusei_r:.0f}%）
+医師: {docs}人（{doc100:.1f}人/100床、地域平均比{doc100-_avg_doc100_rv:+.1f}）
+看護師: {nrs}人
+救急搬送: {emg}件/年（地域平均比{emg-_avg_emg_rv:+.0f}件）
+手術総数: {surg}件（うち全身麻酔{zmac}件）
+稼働率: {occ_s}
+ロボット支援手術: {robo_s}
+機能分類: {role}"""
+
+        _need_gen = [
+            rr for _, rr in rv_df.iterrows()
+            if (_rv_pref, _rv_region, _rv_year, rr["医療機関名"]) not in _rv_ai_cache
+        ]
+        if _need_gen:
+            with st.spinner(f"AI短評を生成中… {len(_need_gen)}病院"):
+                try:
+                    import anthropic as _ant_mod
+                    _ant_client = _ant_mod.Anthropic(api_key=_ant_key)
+                    for _rr in _need_gen:
+                        _ck = (_rv_pref, _rv_region, _rv_year, _rr["医療機関名"])
+                        try:
+                            _resp = _ant_client.messages.create(
+                                model="claude-haiku-4-5-20251001",
+                                max_tokens=150,
+                                messages=[{"role": "user", "content": _build_rv_prompt(_rr)}],
+                            )
+                            _rv_ai_cache[_ck] = _resp.content[0].text.strip()
+                        except Exception:
+                            _rv_ai_cache[_ck] = None
+                except Exception:
+                    pass
+
     # ════════════════════════════════════
     # Section 1 : 地域現状スナップショット
     # ════════════════════════════════════
@@ -2569,10 +2663,17 @@ if st.session_state.get("_view_mode") == "region_vision":
 </p>
         """, unsafe_allow_html=True)
 
+    _ai_badge = (
+        ' <span style="font-size:0.65rem;color:#7c3aed;background:#f5f3ff;'
+        'padding:1px 5px;border-radius:3px;vertical-align:middle;">AI</span>'
+        if _ant_key else ""
+    )
     for _, _rr in rv_df.iterrows():
         _hn_r   = _rr["医療機関名"]
         _role_r = _rr["_role"]
-        _comm_r = _rr["_comment"]
+        _ck_r   = (_rv_pref, _rv_region, _rv_year, _hn_r)
+        _comm_r = (_rv_ai_cache.get(_ck_r) or _rr["_comment"]) if _ant_key else _rr["_comment"]
+        _is_ai  = _ant_key and bool(_rv_ai_cache.get(_ck_r))
         _scr_r  = int(_rr["_score"])
         _beds_r = _si(_rr.get("合計_許可病床数", 0))
         _surg_r = _surg_map_rv.get(_hn_r, 0)
@@ -2592,7 +2693,9 @@ if st.session_state.get("_view_mode") == "region_vision":
               スコア {_scr_r}点 | {_beds_r:,}床{_surg_txt}{_docs_txt}
             </span>
           </div>
-          <div style="font-size:0.8rem; color:#555; line-height:1.6;">{_comm_r}</div>
+          <div style="font-size:0.8rem; color:#555; line-height:1.6;">
+            {_comm_r}{_ai_badge if _is_ai else ""}
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
