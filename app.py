@@ -1968,6 +1968,7 @@ if st.session_state.get("_view_mode") == "region_vision":
     _surg_df_rv = st.session_state.get("surgery_df")
     _surg_map_rv   = {}   # 医療機関名 → 手術総数
     _robot_map_rv  = {}   # 医療機関名 → ロボット支援手術数
+    _zenmac_map_rv = {}   # 医療機関名 → 全身麻酔手術数
     if _surg_df_rv is not None and not _surg_df_rv.empty:
         _rv_smask = pd.Series(True, index=_surg_df_rv.index)
         if "二次医療圏名" in _surg_df_rv.columns:
@@ -1976,8 +1977,9 @@ if st.session_state.get("_view_mode") == "region_vision":
             _rv_smask = _rv_smask & (_surg_df_rv["報告年度"] == _rv_year)
         for _, _sr in _surg_df_rv[_rv_smask].iterrows():
             _hn = str(_sr.get("医療機関名", ""))
-            _surg_map_rv[_hn]  = _si(_sr.get("手術総数", 0))
-            _robot_map_rv[_hn] = _si(_sr.get("ロボット支援手術数", 0))
+            _surg_map_rv[_hn]   = _si(_sr.get("手術総数", 0))
+            _robot_map_rv[_hn]  = _si(_sr.get("ロボット支援手術数", 0))
+            _zenmac_map_rv[_hn] = _si(_sr.get("全身麻酔手術数", 0))
 
     # ════════════════════════════════════
     # スコアリング・分類関数
@@ -2035,78 +2037,232 @@ if st.session_state.get("_view_mode") == "region_vision":
         return sum(s.values()), s
 
     def _classify_role_rv(row, rank, score, n_total):
-        """機能方向性を分類してラベルとコメントを返す"""
+        """機能方向性を多変量フィットスコアで分類しラベルとコメントを返す"""
         beds    = _si(row.get("合計_許可病床数", 0))
         koudo   = _si(row.get("高度急性期_許可病床数", 0))
         kyusei  = _si(row.get("急性期_許可病床数", 0))
         kaifuku = _si(row.get("回復期_許可病床数", 0))
         mansei  = _si(row.get("慢性期_許可病床数", 0))
+        docs    = _si(row.get("常勤医師数", 0))
+        nurses  = _si(row.get("常勤看護師数", 0))
+        emg     = _si(row.get("救急搬送件数", 0))
         hn      = str(row.get("医療機関名", ""))
 
         if beds == 0:
             return "⚪ データ不足", "許可病床数データがありません。"
 
+        surg_cnt = _surg_map_rv.get(hn, 0)
+        robot    = _robot_map_rv.get(hn, 0)
+        zenmac   = _zenmac_map_rv.get(hn, 0)
+
         acute_r    = (koudo + kyusei) / beds
         recovery_r = kaifuku / beds
         chronic_r  = mansei / beds
-        surg_cnt   = _surg_map_rv.get(hn, 0)
+        doc100     = docs / beds * 100 if beds > 0 else 0
+        nurse100   = nurses / beds * 100 if beds > 0 else 0
 
-        # 急性期拠点候補: 地域上位かつスコア水準を満たす
-        _top_n = max(1, min(3, max(1, n_total // 4) + 1))
+        # 稼働率（合計稼働率列 or 在棟延べ数から計算）
+        occ = None
+        _occ_raw = row.get("合計稼働率")
+        if pd.notna(_occ_raw) and float(_occ_raw or 0) > 0:
+            occ = float(_occ_raw)
+        else:
+            stay = _si(row.get("合計_在棟延べ数", 0))
+            if stay > 0:
+                occ = min(150.0, stay / (beds * 365) * 100)
+
+        # ── 各役割への適合度スコア（0〜100点） ──────────────
+        _top_n = max(1, min(3, n_total // 4 + 1))
+
+        # ① 急性期拠点候補
+        f_kyoten = 0
+        if rank <= _top_n:            f_kyoten += 35
+        elif rank <= _top_n + 1:      f_kyoten += 15
+        f_kyoten += min(25, score * 25 // 55)      # 急性期拠点スコア反映
+        if acute_r >= 0.50:           f_kyoten += 10
+        if surg_cnt >= 2000:          f_kyoten += 10
+        elif surg_cnt >= 1000:        f_kyoten += 5
+        if zenmac >= 800:             f_kyoten += 5
+        if emg >= 2000:               f_kyoten += 10
+        elif emg >= 1000:             f_kyoten += 5
+        if robot > 0:                 f_kyoten += 5
+        if occ and occ >= 80:         f_kyoten += 5
+
+        # ② 地域急性期
+        f_acute = 0
+        if acute_r >= 0.65:           f_acute += 45
+        elif acute_r >= 0.50:         f_acute += 35
+        elif acute_r >= 0.40:         f_acute += 20
+        elif acute_r >= 0.30:         f_acute += 8
+        if beds >= 300:               f_acute += 20
+        elif beds >= 200:             f_acute += 15
+        elif beds >= 150:             f_acute += 10
+        elif beds >= 100:             f_acute += 5
+        if surg_cnt >= 1000:          f_acute += 10
+        elif surg_cnt >= 500:         f_acute += 6
+        elif surg_cnt >= 200:         f_acute += 2
+        if emg >= 1000:               f_acute += 10
+        elif emg >= 500:              f_acute += 6
+        elif emg >= 200:              f_acute += 2
+        if occ and occ >= 75:         f_acute += 5
+        if doc100 >= 8:               f_acute += 5
+        # 拠点候補と重複しないよう減点
         if rank <= _top_n and score >= 38:
+            f_acute = max(0, f_acute - 20)
+
+        # ③ 高齢者救急（急性期＋回復期混合、高齢者軽〜中等症対応）
+        f_elderly = 0
+        if 0.20 <= acute_r <= 0.55:   f_elderly += 30
+        elif 0 < acute_r < 0.20:      f_elderly += 10
+        if recovery_r >= 0.25:        f_elderly += 25
+        elif recovery_r >= 0.15:      f_elderly += 15
+        elif recovery_r >= 0.05:      f_elderly += 5
+        if emg > 0:                   f_elderly += 10
+        if beds < 300:                f_elderly += 10
+        if occ and 65 <= occ <= 93:   f_elderly += 5
+        # 急性期比率が高く大規模なら地域急性期向き
+        if acute_r >= 0.60 and beds >= 200:
+            f_elderly = max(0, f_elderly - 20)
+
+        # ④ 回復期強化
+        f_recovery = 0
+        if recovery_r >= 0.55:        f_recovery += 55
+        elif recovery_r >= 0.45:      f_recovery += 45
+        elif recovery_r >= 0.35:      f_recovery += 30
+        elif recovery_r >= 0.25:      f_recovery += 15
+        elif recovery_r >= 0.15:      f_recovery += 5
+        if acute_r <= 0.20:           f_recovery += 15
+        if chronic_r <= 0.15:         f_recovery += 5
+        if occ and occ >= 85:         f_recovery += 15
+        elif occ and occ >= 75:       f_recovery += 7
+        if nurse100 >= 10:            f_recovery += 5
+        if beds >= 80:                f_recovery += 5
+
+        # ⑤ 慢性期・在宅支援
+        f_chronic = 0
+        if chronic_r >= 0.55:         f_chronic += 55
+        elif chronic_r >= 0.45:       f_chronic += 45
+        elif chronic_r >= 0.35:       f_chronic += 30
+        elif chronic_r >= 0.25:       f_chronic += 15
+        elif chronic_r >= 0.15:       f_chronic += 5
+        if acute_r <= 0.15:           f_chronic += 15
+        if recovery_r <= 0.20:        f_chronic += 5
+        if occ and occ >= 88:         f_chronic += 15
+        elif occ and occ >= 78:       f_chronic += 7
+        if nurse100 >= 8:             f_chronic += 5
+
+        # ⑥ 専門・外来特化
+        f_small = 0
+        if beds < 50:                 f_small += 60
+        elif beds < 80:               f_small += 40
+        elif beds < 100:              f_small += 20
+        elif beds < 130:              f_small += 5
+        if acute_r < 0.25 and recovery_r < 0.25 and chronic_r < 0.25:
+            f_small += 15
+
+        fits = {
+            "kyoten":   f_kyoten,
+            "acute":    f_acute,
+            "elderly":  f_elderly,
+            "recovery": f_recovery,
+            "chronic":  f_chronic,
+            "small":    f_small,
+        }
+        priority = ["kyoten", "acute", "elderly", "recovery", "chronic", "small"]
+        best = max(priority, key=lambda k: (fits[k], -priority.index(k)))
+
+        # ── コメント用ヘルパー ───────────────────────────────
+        def _fmt(*parts):
+            return "".join(p for p in parts if p)
+
+        occ_s  = f"稼働率{occ:.0f}%" if occ else ""
+        emg_s  = f"救急搬送{emg:,}件/年" if emg > 0 else ""
+        surg_s = f"手術{surg_cnt:,}件/年（うち全身麻酔{zenmac:,}件）" if surg_cnt > 0 and zenmac > 0 else \
+                 f"手術{surg_cnt:,}件/年" if surg_cnt > 0 else ""
+        nrs_s  = f"看護師{nurses}人（{nurse100:.0f}人/100床）" if nurses > 0 else ""
+
+        # ── ラベル・コメント出力 ────────────────────────────
+        MIN_FIT = 20
+
+        if best == "kyoten" and fits[best] >= MIN_FIT:
+            _robot_s = f"ロボット支援手術{robot}件を含む高度手術実績があり、" if robot > 0 else ""
+            _doc_s   = f"常勤医師{docs}人（{doc100:.0f}人/100床）" if docs > 0 else ""
             return (
                 "🏆 急性期拠点候補",
-                f"スコア {score}点（地域 {rank}位）。病床規模・手術実績・医師密度から地域の急性期医療を"
-                f"集約的に担う中核病院としての素地がある。"
-                f"{'ロボット支援手術や高度画像設備も備え、高度急性期機能の集約先として有力。' if _robot_map_rv.get(hn,0)>0 else ''}"
+                _fmt(
+                    f"急性期拠点機能スコア{score}点（地域{rank}位）。",
+                    f"急性期系病床{acute_r*100:.0f}%・{_doc_s}。",
+                    f"{_robot_s}地域の急性期医療を集約的に担う中核病院として有力。",
+                    f"　{emg_s}{'、' if emg_s and surg_s else ''}{surg_s}{'、' if surg_s and occ_s else ''}{occ_s}。" if any([emg_s, surg_s, occ_s]) else "",
+                )
             )
 
-        # 地域急性期: 急性期系比率高く中〜大規模
-        if acute_r >= 0.50 and beds >= 150:
+        if best == "acute" and fits[best] >= MIN_FIT:
             return (
                 "🔴 地域急性期",
-                f"急性期系病床 {acute_r*100:.0f}%（{int(beds*acute_r):,}床）。"
-                f"地域急性期機能を担いつつ、急性期拠点病院との役割分担・連携強化が重要。"
-                f"{f'手術実績 {surg_cnt:,}件/年。' if surg_cnt > 0 else ''}"
+                _fmt(
+                    f"急性期系病床{acute_r*100:.0f}%（{int(beds*acute_r):,}床）・{beds}床規模。",
+                    f"地域の急性期需要を幅広く担い、急性期拠点病院との役割分担・連携強化が課題。",
+                    f"　{emg_s}{'、' if emg_s and surg_s else ''}{surg_s}{'、' if surg_s and occ_s else ''}{occ_s}。" if any([emg_s, surg_s, occ_s]) else "",
+                )
             )
 
-        # 高齢者救急: 急性期と回復期を両方持ち高齢患者対応に適した構成
-        if acute_r >= 0.25 and (recovery_r >= 0.15 or beds < 300):
+        if best == "elderly" and fits[best] >= MIN_FIT:
             return (
                 "🚑 高齢者救急",
-                f"急性期 {acute_r*100:.0f}% / 回復期 {recovery_r*100:.0f}%。"
-                f"高齢者の軽〜中等症救急入院受け入れと在宅・施設からの後方支援を担う機能が有効。"
-                f"2040年にかけて高齢者救急需要の増大が見込まれる。"
+                _fmt(
+                    f"急性期系{acute_r*100:.0f}%・回復期{recovery_r*100:.0f}%の混合構成（{beds}床）。",
+                    f"高齢者の軽〜中等症急性期入院と在宅・施設への後方支援を担うポジション。",
+                    f"2040年に向け高齢者救急需要の増大が見込まれ、受け入れ体制整備が重要。",
+                    f"　{emg_s}{'、' if emg_s and occ_s else ''}{occ_s}。" if any([emg_s, occ_s]) else "",
+                )
             )
 
-        # 回復期強化
-        if recovery_r >= 0.40:
+        if best == "recovery" and fits[best] >= MIN_FIT:
+            _occ_note = f"稼働率{occ:.0f}%と高需要。" if occ and occ >= 85 else ""
             return (
                 "🔄 回復期強化",
-                f"回復期病床 {recovery_r*100:.0f}%（{int(beds*recovery_r):,}床）。"
-                f"2040年に向けて高齢者リハビリ需要が大幅増大するため、回復期・地域包括ケア病棟機能の拡充が期待される。"
+                _fmt(
+                    f"回復期病床{recovery_r*100:.0f}%（{int(beds*recovery_r):,}床）。",
+                    f"{_occ_note}",
+                    f"2040年に向け高齢者リハビリ需要が大幅増大するなか、",
+                    f"回復期・地域包括ケア病棟機能のさらなる拡充が期待される。",
+                    f"　{nrs_s}{'。' if nrs_s else ''}",
+                )
             )
 
-        # 慢性期・在宅支援
-        if chronic_r >= 0.35:
+        if best == "chronic" and fits[best] >= MIN_FIT:
+            _occ_note = f"稼働率{occ:.0f}%と高稼働を維持。" if occ and occ >= 88 else ""
             return (
                 "💊 慢性期・在宅支援",
-                f"慢性期病床 {chronic_r*100:.0f}%（{int(beds*chronic_r):,}床）。"
-                f"高齢化に伴う療養需要に対応しつつ、在宅療養支援機能や看取り対応の強化も重要。"
+                _fmt(
+                    f"慢性期病床{chronic_r*100:.0f}%（{int(beds*chronic_r):,}床）。",
+                    f"{_occ_note}",
+                    f"高齢化に伴う療養需要に対応しつつ、",
+                    f"在宅療養支援・看取り機能の充実が2040年に向けた重要課題。",
+                    f"　{nrs_s}{'。' if nrs_s else ''}",
+                )
             )
 
-        # 小規模
-        if beds < 100:
+        if best == "small" and fits[best] >= MIN_FIT:
             return (
                 "🏠 専門・外来特化",
-                f"小規模（{beds:,}床）。外来・専門診療への特化や在宅支援機能の強化、"
-                f"大病院との連携・後方ベッドとしての役割が有効。"
+                _fmt(
+                    f"許可病床{beds}床の小規模医療機関。",
+                    f"外来・専門診療への特化、または在宅療養支援・後方ベッドとしての",
+                    f"役割強化が地域内機能分担として有効。",
+                    f"　{occ_s}{'。' if occ_s else ''}",
+                )
             )
 
         return (
             "⚪ 機能転換検討中",
-            f"急性期 {acute_r*100:.0f}% / 回復期 {recovery_r*100:.0f}% / 慢性期 {chronic_r*100:.0f}%。"
-            f"病床機能の選択と集中や地域での役割分担について、調整会議での議論が必要。"
+            _fmt(
+                f"急性期{acute_r*100:.0f}%・回復期{recovery_r*100:.0f}%・慢性期{chronic_r*100:.0f}%（{beds}床）。",
+                f"いずれの機能にも明確な特化が見られない。",
+                f"地域医療構想調整会議での機能選択・役割分担の議論が重要。",
+                f"　{emg_s}{'、' if emg_s and occ_s else ''}{occ_s}{'。' if any([emg_s, occ_s]) else ''}",
+            )
         )
 
     # ── スコア計算
