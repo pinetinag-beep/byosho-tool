@@ -564,6 +564,33 @@ def _db_surgery():
     return load_surgery_from_db(str(DB_PATH))
 
 
+@st.cache_data(ttl=3600 * 24 * 7, show_spinner=False)
+def _gen_rv_ai_comments(records_json: str, api_key: str) -> dict:
+    """機能方向性の短評をClaude APIで並列生成（全セッション共有・7日キャッシュ）"""
+    import json
+    import anthropic
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    records = json.loads(records_json)
+    client  = anthropic.Anthropic(api_key=api_key)
+    out: dict = {}
+    def _call(rec):
+        try:
+            r = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=150,
+                messages=[{"role": "user", "content": rec["prompt"]}],
+            )
+            return rec["hn"], r.content[0].text.strip()
+        except Exception:
+            return rec["hn"], None
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {ex.submit(_call, r): r["hn"] for r in records}
+        for fut in as_completed(futures):
+            hn, txt = fut.result()
+            out[hn] = txt
+    return out
+
+
 # ── セッションステート初期化 ────────────────────────────────
 
 if "df" not in st.session_state:
@@ -2284,9 +2311,9 @@ if st.session_state.get("_view_mode") == "region_vision":
     )
 
     # ── AI短評生成（ANTHROPIC_API_KEY が設定されている場合） ──────
-    _rv_ai_cache = st.session_state.setdefault("_rv_ai_cache", {})
     _ant_key = (st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else "") \
                or os.environ.get("ANTHROPIC_API_KEY", "")
+    _rv_ai_results: dict = {}
     if _ant_key:
         _rv_total_beds = int(rv_df["合計_許可病床数"].fillna(0).sum())
         def _rv_avg(col):
@@ -2324,9 +2351,9 @@ if st.session_state.get("_view_mode") == "region_vision":
                 stay = _si(rr.get("合計_在棟延べ数", 0))
                 if stay > 0:
                     occ_v = min(150.0, stay / (beds * 365) * 100)
-            occ_s = f"{occ_v:.0f}%" if occ_v else "不明"
+            occ_s  = f"{occ_v:.0f}%" if occ_v else "不明"
             robo_s = f"あり（{robo}件）" if robo > 0 else "なし"
-            krate = (koudo + kyusei) / beds * 100 if beds else 0
+            krate  = (koudo + kyusei) / beds * 100 if beds else 0
             return f"""あなたは地域医療構想の専門アナリストです。
 以下のデータをもとに、この病院の短評を60〜100文字の日本語で書いてください。
 
@@ -2353,36 +2380,18 @@ if st.session_state.get("_view_mode") == "region_vision":
 ロボット支援手術: {robo_s}
 機能分類: {role}"""
 
-        _need_gen = [
-            rr for _, rr in rv_df.iterrows()
-            if (_rv_pref, _rv_region, _rv_year, rr["医療機関名"]) not in _rv_ai_cache
+        # プロンプトを組み立ててサーバー共有キャッシュ関数に渡す
+        import json as _json
+        _prompt_records = [
+            {"hn": rr["医療機関名"], "prompt": _build_rv_prompt(rr)}
+            for _, rr in rv_df.iterrows()
         ]
-        if _need_gen:
-            with st.spinner(f"AI短評を生成中… {len(_need_gen)}病院（並列処理）"):
-                try:
-                    import anthropic as _ant_mod
-                    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
-                    _ant_client = _ant_mod.Anthropic(api_key=_ant_key)
-
-                    def _gen_one(rr):
-                        _ck = (_rv_pref, _rv_region, _rv_year, rr["医療機関名"])
-                        try:
-                            _resp = _ant_client.messages.create(
-                                model="claude-haiku-4-5-20251001",
-                                max_tokens=150,
-                                messages=[{"role": "user", "content": _build_rv_prompt(rr)}],
-                            )
-                            return _ck, _resp.content[0].text.strip()
-                        except Exception:
-                            return _ck, None
-
-                    with ThreadPoolExecutor(max_workers=8) as _pool:
-                        _futures = {_pool.submit(_gen_one, rr): rr for rr in _need_gen}
-                        for _fut in _as_completed(_futures):
-                            _ck, _text = _fut.result()
-                            _rv_ai_cache[_ck] = _text
-                except Exception:
-                    pass
+        _records_json = _json.dumps(_prompt_records, ensure_ascii=False)
+        try:
+            with st.spinner(f"AI短評を生成中… {len(_prompt_records)}病院"):
+                _rv_ai_results = _gen_rv_ai_comments(_records_json, _ant_key)
+        except Exception:
+            pass
 
     # ════════════════════════════════════
     # Section 1 : 地域現状スナップショット
@@ -2679,9 +2688,9 @@ if st.session_state.get("_view_mode") == "region_vision":
     for _, _rr in rv_df.iterrows():
         _hn_r   = _rr["医療機関名"]
         _role_r = _rr["_role"]
-        _ck_r   = (_rv_pref, _rv_region, _rv_year, _hn_r)
-        _comm_r = (_rv_ai_cache.get(_ck_r) or _rr["_comment"]) if _ant_key else _rr["_comment"]
-        _is_ai  = _ant_key and bool(_rv_ai_cache.get(_ck_r))
+        _ai_txt = _rv_ai_results.get(_hn_r)
+        _comm_r = _ai_txt if _ai_txt else _rr["_comment"]
+        _is_ai  = bool(_ai_txt)
         _scr_r  = int(_rr["_score"])
         _beds_r = _si(_rr.get("合計_許可病床数", 0))
         _surg_r = _surg_map_rv.get(_hn_r, 0)
