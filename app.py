@@ -538,6 +538,24 @@ CACHE_FILE         = Path(__file__).parent / "data_cache.parquet"
 CACHE_FILE_WARD    = Path(__file__).parent / "ward_cache.parquet"
 CACHE_FILE_SURGERY = Path(__file__).parent / "surgery_cache.parquet"
 
+_DPC_DIR = Path(__file__).parent
+DPC_PARQUET_MATCH    = _DPC_DIR / "dpc_match.parquet"
+DPC_PARQUET_HOSP     = _DPC_DIR / "dpc_hospitals.parquet"
+DPC_PARQUET_PROC     = _DPC_DIR / "dpc_procedure_stats.parquet"
+DPC_PARQUET_MDC_RATIO= _DPC_DIR / "dpc_mdc_ratio.parquet"
+DPC_PARQUET_MDC_CASES= _DPC_DIR / "dpc_mdc_cases.parquet"
+DPC_PARQUET_READM    = _DPC_DIR / "dpc_readmission.parquet"
+DPC_PARQUET_SURG     = _DPC_DIR / "dpc_surgery_detail.parquet"
+
+MDC_LABELS = {
+    "MDC01":"神経系", "MDC02":"眼科系", "MDC03":"耳鼻咽喉科系",
+    "MDC04":"呼吸器系", "MDC05":"循環器系", "MDC06":"消化器系",
+    "MDC07":"筋骨格系", "MDC08":"皮膚・皮下組織", "MDC09":"乳房",
+    "MDC10":"内分泌・代謝", "MDC11":"腎・尿路系", "MDC12":"女性生殖器系",
+    "MDC13":"血液・造血器", "MDC14":"新生児・先天性", "MDC15":"小児疾患",
+    "MDC16":"外傷・熱傷・中毒", "MDC17":"精神疾患", "MDC18":"その他",
+}
+
 
 def save_cache(df: pd.DataFrame):
     df.to_parquet(CACHE_FILE, index=False)
@@ -562,6 +580,35 @@ def _db_wards():
 @st.cache_data(show_spinner=False)
 def _db_surgery():
     return load_surgery_from_db(str(DB_PATH))
+
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_match():
+    return pd.read_parquet(DPC_PARQUET_MATCH) if DPC_PARQUET_MATCH.exists() else None
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_hospitals():
+    return pd.read_parquet(DPC_PARQUET_HOSP) if DPC_PARQUET_HOSP.exists() else None
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_procedure_stats():
+    return pd.read_parquet(DPC_PARQUET_PROC) if DPC_PARQUET_PROC.exists() else None
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_mdc_ratio():
+    return pd.read_parquet(DPC_PARQUET_MDC_RATIO) if DPC_PARQUET_MDC_RATIO.exists() else None
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_mdc_cases():
+    return pd.read_parquet(DPC_PARQUET_MDC_CASES) if DPC_PARQUET_MDC_CASES.exists() else None
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_readmission():
+    return pd.read_parquet(DPC_PARQUET_READM) if DPC_PARQUET_READM.exists() else None
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_surgery_detail():
+    return pd.read_parquet(DPC_PARQUET_SURG) if DPC_PARQUET_SURG.exists() else None
 
 
 @st.cache_data(ttl=3600 * 24 * 7, show_spinner=False)
@@ -2979,9 +3026,31 @@ kpi_card(m5, "常勤医師数",  f"{doctors:,}人",               f"看護師 {n
 st.markdown("<br>", unsafe_allow_html=True)
 
 
+# ── DPC判定 ───────────────────────────────────────────────
+
+_dpc_ban: int | None = None
+_dpc_hosp_row = None
+_is_dpc = False
+_dpc_matched_name = None
+_dpc_match_all = _load_dpc_match()
+_dpc_hospitals_all = _load_dpc_hospitals()
+if _dpc_match_all is not None:
+    _m = _dpc_match_all[_dpc_match_all["病床報告施設名"] == hospital]
+    if not _m.empty and "未結合" not in str(_m.iloc[0]["マッチ状態"]):
+        _is_dpc = True
+        _dpc_matched_name = str(_m.iloc[0]["DPC施設名"])
+        if _dpc_hospitals_all is not None:
+            _dpc_h = _dpc_hospitals_all[_dpc_hospitals_all["施設名"] == _dpc_matched_name]
+            if not _dpc_h.empty:
+                # 最新年度のレコードを使用
+                _dpc_h = _dpc_h.sort_values("年度", ascending=False)
+                _dpc_ban = int(_dpc_h.iloc[0]["告示番号"])
+                _dpc_hosp_row = _dpc_h.iloc[0]
+
+
 # ── タブ ──────────────────────────────────────────────────
 
-tab1, tab7, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+_tab_labels = [
     "📊 病院概要",
     "🗺️ 地図",
     "🏆 地域比較",
@@ -2989,7 +3058,13 @@ tab1, tab7, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 経年トレンド",
     "👨‍⚕️ スタッフ分析",
     "📋 詳細分析",
-])
+]
+if _is_dpc:
+    _tab_labels.append("🏥 DPC分析")
+
+_all_tabs = st.tabs(_tab_labels)
+tab1, tab7, tab2, tab3, tab4, tab5, tab6 = _all_tabs[:7]
+tab_dpc = _all_tabs[7] if _is_dpc else None
 
 
 # ── TAB 1: 病院概要 ─────────────────────────────────────────
@@ -3837,5 +3912,226 @@ with tab7:
                                 "所要時間(分)": st.column_config.NumberColumn("所要時間", format="%.1f 分"),
                             },
                         )
+
+
+# ── TAB DPC: DPC分析 ──────────────────────────────────────
+
+if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
+    with tab_dpc:
+        _dp_proc_all  = _load_dpc_procedure_stats()
+        _dp_ratio_all = _load_dpc_mdc_ratio()
+        _dp_readm_all = _load_dpc_readmission()
+        _dp_surg_all  = _load_dpc_surgery_detail()
+
+        def _dpc_latest(df, ban):
+            if df is None:
+                return pd.DataFrame()
+            sub = df[df["告示番号"] == ban]
+            if sub.empty:
+                return pd.DataFrame()
+            if "年度" in sub.columns:
+                sub = sub.sort_values("年度", ascending=False)
+            return sub
+
+        _dp_proc  = _dpc_latest(_dp_proc_all, _dpc_ban)
+        _dp_ratio = _dpc_latest(_dp_ratio_all, _dpc_ban)
+        _dp_readm = _dpc_latest(_dp_readm_all, _dpc_ban)
+        _dp_surg  = _dpc_latest(_dp_surg_all, _dpc_ban) if _dp_surg_all is not None else pd.DataFrame()
+
+        # ── 基本情報ヘッダー ──
+        if _dpc_hosp_row is not None:
+            import re as _re_dpc
+            _dpc_type      = str(_dpc_hosp_row.get("病院類型", ""))
+            _dpc_beds      = _si(_dpc_hosp_row.get("DPC算定病床数", 0))
+            _dpc_totbeds   = _si(_dpc_hosp_row.get("病床総数", 0))
+            _dpc_ratio_pct = float(_dpc_hosp_row.get("DPC算定病床割合", 0) or 0)
+            _dpc_nyuin     = str(_dpc_hosp_row.get("入院基本料", "") or "")
+            _dpc_url       = str(_dpc_hosp_row.get("病院指標URL", "") or "")
+            _dpc_url       = "" if _dpc_url in ("nan", "None") else _dpc_url.strip()
+            _m_since = _re_dpc.search(r"(平成|令和)\d+年度", _dpc_type)
+            _since_str = _m_since.group(0) if _m_since else ""
+
+            _badge_html = f"""<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+              <span style="background:#dbeafe;color:#1e40af;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:700;">🏥 DPC参加病院</span>
+              {"" if not _since_str else f'<span style="background:#f0fdf4;color:#166534;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;">{_since_str}〜</span>'}
+              {"" if not _dpc_nyuin or _dpc_nyuin=="nan" else f'<span style="background:#fef9c3;color:#92400e;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;">{_dpc_nyuin}</span>'}
+              {"" if not _dpc_url else f'<a href="{_dpc_url}" target="_blank" style="background:#f3e8ff;color:#6b21a8;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;">📊 病院情報公表</a>'}
+            </div>"""
+            st.markdown(_badge_html, unsafe_allow_html=True)
+
+            _di1, _di2, _di3, _di4 = st.columns(4)
+            _di1.markdown(
+                f'<div class="metric-card" style="border-top-color:#3b82f6;">'
+                f'<div class="metric-label">DPC算定病床数</div>'
+                f'<div class="metric-value">{_dpc_beds:,}床</div>'
+                f'<div class="metric-sub">病床総数 {_dpc_totbeds:,}床</div></div>',
+                unsafe_allow_html=True,
+            )
+            _di2.markdown(
+                f'<div class="metric-card" style="border-top-color:#8b5cf6;">'
+                f'<div class="metric-label">DPC算定病床割合</div>'
+                f'<div class="metric-value">{_dpc_ratio_pct*100:.1f}%</div>'
+                f'<div class="metric-sub">&nbsp;</div></div>',
+                unsafe_allow_html=True,
+            )
+            if not _dp_proc.empty:
+                _total_cases = _si(_dp_proc.iloc[0].get("件数_総数", 0))
+                _surg_rate   = float(_dp_proc.iloc[0].get("割合_手術有", 0) or 0)
+                _readm_rate  = float(_dp_readm.iloc[0].get("再入院率", 0) or 0) if not _dp_readm.empty else 0
+                _di3.markdown(
+                    f'<div class="metric-card" style="border-top-color:#10b981;">'
+                    f'<div class="metric-label">年間DPC算定件数</div>'
+                    f'<div class="metric-value">{_total_cases:,}件</div>'
+                    f'<div class="metric-sub">&nbsp;</div></div>',
+                    unsafe_allow_html=True,
+                )
+                _di4.markdown(
+                    f'<div class="metric-card" style="border-top-color:#f59e0b;">'
+                    f'<div class="metric-label">手術実施率</div>'
+                    f'<div class="metric-value">{_surg_rate*100:.1f}%</div>'
+                    f'<div class="metric-sub">再入院率 {_readm_rate*100:.2f}%</div></div>',
+                    unsafe_allow_html=True,
+                )
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── 診療実績（手術・化学療法・放射線・全身麻酔・救急） ──
+        if not _dp_proc.empty:
+            st.markdown('<div class="section-header">診療実績（手術・化学療法・放射線療法・全身麻酔）</div>', unsafe_allow_html=True)
+            _proc_row = _dp_proc.iloc[0]
+            _proc_avg = {}
+            if _dp_proc_all is not None:
+                for _col in ["割合_手術有","割合_化学療法有","割合_放射線療法有","割合_全身麻酔","割合_救急車搬送有"]:
+                    if _col in _dp_proc_all.columns:
+                        _proc_avg[_col] = float(_dp_proc_all[_col].median())
+
+            _proc_items = [
+                ("手術実施率",      "割合_手術有",       "件数_手術有",       "#3b82f6"),
+                ("化学療法実施率",  "割合_化学療法有",   "件数_化学療法有",   "#8b5cf6"),
+                ("放射線療法実施率","割合_放射線療法有", "件数_放射線療法有", "#f59e0b"),
+                ("全身麻酔実施率",  "割合_全身麻酔",     "件数_全身麻酔",     "#10b981"),
+                ("救急搬送入院率",  "割合_救急車搬送有", "件数_救急車搬送有", "#ef4444"),
+            ]
+            _pc1, _pc2, _pc3, _pc4, _pc5 = st.columns(5)
+            for _col_ui, (_label, _r_col, _c_col, _color) in zip(
+                [_pc1, _pc2, _pc3, _pc4, _pc5], _proc_items
+            ):
+                _val  = float(_proc_row.get(_r_col, 0) or 0)
+                _cnt  = _si(_proc_row.get(_c_col, 0))
+                _avg  = _proc_avg.get(_r_col, 0)
+                _diff = (_val - _avg) * 100
+                _diff_str = f"中央値比 {'▲' if _diff >= 0 else '▼'}{abs(_diff):.1f}pt" if _avg else ""
+                _col_ui.markdown(
+                    f'<div class="metric-card" style="border-top-color:{_color};">'
+                    f'<div class="metric-label">{_label}</div>'
+                    f'<div class="metric-value">{_val*100:.1f}%</div>'
+                    f'<div class="metric-sub">{_cnt:,}件<br>{_diff_str}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+        # ── MDC別患者構成比 ──
+        if not _dp_ratio.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown('<div class="section-header">MDC別患者構成比</div>', unsafe_allow_html=True)
+            _ratio_row = _dp_ratio.iloc[0]
+            _mdc_keys = [k for k in MDC_LABELS if k in _ratio_row.index]
+            if _mdc_keys:
+                _ratio_avgs = {}
+                if _dp_ratio_all is not None:
+                    for _k in _mdc_keys:
+                        if _k in _dp_ratio_all.columns:
+                            _ratio_avgs[_k] = float(_dp_ratio_all[_k].median())
+                _mdc_vals  = [float(_ratio_row.get(k, 0) or 0) * 100 for k in _mdc_keys]
+                _mdc_avgs  = [_ratio_avgs.get(k, 0) * 100 for k in _mdc_keys]
+                _mdc_names_list = [MDC_LABELS[k] for k in _mdc_keys]
+
+                import plotly.graph_objects as _go_dpc
+                _fig_mdc = _go_dpc.Figure()
+                _fig_mdc.add_trace(_go_dpc.Bar(
+                    x=_mdc_vals, y=_mdc_names_list, orientation="h",
+                    name=hospital, marker_color="#3b82f6",
+                    text=[f"{v:.1f}%" for v in _mdc_vals], textposition="outside",
+                ))
+                _fig_mdc.add_trace(_go_dpc.Bar(
+                    x=_mdc_avgs, y=_mdc_names_list, orientation="h",
+                    name="全施設中央値", marker_color="rgba(229,231,235,0.6)",
+                ))
+                _fig_mdc.update_layout(
+                    barmode="overlay", height=520,
+                    margin=dict(l=10, r=70, t=30, b=20),
+                    xaxis_title="構成比（%）",
+                    legend=dict(orientation="h", y=1.04),
+                    font=dict(family="Noto Sans JP, sans-serif", size=12),
+                )
+                st.plotly_chart(_fig_mdc, use_container_width=True)
+
+        # ── 再入院・再転棟率 ──
+        if not _dp_readm.empty:
+            st.markdown('<div class="section-header">再入院・再転棟</div>', unsafe_allow_html=True)
+            _readm_row    = _dp_readm.iloc[0]
+            _readm_rate   = float(_readm_row.get("再入院率", 0) or 0)
+            _retrans_rate = float(_readm_row.get("再転棟率", 0) or 0)
+            _readm_med    = float(_dp_readm_all["再入院率"].median()) if _dp_readm_all is not None and "再入院率" in _dp_readm_all.columns else 0
+            _retrans_med  = float(_dp_readm_all["再転棟率"].median()) if _dp_readm_all is not None and "再転棟率" in _dp_readm_all.columns else 0
+
+            _ra1, _ra2 = st.columns(2)
+            _ra1.markdown(
+                f'<div class="metric-card" style="border-top-color:#ef4444;">'
+                f'<div class="metric-label">再入院率</div>'
+                f'<div class="metric-value">{_readm_rate*100:.2f}%</div>'
+                f'<div class="metric-sub">全施設中央値 {_readm_med*100:.2f}%</div></div>',
+                unsafe_allow_html=True,
+            )
+            _ra2.markdown(
+                f'<div class="metric-card" style="border-top-color:#f97316;">'
+                f'<div class="metric-label">再転棟率</div>'
+                f'<div class="metric-value">{_retrans_rate*100:.3f}%</div>'
+                f'<div class="metric-sub">全施設中央値 {_retrans_med*100:.3f}%</div></div>',
+                unsafe_allow_html=True,
+            )
+            _period_cols = ["再入院_3日以内","再入院_4-7日","再入院_8-14日","再入院_15-28日"]
+            _period_labels = ["3日以内","4〜7日","8〜14日","15〜28日"]
+            _period_vals = [float(_readm_row.get(c, 0) or 0) * 100 for c in _period_cols if c in _readm_row.index]
+            if len(_period_vals) == 4 and any(v > 0 for v in _period_vals):
+                import plotly.graph_objects as _go_readm
+                _fig_r = _go_readm.Figure(_go_readm.Bar(
+                    x=_period_labels, y=_period_vals,
+                    marker_color=["#fca5a5","#fb923c","#fbbf24","#a3e635"],
+                    text=[f"{v:.1f}%" for v in _period_vals], textposition="outside",
+                ))
+                _fig_r.update_layout(
+                    title="再入院 期間別内訳（再入院例中の割合）",
+                    yaxis_title="%", height=280,
+                    margin=dict(l=10, r=10, t=40, b=20),
+                    font=dict(family="Noto Sans JP, sans-serif", size=12),
+                )
+                st.plotly_chart(_fig_r, use_container_width=True)
+
+        # ── 主要疾患・手術 TOP20 ──
+        if not _dp_surg.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown('<div class="section-header">主要疾患・手術件数 TOP20</div>', unsafe_allow_html=True)
+            _cnt_col  = next((c for c in _dp_surg.columns if "件数" in c and "総計" in c), None)
+            _surg_col = next((c for c in _dp_surg.columns if "件数" in c and "手術" in c), None)
+            _los_col  = next((c for c in _dp_surg.columns if "在院" in c and "総計" in c), None)
+            if _cnt_col:
+                _sdisp = _dp_surg[["疾患名","MDC","dpc6"] + [c for c in [_cnt_col,_surg_col,_los_col] if c]].copy()
+                _sdisp = _sdisp.dropna(subset=[_cnt_col])
+                _sdisp = _sdisp[_sdisp[_cnt_col] > 0].sort_values(_cnt_col, ascending=False).head(20)
+                _sdisp["MDC領域"] = _sdisp["MDC"].map(MDC_LABELS).fillna(_sdisp["MDC"])
+                _sdisp[_cnt_col] = _sdisp[_cnt_col].astype(int)
+                if _surg_col:
+                    _sdisp["手術実施率"] = (_sdisp[_surg_col] / _sdisp[_cnt_col]).map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "-")
+                if _los_col:
+                    _sdisp["平均在院日数"] = _sdisp[_los_col].map(lambda x: f"{x:.1f}日" if pd.notna(x) else "-")
+                _sdisp = _sdisp.rename(columns={_cnt_col: "件数", "dpc6": "DPC6桁コード"})
+                _show = ["DPC6桁コード","MDC領域","疾患名","件数"]
+                if "手術実施率" in _sdisp.columns: _show.append("手術実施率")
+                if "平均在院日数" in _sdisp.columns: _show.append("平均在院日数")
+                st.dataframe(
+                    _sdisp[[c for c in _show if c in _sdisp.columns]],
+                    use_container_width=True, hide_index=True,
+                    column_config={"件数": st.column_config.NumberColumn("件数", format="%d件")},
+                )
+
 
 _render_footer()
