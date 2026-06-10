@@ -4102,29 +4102,35 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         # ── 主要疾患・手術 TOP20 ──
         if not _dp_surg.empty:
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown('<div class="section-header">主要疾患・手術件数 TOP20</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header">疾患別手術件数（MDC別）</div>', unsafe_allow_html=True)
             _cnt_col  = next((c for c in _dp_surg.columns if "件数" in c and "総計" in c), None)
             _surg_col = next((c for c in _dp_surg.columns if "件数" in c and "手術" in c), None)
             _los_col  = next((c for c in _dp_surg.columns if "在院" in c and "総計" in c), None)
             if _cnt_col:
                 _sdisp = _dp_surg[["疾患名","MDC","dpc6"] + [c for c in [_cnt_col,_surg_col,_los_col] if c]].copy()
                 _sdisp = _sdisp.dropna(subset=[_cnt_col])
-                _sdisp = _sdisp[_sdisp[_cnt_col] > 0].sort_values(_cnt_col, ascending=False).head(20)
-                _sdisp["MDC領域"] = _sdisp["MDC"].map(MDC_LABELS).fillna(_sdisp["MDC"])
+                _sdisp = _sdisp[_sdisp[_cnt_col] > 0].copy()
                 _sdisp[_cnt_col] = _sdisp[_cnt_col].astype(int)
                 if _surg_col:
                     _sdisp["手術実施率"] = (_sdisp[_surg_col] / _sdisp[_cnt_col]).map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "-")
                 if _los_col:
                     _sdisp["平均在院日数"] = _sdisp[_los_col].map(lambda x: f"{x:.1f}日" if pd.notna(x) else "-")
                 _sdisp = _sdisp.rename(columns={_cnt_col: "件数", "dpc6": "DPC6桁コード"})
-                _show = ["DPC6桁コード","MDC領域","疾患名","件数"]
+                _show = ["DPC6桁コード","疾患名","件数"]
                 if "手術実施率" in _sdisp.columns: _show.append("手術実施率")
                 if "平均在院日数" in _sdisp.columns: _show.append("平均在院日数")
-                st.dataframe(
-                    _sdisp[[c for c in _show if c in _sdisp.columns]],
-                    use_container_width=True, hide_index=True,
-                    column_config={"件数": st.column_config.NumberColumn("件数", format="%d件")},
-                )
+
+                # MDC順に並べ、MDCごとにexpanderで折り畳み表示
+                for _mdc_key in [k for k in MDC_LABELS if k in _sdisp["MDC"].values]:
+                    _grp = _sdisp[_sdisp["MDC"] == _mdc_key].sort_values("件数", ascending=False)
+                    _mdc_label = MDC_LABELS[_mdc_key]
+                    _total_cnt = _grp["件数"].sum()
+                    with st.expander(f"{_mdc_key} {_mdc_label}　{len(_grp)}疾患 / 計{_total_cnt:,}件", expanded=False):
+                        st.dataframe(
+                            _grp[[c for c in _show if c in _grp.columns]],
+                            use_container_width=True, hide_index=True,
+                            column_config={"件数": st.column_config.NumberColumn("件数", format="%d件")},
+                        )
 
 
 _render_footer()
