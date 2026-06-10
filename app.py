@@ -4028,37 +4028,30 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     unsafe_allow_html=True,
                 )
 
-        # ── MDC別患者構成比 ──
-        if not _dp_ratio.empty:
+        # ── MDC別患者件数 ──
+        _dp_cases_all = _load_dpc_mdc_cases()
+        _dp_cases = _dpc_latest(_dp_cases_all, _dpc_ban) if _dp_cases_all is not None else pd.DataFrame()
+        if not _dp_cases.empty:
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown('<div class="section-header">MDC別患者構成比</div>', unsafe_allow_html=True)
-            _ratio_row = _dp_ratio.iloc[0]
-            _mdc_keys = [k for k in MDC_LABELS if k in _ratio_row.index]
+            st.markdown('<div class="section-header">MDC別患者件数</div>', unsafe_allow_html=True)
+            _mdc_keys = [k for k in MDC_LABELS if k in _dp_cases.columns]
             if _mdc_keys:
-                _ratio_avgs = {}
-                if _dp_ratio_all is not None:
-                    for _k in _mdc_keys:
-                        if _k in _dp_ratio_all.columns:
-                            _ratio_avgs[_k] = float(_dp_ratio_all[_k].median())
-                _mdc_vals  = [float(_ratio_row.get(k, 0) or 0) * 100 for k in _mdc_keys]
-                _mdc_avgs  = [_ratio_avgs.get(k, 0) * 100 for k in _mdc_keys]
+                # 手術有り・無しを合算して総件数を得る
+                _cases_sum = _dp_cases[_mdc_keys].sum()
+                _mdc_vals_cnt = [int(_cases_sum.get(k, 0)) for k in _mdc_keys]
                 _mdc_names_list = [MDC_LABELS[k] for k in _mdc_keys]
 
                 import plotly.graph_objects as _go_dpc
                 _fig_mdc = _go_dpc.Figure()
                 _fig_mdc.add_trace(_go_dpc.Bar(
-                    x=_mdc_vals, y=_mdc_names_list, orientation="h",
+                    x=_mdc_vals_cnt, y=_mdc_names_list, orientation="h",
                     name=hospital, marker_color="#3b82f6",
-                    text=[f"{v:.1f}%" for v in _mdc_vals], textposition="outside",
-                ))
-                _fig_mdc.add_trace(_go_dpc.Bar(
-                    x=_mdc_avgs, y=_mdc_names_list, orientation="h",
-                    name="全施設中央値", marker_color="rgba(229,231,235,0.6)",
+                    text=[f"{v:,}件" for v in _mdc_vals_cnt], textposition="outside",
                 ))
                 _fig_mdc.update_layout(
-                    barmode="overlay", height=520,
-                    margin=dict(l=10, r=70, t=30, b=20),
-                    xaxis_title="構成比（%）",
+                    height=520,
+                    margin=dict(l=10, r=100, t=30, b=20),
+                    xaxis_title="件数",
                     legend=dict(orientation="h", y=1.04),
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
                 )
