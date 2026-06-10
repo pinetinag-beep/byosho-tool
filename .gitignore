@@ -9,6 +9,13 @@ __pycache__/
 !ward_cache.parquet
 !surgery_cache.parquet
 !locations_cache.parquet
+!dpc_hospitals.parquet
+!dpc_procedure_stats.parquet
+!dpc_mdc_cases.parquet
+!dpc_mdc_ratio.parquet
+!dpc_readmission.parquet
+!dpc_surgery_detail.parquet
+!dpc_match.parquet
 
 # DuckDB（バイナリ、大きいため除外）
 data/*.duckdb
