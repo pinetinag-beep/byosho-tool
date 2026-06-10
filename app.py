@@ -2920,8 +2920,6 @@ if st.session_state.get("_view_mode") == "region_vision":
 # ══════════════════════════════════════════════════════════
 
 if st.session_state.get("_view_mode") == "dpc_search":
-    _render_header()
-
     _dsc1, _dsc2 = st.columns([8, 2])
     with _dsc1:
         st.markdown("## 🏥 DPC疾患別 病院検索")
