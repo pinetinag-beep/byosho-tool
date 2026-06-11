@@ -2954,7 +2954,12 @@ if st.session_state.get("_view_mode") == "dpc_search":
     # ── フィルター行1: MDC + 疾患名 + ランキング指標 ──
     _dsf1, _dsf2, _dsf3 = st.columns([2, 4, 2])
     with _dsf1:
-        _ds_mdc_opts = ["すべて"] + [f"{k}　{v}" for k, v in MDC_LABELS.items()]
+        _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
+        _ds_mdc_opts = ["すべて"] + [
+            f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
+        ]
+        if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
+            st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
         _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
 
     with _dsf2:
