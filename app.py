@@ -3117,15 +3117,23 @@ if st.session_state.get("_view_mode") == "dpc_search":
                     _df_base[_df_base["都道府県名"] == _sel_pref]["医療機関名"]
                     if _sel_pref else _df_base["医療機関名"]
                 )
+                def _norm(s): return s.replace('　', '').replace(' ', '')
+                _dpc_norm = _norm(_sel_dpc_name)
                 # 1. 完全一致
                 if _sel_dpc_name in _pref_hosps.values:
                     _nav_name = _sel_dpc_name
                 else:
-                    # 2. 部分一致: byosho名がDPC名に含まれる or その逆
-                    for _h in _pref_hosps:
-                        if _h in _sel_dpc_name or _sel_dpc_name in _h:
-                            _nav_name = _h
-                            break
+                    # 2. 部分一致（元の表記）
+                    _nav_name = next(
+                        (_h for _h in _pref_hosps if _h in _sel_dpc_name or _sel_dpc_name in _h),
+                        None
+                    )
+                    if _nav_name is None:
+                        # 3. 正規化（全角スペース除去）後の一致
+                        _nav_name = next(
+                            (_h for _h in _pref_hosps if _norm(_h) in _dpc_norm or _dpc_norm in _norm(_h)),
+                            _sel_dpc_name
+                        )
             st.session_state["_dsc_last_selected"] = _nav_name
             st.rerun()
 
