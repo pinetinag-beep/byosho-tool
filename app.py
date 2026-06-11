@@ -4008,12 +4008,16 @@ with tab7:
 
                     _is_sel = _r["医療機関名"] == hospital
                     _popup_html = (
-                        f'<div style="font-family:Meiryo,sans-serif;min-width:190px">'
+                        f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
                         f'<b style="font-size:13px">{_r["医療機関名"]}</b><br>'
                         f'<span style="color:#666;font-size:11px">{_r["都道府県名"]} {_r["二次医療圏名"]}</span>'
-                        f'<hr style="margin:5px 0">'
-                        f'許可病床数: <b>{_beds:,}床</b><br>'
-                        f'稼働率: <b>{_occ}</b>'
+                        f'<hr style="margin:6px 0">許可病床数: <b>{_beds:,}床</b><br>稼働率: <b>{_occ}</b>'
+                        f'<br><a href="#"'
+                        f' onclick="window.open(window.top.location.origin+\'/?hospital=\'+encodeURIComponent(\'{_r["医療機関名"]}\'),\'_blank\');return false;"'
+                        f' style="display:block;margin-top:10px;padding:7px 12px;'
+                        f'background:#2563eb;color:#fff;border-radius:6px;'
+                        f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
+                        f'詳細を見る →</a>'
                         f'</div>'
                     )
 
@@ -4043,37 +4047,45 @@ with tab7:
                 """
                 _m.get_root().html.add_child(folium.Element(_legend))
 
-                # ── クリック済み病院を地図の上部に表示 ──
                 _last_clicked = st.session_state.get("_map_last_clicked")
-                if _last_clicked and (_last_clicked in map_valid["医療機関名"].values):
-                    _cr = map_valid[map_valid["医療機関名"] == _last_clicked].iloc[0]
-                    _nav_c1, _nav_c2 = st.columns([4, 1])
-                    with _nav_c1:
-                        st.info(f"🏥 **{_last_clicked}** をクリック中")
-                    with _nav_c2:
-                        if st.button("詳細を見る →", key="map_goto_detail", type="primary"):
-                            st.session_state["_nav_jump"] = {
-                                "hospital": _last_clicked,
-                                "pref": _cr["都道府県名"],
-                                "region": _cr["二次医療圏名"],
-                                "year": int(year),
-                            }
-                            st.session_state["_view_mode"] = "detail"
-                            st.session_state["_hospital_chosen"] = True
-                            st.session_state.pop("_map_last_clicked", None)
-                            st.rerun()
 
                 _map_data = _st_folium(
                     _m, width="100%", height=600,
                     returned_objects=["last_object_clicked_tooltip"],
                 )
 
-                # ── クリックされたマーカーを session_state に保存（次の rerun で上部に表示） ──
+                # ── クリックされたマーカーを session_state に保存 ──
                 _clicked_tip = (_map_data or {}).get("last_object_clicked_tooltip") or ""
                 if _clicked_tip:
                     _clicked_name = re.sub(r"（[\d,]+床）$", "", _clicked_tip).strip()
                     if _clicked_name and (_clicked_name in map_valid["医療機関名"].values):
                         st.session_state["_map_last_clicked"] = _clicked_name
+                        _last_clicked = _clicked_name
+
+                # ── クリック済み病院のバナーを地図の下に表示（地図で検索と統一） ──
+                if _last_clicked and (_last_clicked in map_valid["医療機関名"].values):
+                    _cr = map_valid[map_valid["医療機関名"] == _last_clicked].iloc[0]
+                    _cr_beds = int(_cr.get("合計_許可病床数", 0) or 0)
+                    _cr_occ  = f'{_cr["合計稼働率"]:.0f}%' if "合計稼働率" in _cr and pd.notna(_cr.get("合計稼働率")) else "—"
+                    st.markdown(
+                        f'<div style="margin-top:12px;padding:16px 20px;'
+                        f'background:#eff6ff;border:2px solid #2563eb;border-radius:10px;">'
+                        f'<div style="font-size:0.75rem;color:#2563eb;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
+                        f'<div style="font-size:1rem;font-weight:800;color:#111827;">{_last_clicked}</div>'
+                        f'<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">'
+                        f'{_cr["都道府県名"]} {_cr["二次医療圏名"]}　🛏 {_cr_beds:,}床　稼働率 {_cr_occ}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if st.button("この病院の詳細を見る →", key="map_goto_detail", type="primary", use_container_width=True):
+                        st.session_state["_nav_jump"] = {
+                            "hospital": _last_clicked,
+                            "pref": str(_cr["都道府県名"]),
+                            "region": str(_cr["二次医療圏名"]),
+                            "year": int(year),
+                        }
+                        st.session_state.pop("_map_last_clicked", None)
+                        st.rerun()
 
             # ── 2点間距離・所要時間計算 ────────────────────────────
             if not map_valid.empty:
