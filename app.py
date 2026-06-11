@@ -2989,10 +2989,13 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
     with _dsf5:
         _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
+        # 旧デフォルト（出来高除外）のセッションを更新
+        if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
+            st.session_state["_dsc_kubun"] = _ds_all_kubun
         _ds_kubun_sel = st.multiselect(
             "病院区分",
             _ds_all_kubun,
-            default=["DPC算定病院", "DPC準備病院", "出来高算定病院"],
+            default=_ds_all_kubun,
             key="_dsc_kubun",
         )
         _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
