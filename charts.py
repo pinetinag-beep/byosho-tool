@@ -13,7 +13,7 @@ def _fig_layout(fig, title="", height=420):
         title=dict(text=title, font=dict(size=15)),
         height=height,
         margin=dict(l=10, r=10, t=50, b=10),
-        font=dict(family="Meiryo, sans-serif"),
+        font=dict(family="Meiryo, sans-serif", size=14),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
@@ -42,7 +42,7 @@ def bed_donut(row: pd.Series, hospital_name: str) -> go.Figure:
     ))
     total = sum(values)
     fig.add_annotation(text=f"<b>{total:,}床</b>", x=0.5, y=0.5,
-                       font_size=18, showarrow=False)
+                       font_size=21, showarrow=False)
     return _fig_layout(fig, f"病床種別構成 — {hospital_name}")
 
 
@@ -51,7 +51,7 @@ def occupancy_gauge(rate: float, label: str) -> go.Figure:
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=round(rate * 100, 1),
-        number={"suffix": "%", "font": {"size": 28}},
+        number={"suffix": "%", "font": {"size": 34}},
         gauge={
             "axis": {"range": [0, 100], "ticksuffix": "%"},
             "bar": {"color": "#3498db"},
@@ -60,7 +60,7 @@ def occupancy_gauge(rate: float, label: str) -> go.Figure:
                 {"range": [50, 100], "color": "rgba(52,152,219,0.15)"},
             ],
         },
-        title={"text": label, "font": {"size": 13}},
+        title={"text": label, "font": {"size": 15}},
     ))
     return _fig_layout(fig, height=280)
 
@@ -231,14 +231,14 @@ def ranking_table_fig(
         header=dict(
             values=all_labels,
             fill_color="#2c3e50",
-            font=dict(color="white", size=13),
+            font=dict(color="white", size=14),
             align="center",
             height=34,
         ),
         cells=dict(
             values=[disp[c] for c in disp.columns],
             fill_color=fill_colors,
-            font=dict(color=font_colors, size=13),
+            font=dict(color=font_colors, size=14),
             align=align,
             height=30,
         ),
@@ -411,7 +411,7 @@ def admission_route_pie(ward_df: pd.DataFrame, hospital_name: str) -> go.Figure:
     ))
     fig.add_annotation(
         text=f"<b>{int(total_new):,}人</b>", x=0.5, y=0.5,
-        font_size=16, showarrow=False,
+        font_size=18, showarrow=False,
     )
     return _fig_layout(fig, "入院経路（年間新規入棟）")
 
@@ -447,7 +447,7 @@ def discharge_route_pie(ward_df: pd.DataFrame, hospital_name: str) -> go.Figure:
     ))
     fig.add_annotation(
         text=f"<b>{int(total):,}人</b>", x=0.5, y=0.5,
-        font_size=16, showarrow=False,
+        font_size=18, showarrow=False,
     )
     return _fig_layout(fig, "退院経路（年間退棟）")
 

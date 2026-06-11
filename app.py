@@ -146,7 +146,7 @@ def _render_footer():
     with _fa:
         with st.expander("⚠️ 免責事項"):
             st.markdown("""
-<div style="font-size:0.75rem; color:#555; line-height:1.6;">
+<div style="font-size:0.85rem; color:#555; line-height:1.6;">
 
 本ツールは、厚生労働省が公表する**病床機能報告**のデータをもとに集計・分析を行うものです。
 
@@ -263,11 +263,11 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
     box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 14px rgba(0,0,0,0.05);
 }
 .metric-label {
-    font-size: 0.7rem; color: #6b7280; margin-bottom: 6px;
+    font-size: 0.82rem; color: #6b7280; margin-bottom: 6px;
     text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700;
 }
-.metric-value { font-size: 1.75rem; font-weight: 800; color: #111827; line-height: 1.1; }
-.metric-sub   { font-size: 0.75rem; color: #9ca3af; margin-top: 5px; }
+.metric-value { font-size: 1.9rem; font-weight: 800; color: #111827; line-height: 1.1; }
+.metric-sub   { font-size: 0.85rem; color: #9ca3af; margin-top: 5px; }
 .section-header {
     font-size: 1.05rem; font-weight: 700; color: #111827;
     border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin: 24px 0 14px;
@@ -416,9 +416,9 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 
     /* ── KPI カード: 5列を小画面向けに縮小 ── */
     .metric-card  { padding: 10px 6px !important; border-top-width: 2px !important; }
-    .metric-value { font-size: 1.1rem !important; }
-    .metric-label { font-size: 0.6rem !important; }
-    .metric-sub   { font-size: 0.6rem !important; }
+    .metric-value { font-size: 1.4rem !important; }
+    .metric-label { font-size: 0.72rem !important; }
+    .metric-sub   { font-size: 0.72rem !important; }
 
     /* ── セクションヘッダー ── */
     .section-header { font-size: 0.92rem !important; }
@@ -436,7 +436,7 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
     }
     .stTabs [role="tablist"]::-webkit-scrollbar { display: none; }
     .stTabs [role="tab"] {
-        font-size: 0.7rem !important;
+        font-size: 0.79rem !important;
         padding: 6px 10px !important;
         white-space: nowrap !important;
         min-width: auto !important;
@@ -485,7 +485,7 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 [data-testid="stSidebarHeader"] button::after,
 [data-testid="stSidebarCollapseButton"] button::after {
     content: "✕ 閉じる";
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.03em;
@@ -508,7 +508,7 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 [data-testid="collapsedControl"]::after,
 [data-testid="stSidebarCollapsedControl"]::after {
     content: "☰ メニュー";
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.03em;
@@ -524,6 +524,23 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 }
 
 @media (max-width: 768px) {
+}
+
+/* ── データフレーム（テーブル）フォント拡大 ── */
+[data-testid="stDataFrame"] [role="gridcell"],
+[data-testid="stDataFrame"] [role="columnheader"],
+[data-testid="stDataFrame"] .dvn-scroller {
+    font-size: 13.5px !important;
+}
+
+/* ── Streamlit デフォルトテキスト底上げ ── */
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li {
+    font-size: 0.95rem;
+    line-height: 1.75;
+}
+[data-testid="stCaptionContainer"] p {
+    font-size: 0.82rem !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -2709,16 +2726,16 @@ if st.session_state.get("_view_mode") == "region_vision":
     with st.expander("📖 機能方向性の定義・判定基準", expanded=True):
         st.markdown("""
 <style>
-.role-def-table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+.role-def-table { width:100%; border-collapse:collapse; font-size:0.92rem; }
 .role-def-table th {
     background:#f0f2f6; padding:7px 10px; text-align:left;
-    border-bottom:2px solid #d0d3db; font-size:0.78rem; color:#444;
+    border-bottom:2px solid #d0d3db; font-size:0.88rem; color:#444;
 }
 .role-def-table td { padding:7px 10px; border-bottom:1px solid #e8e8e8; vertical-align:top; }
 .role-def-table tr:last-child td { border-bottom:none; }
 .role-badge {
     display:inline-block; padding:2px 8px; border-radius:10px;
-    font-weight:600; font-size:0.78rem; white-space:nowrap;
+    font-weight:600; font-size:0.88rem; white-space:nowrap;
 }
 </style>
 <table class="role-def-table">
@@ -2775,7 +2792,7 @@ if st.session_state.get("_view_mode") == "region_vision":
 </tr>
 </tbody>
 </table>
-<p style="font-size:0.72rem;color:#999;margin-top:8px;">
+<p style="font-size:0.82rem;color:#999;margin-top:8px;">
 ※ 判定基準は病床機能報告の報告値のみを用いた参考分類です。実際の機能定義は都道府県の地域医療構想に基づきます。
 </p>
         """, unsafe_allow_html=True)
