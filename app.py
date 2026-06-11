@@ -3103,20 +3103,28 @@ if st.session_state.get("_view_mode") == "dpc_search":
             key="_dsc_table",
         )
 
-        # 行選択 → 施設名を dpc_match で病床報告施設名に変換してセッションステートに保存
+        # 行選択 → DPC施設名からbyosho医療機関名を解決してセッションステートに保存
         _ds_sel_rows = _ds_evt.selection.rows if hasattr(_ds_evt, "selection") else []
         if _ds_sel_rows:
-            _sel_dpc_name = _ds_disp.iloc[_ds_sel_rows[0]]["施設名"]
-            # dpc_match で病床報告施設名を探す（なければ DPC 施設名をそのまま使う）
-            _ds_match_df = _load_dpc_match()
-            _nav_name = _sel_dpc_name
-            if _ds_match_df is not None:
-                _m = _ds_match_df[_ds_match_df["DPC施設名"] == _sel_dpc_name]
-                if not _m.empty and str(_m.iloc[0]["マッチ状態"]) != "未結合":
-                    _cand = str(_m.iloc[0]["病床報告施設名"])
-                    _df_base = st.session_state.df
-                    if _df_base is not None and _cand in _df_base["医療機関名"].values:
-                        _nav_name = _cand
+            _sel_row      = _ds_disp.iloc[_ds_sel_rows[0]]
+            _sel_dpc_name = _sel_row["施設名"]
+            _sel_pref     = _sel_row.get("都道府県名", "") if "都道府県名" in _sel_row.index else ""
+            _nav_name     = _sel_dpc_name
+            _df_base      = st.session_state.df
+            if _df_base is not None:
+                _pref_hosps = (
+                    _df_base[_df_base["都道府県名"] == _sel_pref]["医療機関名"]
+                    if _sel_pref else _df_base["医療機関名"]
+                )
+                # 1. 完全一致
+                if _sel_dpc_name in _pref_hosps.values:
+                    _nav_name = _sel_dpc_name
+                else:
+                    # 2. 部分一致: byosho名がDPC名に含まれる or その逆
+                    for _h in _pref_hosps:
+                        if _h in _sel_dpc_name or _sel_dpc_name in _h:
+                            _nav_name = _h
+                            break
             st.session_state["_dsc_last_selected"] = _nav_name
             st.rerun()
 
