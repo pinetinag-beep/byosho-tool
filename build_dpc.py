@@ -248,12 +248,12 @@ def load_readmission(path: str, year: int) -> pd.DataFrame:
 # ── 疾患別手術別集計（施設別 MDCxx） ──────────────────────────────────────────
 def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
     xl = pd.ExcelFile(path)
-    # MDCxxシートを取得
-    mdc_sheets = [s for s in xl.sheet_names if re.match(r"^MDC\d{2}$", s)]
+    # MDCxxシートを取得（シート名の末尾スペースを除去して照合）
+    mdc_sheets = [s for s in xl.sheet_names if re.match(r"^MDC\d{2}$", s.strip())]
     all_records = []
 
     for sheet in mdc_sheets:
-        mdc_code = sheet  # e.g. "MDC06"
+        mdc_code = sheet.strip()  # e.g. "MDC06"（末尾スペースを除去）
         df = pd.read_excel(path, sheet_name=sheet, header=None)
 
         # ヘッダー行を解析
@@ -284,7 +284,7 @@ def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
             v2 = str(row2[ci]).strip() if not pd.isna(row2[ci]) else ""
             v3 = str(row3[ci]).strip() if not pd.isna(row3[ci]) else ""
 
-            if isinstance(v0, str) and re.match(r"^\d{6}$", v0.strip()):
+            if isinstance(v0, str) and re.match(r"^\d{5}[\dx]$", v0.strip(), re.IGNORECASE):
                 current_dpc = v0.strip()
             if isinstance(v1, str) and v1.strip() and not v1.strip().startswith("NaN"):
                 current_disease = v1.strip()
