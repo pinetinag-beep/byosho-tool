@@ -608,36 +608,50 @@ def _load_dpc_readmission():
 
 @st.cache_data(show_spinner=False)
 def _load_dpc_surgery_detail():
-    return pd.read_parquet(DPC_PARQUET_SURG) if DPC_PARQUET_SURG.exists() else None
+    if not DPC_PARQUET_SURG.exists():
+        return None
+    df = pd.read_parquet(DPC_PARQUET_SURG)
+    # ソースデータの重複行（同一 年度×告示番号×MDC×dpc6）を除去
+    return df.drop_duplicates(subset=["年度", "告示番号", "MDC", "dpc6"], keep="first")
+
+_PREF_CODE_TO_NAME = {
+    "01":"北海道","02":"青森県","03":"岩手県","04":"宮城県","05":"秋田県",
+    "06":"山形県","07":"福島県","08":"茨城県","09":"栃木県","10":"群馬県",
+    "11":"埼玉県","12":"千葉県","13":"東京都","14":"神奈川県","15":"新潟県",
+    "16":"富山県","17":"石川県","18":"福井県","19":"山梨県","20":"長野県",
+    "21":"岐阜県","22":"静岡県","23":"愛知県","24":"三重県","25":"滋賀県",
+    "26":"京都府","27":"大阪府","28":"兵庫県","29":"奈良県","30":"和歌山県",
+    "31":"鳥取県","32":"島根県","33":"岡山県","34":"広島県","35":"山口県",
+    "36":"徳島県","37":"香川県","38":"愛媛県","39":"高知県","40":"福岡県",
+    "41":"佐賀県","42":"長崎県","43":"熊本県","44":"大分県","45":"宮崎県",
+    "46":"鹿児島県","47":"沖縄県",
+}
 
 @st.cache_data(show_spinner=False)
-def _build_dpc_geo_map() -> pd.DataFrame:
-    """告示番号 → 病院名・都道府県名・二次医療圏名 のマッピングテーブルを構築"""
-    if not DPC_PARQUET_MATCH.exists() or not DPC_PARQUET_HOSP.exists():
+def _build_dpc_hosp_info() -> pd.DataFrame:
+    """告示番号 → 施設名・病院区分・都道府県名 のマッピングテーブルを構築。
+    市町村番号（JIS都道府県コード）から都道府県名を導出するため geo_map 誤突合の影響を受けない。"""
+    if not DPC_PARQUET_HOSP.exists():
         return pd.DataFrame()
-    match_df = pd.read_parquet(DPC_PARQUET_MATCH)
     hosp_df  = pd.read_parquet(DPC_PARQUET_HOSP)
-    hosp_uniq = hosp_df.sort_values("年度", ascending=False).drop_duplicates("告示番号")[["告示番号","施設名"]]
-    match_map = dict(zip(match_df["DPC施設名"], match_df["病床報告施設名"]))
-    byosho_geo: dict = {}
-    if CACHE_FILE.exists():
-        _b = pd.read_parquet(CACHE_FILE)
-        _bu = _b.sort_values("報告年度", ascending=False).drop_duplicates("医療機関名")[["医療機関名","都道府県名","二次医療圏名"]]
-        byosho_geo = _bu.set_index("医療機関名").to_dict("index")
-    rows = []
-    for _, r in hosp_uniq.iterrows():
-        ban = int(r["告示番号"])
-        dpc_name    = r["施設名"]
-        byosho_name = match_map.get(dpc_name, "")
-        geo = byosho_geo.get(byosho_name, {})
-        rows.append({
-            "告示番号":      ban,
-            "DPC施設名":     dpc_name,
-            "病床報告施設名": byosho_name or dpc_name,
-            "都道府県名":    geo.get("都道府県名", ""),
-            "二次医療圏名":  geo.get("二次医療圏名", ""),
-        })
-    return pd.DataFrame(rows)
+    hosp_uniq = hosp_df.sort_values("年度", ascending=False).drop_duplicates("告示番号").copy()
+
+    def _pref(code):
+        try:
+            return _PREF_CODE_TO_NAME.get(str(int(float(code))).zfill(5)[:2], "")
+        except Exception:
+            return ""
+
+    def _classify(t):
+        t = str(t)
+        if "DPC参加" in t: return "DPC算定病院"
+        if "準備"   in t: return "DPC準備病院"
+        if "出来高" in t: return "出来高算定病院"
+        return "その他"
+
+    hosp_uniq["都道府県名"] = hosp_uniq["市町村番号"].apply(_pref)
+    hosp_uniq["病院区分"]   = hosp_uniq["病院類型"].apply(_classify)
+    return hosp_uniq[["告示番号", "病院区分", "都道府県名"]].reset_index(drop=True)
 
 
 @st.cache_data(ttl=3600 * 24 * 7, show_spinner=False)
@@ -2935,110 +2949,119 @@ if st.session_state.get("_view_mode") == "dpc_search":
         _render_footer()
         st.stop()
 
-    # ── フィルター ──
-    _dsf1, _dsf2, _dsf3 = st.columns([2, 3, 2])
+    _ds_hosp_info = _build_dpc_hosp_info()
+
+    # ── フィルター行1: MDC + 疾患名 + ランキング指標 ──
+    _dsf1, _dsf2, _dsf3 = st.columns([2, 4, 2])
     with _dsf1:
         _ds_mdc_opts = ["すべて"] + [f"{k}　{v}" for k, v in MDC_LABELS.items()]
         _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
 
     with _dsf2:
-        if _ds_mdc_sel == "すべて":
-            _ds_diseases = sorted(_ds_surg_all["疾患名"].dropna().unique().tolist())
-        else:
-            _ds_mdc_key = _ds_mdc_sel[:5].strip()
-            _ds_diseases = sorted(_ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]["疾患名"].dropna().unique().tolist())
+        _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
+        _ds_disease_src = (
+            _ds_surg_all if _ds_mdc_key is None
+            else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
+        )
+        _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
+        # セッションステート検証（MDC変更時に古い疾患名が残らないように）
+        if st.session_state.get("_dsc_disease") not in _ds_diseases:
+            st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
         _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
 
     with _dsf3:
-        _ds_metric = st.selectbox("ランキング指標", ["患者総数", "手術件数", "手術実施率", "平均在院日数"], key="_dsc_metric")
+        _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数"], key="_dsc_metric")
 
-    _ds_geo_scope = st.radio("絞り込み範囲", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
-    _ds_pref_sel = _ds_region_sel = None
-    if _ds_geo_scope in ("都道府県", "二次医療圏"):
-        _ds_all_prefs = sorted(_df_all["都道府県名"].dropna().unique().tolist())
-        _ds_pref_sel  = st.selectbox("都道府県", _ds_all_prefs, key="_dsc_pref")
-    if _ds_geo_scope == "二次医療圏" and _ds_pref_sel:
-        _ds_regions   = sorted(_df_all[_df_all["都道府県名"] == _ds_pref_sel]["二次医療圏名"].dropna().unique().tolist())
-        _ds_region_sel = st.selectbox("二次医療圏", _ds_regions, key="_dsc_region")
+    # ── フィルター行2: 都道府県 + 病院区分 ──
+    _dsf4, _dsf5 = st.columns([3, 5])
+    with _dsf4:
+        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県"], horizontal=True, key="_dsc_scope")
+        _ds_pref_sel = None
+        if _ds_geo_scope == "都道府県":
+            _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
+            _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
+
+    with _dsf5:
+        _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
+        _ds_kubun_sel = st.multiselect(
+            "病院区分",
+            _ds_all_kubun,
+            default=["DPC算定病院", "DPC準備病院"],
+            key="_dsc_kubun",
+        )
+        _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
 
     st.markdown("---")
 
     # ── 検索・集計 ──
-    _ds_cnt_col  = next((c for c in _ds_surg_all.columns if "件数" in c and "総計" in c), None)
-    _ds_surg_col = next((c for c in _ds_surg_all.columns if "件数" in c and "手術" in c), None)
-    _ds_los_col  = next((c for c in _ds_surg_all.columns if "在院" in c and "総計" in c), None)
+    _ds_cnt_col = next((c for c in _ds_surg_all.columns if "件数" in c and "総計" in c), None)
+    _ds_los_col = next((c for c in _ds_surg_all.columns if "在院" in c and "総計" in c), None)
 
     if _ds_cnt_col and _ds_disease:
+        # 疾患でフィルター（最新年度のみ）
         _ds_filtered = _ds_surg_all[_ds_surg_all["疾患名"] == _ds_disease].copy()
         if "年度" in _ds_filtered.columns:
             _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
 
-        _ds_agg: dict = {_ds_cnt_col: "sum"}
-        if _ds_surg_col: _ds_agg[_ds_surg_col] = "sum"
-        if _ds_los_col:  _ds_agg[_ds_los_col]  = "mean"
-        _ds_result = _ds_filtered.groupby("告示番号").agg(_ds_agg).reset_index()
+        # 告示番号単位で集計（重複除去済みデータなので単純にfirst or sum）
+        _ds_agg: dict = {_ds_cnt_col: "sum", "施設名": "first"}
+        if _ds_los_col:
+            _ds_agg[_ds_los_col] = "first"  # 平均在院日数はそのまま使う
+        _ds_result = _ds_filtered.groupby("告示番号", as_index=False).agg(_ds_agg)
 
-        _ds_geo = _build_dpc_geo_map()
-        if not _ds_geo.empty:
-            _ds_result = _ds_result.merge(
-                _ds_geo[["告示番号","病床報告施設名","都道府県名","二次医療圏名"]],
-                on="告示番号", how="left"
-            )
+        # 病院情報（病院区分・都道府県名）をJOIN
+        if not _ds_hosp_info.empty:
+            _ds_result = _ds_result.merge(_ds_hosp_info, on="告示番号", how="left")
         else:
-            _ds_result["病床報告施設名"] = ""
+            _ds_result["病院区分"] = ""
             _ds_result["都道府県名"] = ""
-            _ds_result["二次医療圏名"] = ""
 
-        # 地理フィルター
+        # 病院区分フィルター
+        if _ds_kubun_sel:
+            _ds_result = _ds_result[_ds_result["病院区分"].isin(_ds_kubun_sel)]
+
+        # 都道府県フィルター
         if _ds_geo_scope == "都道府県" and _ds_pref_sel:
             _ds_result = _ds_result[_ds_result["都道府県名"] == _ds_pref_sel]
-        elif _ds_geo_scope == "二次医療圏" and _ds_pref_sel and _ds_region_sel:
-            _ds_result = _ds_result[
-                (_ds_result["都道府県名"] == _ds_pref_sel) &
-                (_ds_result["二次医療圏名"] == _ds_region_sel)
-            ]
 
-        # 派生指標
-        if _ds_surg_col and _ds_cnt_col:
-            _ds_result["手術実施率"] = (_ds_result[_ds_surg_col] / _ds_result[_ds_cnt_col].replace(0, float("nan")))
-        if _ds_los_col:
-            _ds_result["平均在院日数"] = _ds_result[_ds_los_col]
+        # 非公表除外
+        if _ds_hide_nan:
+            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna()]
+
+        # 平均在院日数カラムを作成
+        if _ds_los_col and _ds_los_col in _ds_result.columns:
+            _ds_result = _ds_result.rename(columns={_ds_los_col: "平均在院日数"})
 
         # ソート
-        _sort_map = {
-            "患者総数":   _ds_cnt_col,
-            "手術件数":   _ds_surg_col,
-            "手術実施率": "手術実施率",
-            "平均在院日数": "平均在院日数",
-        }
-        _sort_col = _sort_map.get(_ds_metric, _ds_cnt_col)
-        if _sort_col and _sort_col in _ds_result.columns:
-            _asc = _ds_metric == "平均在院日数"
+        _sort_col = _ds_cnt_col if _ds_metric == "患者総数" else "平均在院日数"
+        _asc      = _ds_metric == "平均在院日数"
+        if _sort_col in _ds_result.columns:
             _ds_result = _ds_result.sort_values(_sort_col, ascending=_asc, na_position="last")
 
         _ds_result = _ds_result.reset_index(drop=True)
         _ds_result.index += 1
-        _ds_result["病院名"] = _ds_result["病床報告施設名"].where(_ds_result["病床報告施設名"] != "", _ds_result.get("DPC施設名", ""))
 
-        st.caption(f"**{len(_ds_result):,}病院** / 疾患: {_ds_disease}")
+        # カラム表示設定
+        _total_n = len(_ds_result)
+        _total_patients = int(_ds_result[_ds_cnt_col].sum()) if _ds_cnt_col in _ds_result.columns else 0
+        st.caption(
+            f"**{_total_n:,}病院** が対象 / 疾患: {_ds_disease}"
+            + (f" / 合計 {_total_patients:,}例" if not _ds_hide_nan else "")
+        )
 
-        _ds_show_cols = ["病院名", "都道府県名", "二次医療圏名", _ds_cnt_col]
-        _ds_col_cfg = {
-            _ds_cnt_col: st.column_config.NumberColumn("患者総数", format="%d件"),
+        _ds_show_cols = ["施設名", "病院区分", "都道府県名", _ds_cnt_col]
+        _ds_col_cfg: dict = {
+            "施設名":    st.column_config.TextColumn("病院名"),
+            "病院区分":  st.column_config.TextColumn("区分"),
+            "都道府県名": st.column_config.TextColumn("都道府県"),
+            _ds_cnt_col: st.column_config.NumberColumn("患者数", format="%d例"),
         }
-        if _ds_surg_col:
-            _ds_show_cols.append(_ds_surg_col)
-            _ds_col_cfg[_ds_surg_col] = st.column_config.NumberColumn("手術件数", format="%d件")
-        if "手術実施率" in _ds_result.columns:
-            _ds_show_cols.append("手術実施率")
-            _ds_col_cfg["手術実施率"] = st.column_config.NumberColumn("手術実施率", format="%.1f%%")
-            _ds_result["手術実施率"] = _ds_result["手術実施率"] * 100
         if "平均在院日数" in _ds_result.columns:
             _ds_show_cols.append("平均在院日数")
             _ds_col_cfg["平均在院日数"] = st.column_config.NumberColumn("平均在院日数", format="%.1f日")
 
         _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]]
-        st.dataframe(_ds_disp, use_container_width=True, column_config=_ds_col_cfg)
+        st.dataframe(_ds_disp, use_container_width=True, column_config=_ds_col_cfg, height=520)
 
     _render_footer()
     st.stop()
