@@ -938,7 +938,7 @@ if st.session_state.get("_view_mode") == "home":
             st.session_state["_view_mode"] = "region_vision"
             st.rerun()
 
-    if _build_dpc_geo_map is not None and DPC_PARQUET_SURG.exists():
+    if DPC_PARQUET_SURG.exists():
         st.markdown("<br>", unsafe_allow_html=True)
         _mc7, _mc8, _mc9 = st.columns(3, gap="medium")
         with _mc7:
