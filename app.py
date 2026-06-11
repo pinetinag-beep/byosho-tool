@@ -3067,7 +3067,32 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
         _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]]
 
-        st.caption("💡 病院名をクリックすると詳細画面に移動できます", )
+        # 前回選択した病院のバナーをテーブルの上に表示（地図モードと同じパターン）
+        _dsc_last = st.session_state.get("_dsc_last_selected")
+        if _dsc_last:
+            _dsc_c1, _dsc_c2 = st.columns([4, 1])
+            with _dsc_c1:
+                st.info(f"🏥 **{_dsc_last}** を選択中")
+            with _dsc_c2:
+                if st.button("詳細を見る →", key="_dsc_nav_btn", type="primary", use_container_width=True):
+                    # 病床報告データから最新行を取得してナビゲート
+                    _df_base = st.session_state.df
+                    if _df_base is not None:
+                        _hr_rows = _df_base[_df_base["医療機関名"] == _dsc_last].sort_values("報告年度", ascending=False)
+                        if not _hr_rows.empty:
+                            _hr = _hr_rows.iloc[0]
+                            st.session_state["_nav_jump"] = {
+                                "year":     int(_hr["報告年度"]),
+                                "pref":     str(_hr["都道府県名"]),
+                                "region":   str(_hr["二次医療圏名"]),
+                                "hospital": _dsc_last,
+                            }
+                            st.session_state["_hospital_chosen"] = True
+                            st.session_state["_view_mode"] = "detail"
+                            st.session_state.pop("_dsc_last_selected", None)
+                            st.rerun()
+
+        st.caption("💡 行をクリックして病院を選択 → 「詳細を見る」で病院詳細に移動できます")
         _ds_evt = st.dataframe(
             _ds_disp,
             use_container_width=True,
@@ -3078,52 +3103,22 @@ if st.session_state.get("_view_mode") == "dpc_search":
             key="_dsc_table",
         )
 
-        # 行選択 → 病院詳細へナビゲート
+        # 行選択 → 施設名を dpc_match で病床報告施設名に変換してセッションステートに保存
         _ds_sel_rows = _ds_evt.selection.rows if hasattr(_ds_evt, "selection") else []
         if _ds_sel_rows:
             _sel_dpc_name = _ds_disp.iloc[_ds_sel_rows[0]]["施設名"]
-            # dpc_match から病床報告施設名を検索
-            _ds_match_df  = _load_dpc_match()
-            _byosho_name  = None
+            # dpc_match で病床報告施設名を探す（なければ DPC 施設名をそのまま使う）
+            _ds_match_df = _load_dpc_match()
+            _nav_name = _sel_dpc_name
             if _ds_match_df is not None:
-                _m = _ds_match_df[
-                    (_ds_match_df["DPC施設名"] == _sel_dpc_name) &
-                    (_ds_match_df["マッチ状態"] != "未結合")
-                ]
-                if not _m.empty:
-                    _byosho_name = str(_m.iloc[0]["病床報告施設名"])
-
-            # 病床報告データに存在するか確認
-            _in_byosho = (
-                _byosho_name is not None
-                and st.session_state.df is not None
-                and _byosho_name in st.session_state.df["医療機関名"].values
-            )
-
-            _nav_c1, _nav_c2 = st.columns([5, 3])
-            with _nav_c1:
-                if _in_byosho:
-                    if st.button(
-                        f"🏥 {_byosho_name} の詳細を見る →",
-                        key="_dsc_nav_btn",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        _hosp_rows = st.session_state.df[
-                            st.session_state.df["医療機関名"] == _byosho_name
-                        ].sort_values("報告年度", ascending=False)
-                        _hr = _hosp_rows.iloc[0]
-                        st.session_state["_nav_jump"] = {
-                            "year":     int(_hr["報告年度"]),
-                            "pref":     str(_hr["都道府県名"]),
-                            "region":   str(_hr["二次医療圏名"]),
-                            "hospital": _byosho_name,
-                        }
-                        st.session_state["_hospital_chosen"] = True
-                        st.session_state["_view_mode"] = "detail"
-                        st.rerun()
-                else:
-                    st.caption(f"選択中: {_sel_dpc_name}（病床機能報告データ未突合のため詳細リンクなし）")
+                _m = _ds_match_df[_ds_match_df["DPC施設名"] == _sel_dpc_name]
+                if not _m.empty and str(_m.iloc[0]["マッチ状態"]) != "未結合":
+                    _cand = str(_m.iloc[0]["病床報告施設名"])
+                    _df_base = st.session_state.df
+                    if _df_base is not None and _cand in _df_base["医療機関名"].values:
+                        _nav_name = _cand
+            st.session_state["_dsc_last_selected"] = _nav_name
+            st.rerun()
 
     _render_footer()
     st.stop()
