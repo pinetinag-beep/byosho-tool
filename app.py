@@ -2968,6 +2968,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
             _ds_surg_all if _ds_mdc_key is None
             else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
         )
+        _ds_disease_src = _ds_disease_src[_ds_disease_src["件数_総計"].fillna(0) > 0]
         _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
         # セッションステート検証（MDC変更時に古い疾患名が残らないように）
         if st.session_state.get("_dsc_disease") not in _ds_diseases:
