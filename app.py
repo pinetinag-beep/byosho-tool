@@ -3066,7 +3066,64 @@ if st.session_state.get("_view_mode") == "dpc_search":
             _ds_col_cfg["平均在院日数"] = st.column_config.NumberColumn("平均在院日数", format="%.1f日")
 
         _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]]
-        st.dataframe(_ds_disp, use_container_width=True, column_config=_ds_col_cfg, height=520)
+
+        st.caption("💡 病院名をクリックすると詳細画面に移動できます", )
+        _ds_evt = st.dataframe(
+            _ds_disp,
+            use_container_width=True,
+            column_config=_ds_col_cfg,
+            height=520,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="_dsc_table",
+        )
+
+        # 行選択 → 病院詳細へナビゲート
+        _ds_sel_rows = _ds_evt.selection.rows if hasattr(_ds_evt, "selection") else []
+        if _ds_sel_rows:
+            _sel_dpc_name = _ds_disp.iloc[_ds_sel_rows[0]]["施設名"]
+            # dpc_match から病床報告施設名を検索
+            _ds_match_df  = _load_dpc_match()
+            _byosho_name  = None
+            if _ds_match_df is not None:
+                _m = _ds_match_df[
+                    (_ds_match_df["DPC施設名"] == _sel_dpc_name) &
+                    (_ds_match_df["マッチ状態"] != "未結合")
+                ]
+                if not _m.empty:
+                    _byosho_name = str(_m.iloc[0]["病床報告施設名"])
+
+            # 病床報告データに存在するか確認
+            _in_byosho = (
+                _byosho_name is not None
+                and st.session_state.df is not None
+                and _byosho_name in st.session_state.df["医療機関名"].values
+            )
+
+            _nav_c1, _nav_c2 = st.columns([5, 3])
+            with _nav_c1:
+                if _in_byosho:
+                    if st.button(
+                        f"🏥 {_byosho_name} の詳細を見る →",
+                        key="_dsc_nav_btn",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        _hosp_rows = st.session_state.df[
+                            st.session_state.df["医療機関名"] == _byosho_name
+                        ].sort_values("報告年度", ascending=False)
+                        _hr = _hosp_rows.iloc[0]
+                        st.session_state["_nav_jump"] = {
+                            "year":     int(_hr["報告年度"]),
+                            "pref":     str(_hr["都道府県名"]),
+                            "region":   str(_hr["二次医療圏名"]),
+                            "hospital": _byosho_name,
+                        }
+                        st.session_state["_hospital_chosen"] = True
+                        st.session_state["_view_mode"] = "detail"
+                        st.rerun()
+                else:
+                    st.caption(f"選択中: {_sel_dpc_name}（病床機能報告データ未突合のため詳細リンクなし）")
 
     _render_footer()
     st.stop()
