@@ -3262,7 +3262,7 @@ def kpi_card(col, label, value, sub="", color="#3b82f6"):
         f'<div class="metric-card" style="border-top-color:{color};">'
         f'<div class="metric-label">{label}</div>'
         f'<div class="metric-value">{value}</div>'
-        f'<div class="metric-sub">{sub}</div>'
+        f'<div class="metric-sub">{sub or "&nbsp;"}</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
