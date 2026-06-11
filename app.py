@@ -611,8 +611,8 @@ def _load_dpc_surgery_detail():
     if not DPC_PARQUET_SURG.exists():
         return None
     df = pd.read_parquet(DPC_PARQUET_SURG)
-    # ソースデータの重複行（同一 年度×告示番号×MDC×dpc6）を除去
-    return df.drop_duplicates(subset=["年度", "告示番号", "MDC", "dpc6"], keep="first")
+    # 疾患名まで含めた完全重複のみ除去（同一dpc6でも疾患名が異なるレコードは別行）
+    return df.drop_duplicates(subset=["年度", "告示番号", "MDC", "dpc6", "疾患名"], keep="first")
 
 _PREF_CODE_TO_NAME = {
     "01":"北海道","02":"青森県","03":"岩手県","04":"宮城県","05":"秋田県",
