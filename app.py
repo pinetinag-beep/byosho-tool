@@ -3358,14 +3358,6 @@ with tab1:
     if not isinstance(hosp_row, pd.Series):
         st.warning("選択した年度のデータが見つかりません")
     else:
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            st.plotly_chart(bed_donut(hosp_row, hospital), use_container_width=True)
-        with c2:
-            st.plotly_chart(occupancy_gauge(occ, "総稼働率"), use_container_width=True)
-
-        st.plotly_chart(bed_type_occupancy_bar(hosp_row, hospital), use_container_width=True)
-
         # ── DPC MDC別患者件数 上位3 ──────────────────────────
         if _is_dpc and _dpc_ban is not None:
             _ov_cases_all = _load_dpc_mdc_cases()
@@ -3392,6 +3384,14 @@ with tab1:
                                     f'</div>',
                                     unsafe_allow_html=True,
                                 )
+
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.plotly_chart(bed_donut(hosp_row, hospital), use_container_width=True)
+        with c2:
+            st.plotly_chart(occupancy_gauge(occ, "総稼働率"), use_container_width=True)
+
+        st.plotly_chart(bed_type_occupancy_bar(hosp_row, hospital), use_container_width=True)
 
         st.markdown('<div class="section-header">病床種別詳細</div>', unsafe_allow_html=True)
         def _safe_int(val):
