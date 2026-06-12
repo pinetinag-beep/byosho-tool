@@ -623,8 +623,10 @@ def _load_dpc_mdc_cases():
 def _load_dpc_readmission():
     return pd.read_parquet(DPC_PARQUET_READM) if DPC_PARQUET_READM.exists() else None
 
+_DPC_SURG_MTIME: float = DPC_PARQUET_SURG.stat().st_mtime if DPC_PARQUET_SURG.exists() else 0.0
+
 @st.cache_data(show_spinner=False)
-def _load_dpc_surgery_detail():
+def _load_dpc_surgery_detail(_mtime: float = 0.0):
     if not DPC_PARQUET_SURG.exists():
         return None
     df = pd.read_parquet(DPC_PARQUET_SURG)
@@ -2960,7 +2962,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
             st.session_state["_view_mode"] = "home"
             st.rerun()
 
-    _ds_surg_all = _load_dpc_surgery_detail()
+    _ds_surg_all = _load_dpc_surgery_detail(_DPC_SURG_MTIME)
     if _ds_surg_all is None:
         st.warning("DPCデータが読み込まれていません")
         _render_footer()
@@ -4276,7 +4278,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         _dp_proc_all  = _load_dpc_procedure_stats()
         _dp_ratio_all = _load_dpc_mdc_ratio()
         _dp_readm_all = _load_dpc_readmission()
-        _dp_surg_all  = _load_dpc_surgery_detail()
+        _dp_surg_all  = _load_dpc_surgery_detail(_DPC_SURG_MTIME)
 
         def _dpc_latest(df, ban):
             if df is None:
