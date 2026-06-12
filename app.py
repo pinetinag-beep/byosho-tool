@@ -3366,6 +3366,33 @@ with tab1:
 
         st.plotly_chart(bed_type_occupancy_bar(hosp_row, hospital), use_container_width=True)
 
+        # ── DPC MDC別患者件数 上位3 ──────────────────────────
+        if _is_dpc and _dpc_ban is not None:
+            _ov_cases_all = _load_dpc_mdc_cases()
+            if _ov_cases_all is not None:
+                _ov_cases = _ov_cases_all[_ov_cases_all["告示番号"] == _dpc_ban]
+                if not _ov_cases.empty:
+                    _ov_mdc_keys = [k for k in MDC_LABELS if k in _ov_cases.columns]
+                    if _ov_mdc_keys:
+                        _ov_sum = _ov_cases[_ov_mdc_keys].sum()
+                        _ov_top3 = _ov_sum[_ov_sum > 0].sort_values(ascending=False).head(3)
+                        if not _ov_top3.empty:
+                            st.markdown('<div class="section-header">DPC 患者件数 上位3領域</div>', unsafe_allow_html=True)
+                            _ov_accent = ["#3b82f6", "#8b5cf6", "#06b6d4"]
+                            _ov_cols = st.columns(3)
+                            for _oi, ((_ov_key, _ov_val), _ov_col, _ov_ac) in enumerate(
+                                zip(_ov_top3.items(), _ov_cols, _ov_accent)
+                            ):
+                                _ov_label = MDC_LABELS.get(_ov_key, _ov_key)
+                                _ov_col.markdown(
+                                    f'<div class="metric-card" style="border-top-color:{_ov_ac};">'
+                                    f'<div class="metric-label">{_oi+1}位　{_ov_label}</div>'
+                                    f'<div class="metric-value">{int(_ov_val):,}</div>'
+                                    f'<div class="metric-sub">件（年間）</div>'
+                                    f'</div>',
+                                    unsafe_allow_html=True,
+                                )
+
         st.markdown('<div class="section-header">病床種別詳細</div>', unsafe_allow_html=True)
         def _safe_int(val):
             try:
@@ -3503,34 +3530,6 @@ with tab1:
                         + "</div>"
                     )
                     st.markdown(badge_html, unsafe_allow_html=True)
-
-        # ── DPC MDC別患者件数 上位3 ──────────────────────────
-        if _is_dpc and _dpc_ban is not None:
-            _ov_cases_all = _load_dpc_mdc_cases()
-            if _ov_cases_all is not None:
-                _ov_cases = _ov_cases_all[_ov_cases_all["告示番号"] == _dpc_ban]
-                if not _ov_cases.empty:
-                    _ov_mdc_keys = [k for k in MDC_LABELS if k in _ov_cases.columns]
-                    if _ov_mdc_keys:
-                        _ov_sum = _ov_cases[_ov_mdc_keys].sum()
-                        _ov_top3 = _ov_sum[_ov_sum > 0].sort_values(ascending=False).head(3)
-                        if not _ov_top3.empty:
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            st.markdown('<div class="section-header">DPC 患者件数 上位3領域</div>', unsafe_allow_html=True)
-                            _ov_accent = ["#3b82f6", "#8b5cf6", "#06b6d4"]
-                            _ov_cols = st.columns(3)
-                            for _oi, ((_ov_key, _ov_val), _ov_col, _ov_ac) in enumerate(
-                                zip(_ov_top3.items(), _ov_cols, _ov_accent)
-                            ):
-                                _ov_label = MDC_LABELS.get(_ov_key, _ov_key)
-                                _ov_col.markdown(
-                                    f'<div class="metric-card" style="border-top-color:{_ov_ac};">'
-                                    f'<div class="metric-label">{_oi+1}位　{_ov_label}</div>'
-                                    f'<div class="metric-value">{int(_ov_val):,}</div>'
-                                    f'<div class="metric-sub">件（年間）</div>'
-                                    f'</div>',
-                                    unsafe_allow_html=True,
-                                )
 
 
 # ── TAB 2: 地域比較 ─────────────────────────────────────────
