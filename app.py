@@ -3385,6 +3385,35 @@ with tab1:
                                     unsafe_allow_html=True,
                                 )
 
+                            _ov_noop = _ov_cases[_ov_cases["手術有無"] == "無し"][_ov_mdc_keys].sum().sum()
+                            _ov_surg = _ov_cases[_ov_cases["手術有無"] == "有り"][_ov_mdc_keys].sum().sum()
+                            _ov_total = int(_ov_noop + _ov_surg)
+                            _sc1, _sc2, _sc3 = st.columns(3)
+                            _sc1.markdown(
+                                f'<div class="metric-card" style="border-top-color:#64748b;">'
+                                f'<div class="metric-label">手術なし</div>'
+                                f'<div class="metric-value">{int(_ov_noop):,}</div>'
+                                f'<div class="metric-sub">件（年間）</div>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _sc2.markdown(
+                                f'<div class="metric-card" style="border-top-color:#f59e0b;">'
+                                f'<div class="metric-label">手術あり</div>'
+                                f'<div class="metric-value">{int(_ov_surg):,}</div>'
+                                f'<div class="metric-sub">件（年間）</div>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _sc3.markdown(
+                                f'<div class="metric-card" style="border-top-color:#10b981;">'
+                                f'<div class="metric-label">合計</div>'
+                                f'<div class="metric-value">{_ov_total:,}</div>'
+                                f'<div class="metric-sub">件（年間）</div>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+
         c1, c2 = st.columns([1, 1])
         with c1:
             st.plotly_chart(bed_donut(hosp_row, hospital), use_container_width=True)
