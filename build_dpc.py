@@ -172,11 +172,24 @@ def load_mdc_cases(path: str, year: int) -> pd.DataFrame:
             i += 1
             continue
         name = row.iloc[2]
-        surgery_flag = str(row.iloc[3]).strip()  # "無し" or "有り"
-        rec = {"年度": year, "告示番号": ban, "施設名": name, "手術有無": surgery_flag}
-        for col_idx, mdc_name in mdc_cols.items():
-            rec[mdc_name] = pd.to_numeric(row.iloc[col_idx], errors="coerce")
-        records.append(rec)
+
+        def _parse_row(r):
+            flag = str(r.iloc[3]).strip()
+            rec = {"年度": year, "告示番号": ban, "施設名": name, "手術有無": flag}
+            for col_idx, mdc_name in mdc_cols.items():
+                rec[mdc_name] = pd.to_numeric(r.iloc[col_idx], errors="coerce")
+            return rec
+
+        # 1行目（通常は手術「無し」）
+        records.append(_parse_row(row))
+
+        # 次行が同病院の「有り」行（告示番号=NaN）なら一緒に取り込む
+        if i + 1 < len(data_rows):
+            next_row = data_rows.iloc[i + 1]
+            if pd.isna(next_row.iloc[0]) or str(next_row.iloc[0]).strip() == "":
+                records.append(_parse_row(next_row))
+                i += 2
+                continue
         i += 1
 
     return pd.DataFrame(records)
