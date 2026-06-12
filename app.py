@@ -2987,7 +2987,10 @@ if st.session_state.get("_view_mode") == "dpc_search":
             _ds_surg_all if _ds_mdc_key is None
             else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
         )
-        _ds_disease_src = _ds_disease_src[_ds_disease_src["件数_総計"].fillna(0) > 0]
+        _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) > 0
+        if "件数_手術有" in _ds_disease_src.columns:
+            _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) > 0)
+        _ds_disease_src = _ds_disease_src[_ds_disease_mask]
         _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
         # セッションステート検証（MDC変更時に古い疾患名が残らないように）
         if st.session_state.get("_dsc_disease") not in _ds_diseases:
@@ -3029,12 +3032,17 @@ if st.session_state.get("_view_mode") == "dpc_search":
     _ds_cnt_col_base = next((c for c in _ds_surg_all.columns if "件数" in c and "総計" in c), None)
     _ds_los_col_base = next((c for c in _ds_surg_all.columns if "在院" in c and "総計" in c), None)
 
-    # 手術有無フィルターに応じて使用する件数・在院日数列を決定
+    # 件数_総計 = Excelコード99 = 手術なし件数（真の総計ではない）
+    # 件数_手術有 = Excelコード97 = 手術あり件数
+    # 真の総計 = 件数_総計(code99) + 件数_手術有(code97)
     if _ds_surg_sel == "手術あり" and _ds_has_surg_detail:
         _ds_cnt_col = "件数_手術有"
         _ds_los_col = "在院日数_手術有" if "在院日数_手術有" in _ds_surg_all.columns else _ds_los_col_base
-    else:
-        _ds_cnt_col = _ds_cnt_col_base
+    elif _ds_surg_sel == "手術なし":
+        _ds_cnt_col = _ds_cnt_col_base  # 件数_総計 = code99 = 手術なし
+        _ds_los_col = _ds_los_col_base
+    else:  # すべて
+        _ds_cnt_col = "_ds_cnt_total"
         _ds_los_col = _ds_los_col_base
 
     if _ds_cnt_col_base and _ds_disease:
@@ -3043,12 +3051,12 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if "年度" in _ds_filtered.columns:
             _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
 
-        # 手術なし = 総計 − 手術有
-        if _ds_surg_sel == "手術なし" and _ds_has_surg_detail:
-            _ds_filtered["件数_手術なし"] = (
-                _ds_filtered["件数_総計"].fillna(0) - _ds_filtered["件数_手術有"].fillna(0)
-            ).clip(lower=0).where(_ds_filtered["件数_手術有"].notna())
-            _ds_cnt_col = "件数_手術なし"
+        # すべて: 真の総計 = 手術なし(code99) + 手術あり(code97)
+        if _ds_surg_sel == "すべて":
+            _ds_filtered["_ds_cnt_total"] = (
+                _ds_filtered["件数_総計"].fillna(0)
+                + (_ds_filtered["件数_手術有"].fillna(0) if _ds_has_surg_detail else 0)
+            )
 
         # 手術有無データがない疾患（MDC06以外）の場合は警告
         if _ds_surg_sel != "すべて" and _ds_has_surg_detail:
