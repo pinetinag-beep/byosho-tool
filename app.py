@@ -599,8 +599,10 @@ def _db_surgery():
     return load_surgery_from_db(str(DB_PATH))
 
 
+_DPC_MATCH_MTIME: float = DPC_PARQUET_MATCH.stat().st_mtime if DPC_PARQUET_MATCH.exists() else 0.0
+
 @st.cache_data(show_spinner=False)
-def _load_dpc_match():
+def _load_dpc_match(_mtime: float = 0.0):
     return pd.read_parquet(DPC_PARQUET_MATCH) if DPC_PARQUET_MATCH.exists() else None
 
 @st.cache_data(show_spinner=False)
@@ -3352,7 +3354,7 @@ _dpc_ban: int | None = None
 _dpc_hosp_row = None
 _is_dpc = False
 _dpc_matched_name = None
-_dpc_match_all = _load_dpc_match()
+_dpc_match_all = _load_dpc_match(_DPC_MATCH_MTIME)
 _dpc_hospitals_all = _load_dpc_hospitals()
 if _dpc_match_all is not None:
     _m = _dpc_match_all[_dpc_match_all["病床報告施設名"] == hospital]
