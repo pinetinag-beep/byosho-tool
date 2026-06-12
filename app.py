@@ -4366,23 +4366,30 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
             st.markdown('<div class="section-header">MDC別患者件数</div>', unsafe_allow_html=True)
             _mdc_keys = [k for k in MDC_LABELS if k in _dp_cases.columns]
             if _mdc_keys:
-                # 手術有り・無しを合算して総件数を得る
-                _cases_sum = _dp_cases[_mdc_keys].sum()
-                _mdc_vals_cnt = [int(_cases_sum.get(k, 0)) for k in _mdc_keys]
+                _noop_row = _dp_cases[_dp_cases["手術有無"] == "無し"]
+                _surg_row = _dp_cases[_dp_cases["手術有無"] == "有り"]
+                _noop_vals = [int(_noop_row[k].sum()) for k in _mdc_keys]
+                _surg_vals = [int(_surg_row[k].sum()) for k in _mdc_keys]
+                _total_vals = [n + s for n, s in zip(_noop_vals, _surg_vals)]
                 _mdc_names_list = [MDC_LABELS[k] for k in _mdc_keys]
 
                 import plotly.graph_objects as _go_dpc
                 _fig_mdc = _go_dpc.Figure()
                 _fig_mdc.add_trace(_go_dpc.Bar(
-                    x=_mdc_vals_cnt, y=_mdc_names_list, orientation="h",
-                    name=hospital, marker_color="#3b82f6",
-                    text=[f"{v:,}件" for v in _mdc_vals_cnt], textposition="outside",
+                    x=_noop_vals, y=_mdc_names_list, orientation="h",
+                    name="手術なし", marker_color="#3b82f6",
+                ))
+                _fig_mdc.add_trace(_go_dpc.Bar(
+                    x=_surg_vals, y=_mdc_names_list, orientation="h",
+                    name="手術あり", marker_color="#f59e0b",
+                    text=[f"{t:,}件" for t in _total_vals], textposition="outside",
                 ))
                 _fig_mdc.update_layout(
+                    barmode="stack",
                     height=520,
                     margin=dict(l=10, r=100, t=30, b=20),
                     xaxis_title="件数",
-                    legend=dict(orientation="h", y=1.04),
+                    legend=dict(orientation="h", y=1.06),
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
                 )
                 st.plotly_chart(_fig_mdc, use_container_width=True)
