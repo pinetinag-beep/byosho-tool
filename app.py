@@ -3369,6 +3369,8 @@ with tab1:
                         _ov_sum = _ov_cases[_ov_mdc_keys].sum()
                         _ov_top3 = _ov_sum[_ov_sum > 0].sort_values(ascending=False).head(3)
                         if not _ov_top3.empty:
+                            _ov_noop_row = _ov_cases[_ov_cases["手術有無"] == "無し"]
+                            _ov_surg_row = _ov_cases[_ov_cases["手術有無"] == "有り"]
                             st.markdown('<div class="section-header">DPC 患者件数 上位3領域</div>', unsafe_allow_html=True)
                             _ov_accent = ["#3b82f6", "#8b5cf6", "#06b6d4"]
                             _ov_cols = st.columns(3)
@@ -3376,11 +3378,15 @@ with tab1:
                                 zip(_ov_top3.items(), _ov_cols, _ov_accent)
                             ):
                                 _ov_label = MDC_LABELS.get(_ov_key, _ov_key)
+                                _ov_k_noop = int(_ov_noop_row[_ov_key].sum()) if _ov_key in _ov_noop_row.columns else 0
+                                _ov_k_surg = int(_ov_surg_row[_ov_key].sum()) if _ov_key in _ov_surg_row.columns else 0
                                 _ov_col.markdown(
                                     f'<div class="metric-card" style="border-top-color:{_ov_ac};">'
                                     f'<div class="metric-label">{_oi+1}位　{_ov_label}</div>'
                                     f'<div class="metric-value">{int(_ov_val):,}</div>'
-                                    f'<div class="metric-sub">件（年間）</div>'
+                                    f'<div class="metric-sub">'
+                                    f'手術なし {_ov_k_noop:,}件　手術あり {_ov_k_surg:,}件'
+                                    f'</div>'
                                     f'</div>',
                                     unsafe_allow_html=True,
                                 )
