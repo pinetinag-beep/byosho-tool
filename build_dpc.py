@@ -278,13 +278,13 @@ def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
 
         row0 = df.iloc[0].tolist()   # DPCコード
         row1 = df.iloc[1].tolist()   # 疾患名
-        row2 = df.iloc[2].tolist()   # 件数/在院日数
+        # 件数/在院日数ラベルは先頭列のみ入り後続列はNaN→前方fill
+        row2 = pd.Series(df.iloc[2]).replace("", None).ffill().tolist()
         row3 = df.iloc[3].tolist()   # 手術コード
 
         # 告示番号(col0), 通番(col1), 施設名(col2) → 3列固定
         # col 3以降が DPC別データ
-        # 総計(手術コード=99)の件数列だけ抽出（全件数）
-        # DPC6桁×（件数_99, 件数_97, 在院日数_99）を収集
+        # 総計(手術コード=99)と手術有(97)の件数・在院日数を収集
 
         # DPCコードを前方fill
         current_dpc = None

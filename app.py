@@ -2968,8 +2968,8 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
     _ds_hosp_info = _build_dpc_hosp_info()
 
-    # ── フィルター行1: MDC + 疾患名 + ランキング指標 ──
-    _dsf1, _dsf2, _dsf3 = st.columns([2, 4, 2])
+    # ── フィルター行1: MDC + 疾患名 + ランキング指標 + 手術有無 ──
+    _dsf1, _dsf2, _dsf3, _dsf3b = st.columns([2, 4, 2, 2])
     with _dsf1:
         _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
         _ds_mdc_opts = ["すべて"] + [
@@ -2994,6 +2994,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
     with _dsf3:
         _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数"], key="_dsc_metric")
+
+    with _dsf3b:
+        _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
 
     # ── フィルター行2: 都道府県 + 病院区分 ──
     _dsf4, _dsf5 = st.columns([3, 5])
@@ -3020,19 +3023,41 @@ if st.session_state.get("_view_mode") == "dpc_search":
     st.markdown("---")
 
     # ── 検索・集計 ──
-    _ds_cnt_col = next((c for c in _ds_surg_all.columns if "件数" in c and "総計" in c), None)
-    _ds_los_col = next((c for c in _ds_surg_all.columns if "在院" in c and "総計" in c), None)
+    _ds_has_surg_detail = "件数_手術有" in _ds_surg_all.columns
+    _ds_cnt_col_base = next((c for c in _ds_surg_all.columns if "件数" in c and "総計" in c), None)
+    _ds_los_col_base = next((c for c in _ds_surg_all.columns if "在院" in c and "総計" in c), None)
 
-    if _ds_cnt_col and _ds_disease:
+    # 手術有無フィルターに応じて使用する件数・在院日数列を決定
+    if _ds_surg_sel == "手術あり" and _ds_has_surg_detail:
+        _ds_cnt_col = "件数_手術有"
+        _ds_los_col = "在院日数_手術有" if "在院日数_手術有" in _ds_surg_all.columns else _ds_los_col_base
+    else:
+        _ds_cnt_col = _ds_cnt_col_base
+        _ds_los_col = _ds_los_col_base
+
+    if _ds_cnt_col_base and _ds_disease:
         # 疾患でフィルター（最新年度のみ）
         _ds_filtered = _ds_surg_all[_ds_surg_all["疾患名"] == _ds_disease].copy()
         if "年度" in _ds_filtered.columns:
             _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
 
-        # 告示番号単位で集計（重複除去済みデータなので単純にfirst or sum）
+        # 手術なし = 総計 − 手術有
+        if _ds_surg_sel == "手術なし" and _ds_has_surg_detail:
+            _ds_filtered["件数_手術なし"] = (
+                _ds_filtered["件数_総計"].fillna(0) - _ds_filtered["件数_手術有"].fillna(0)
+            ).clip(lower=0).where(_ds_filtered["件数_手術有"].notna())
+            _ds_cnt_col = "件数_手術なし"
+
+        # 手術有無データがない疾患（MDC06以外）の場合は警告
+        if _ds_surg_sel != "すべて" and _ds_has_surg_detail:
+            _surg_avail = _ds_filtered["件数_手術有"].notna().any() if "件数_手術有" in _ds_filtered.columns else False
+            if not _surg_avail:
+                st.info("この疾患の手術有無別データは現在非公表です（消化器系のみ提供）。「すべて」に切り替えてください。")
+
+        # 告示番号単位で集計
         _ds_agg: dict = {_ds_cnt_col: "sum", "施設名": "first"}
-        if _ds_los_col:
-            _ds_agg[_ds_los_col] = "first"  # 平均在院日数はそのまま使う
+        if _ds_los_col and _ds_los_col in _ds_filtered.columns:
+            _ds_agg[_ds_los_col] = "first"
         _ds_result = _ds_filtered.groupby("告示番号", as_index=False).agg(_ds_agg)
 
         # 病院情報（病院区分・都道府県名）をJOIN
@@ -3052,7 +3077,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
         # 非公表除外
         if _ds_hide_nan:
-            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna()]
+            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna() & (_ds_result[_ds_cnt_col] > 0)]
 
         # 平均在院日数カラムを作成
         if _ds_los_col and _ds_los_col in _ds_result.columns:
