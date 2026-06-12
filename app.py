@@ -4376,12 +4376,12 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                 import plotly.graph_objects as _go_dpc
                 _fig_mdc = _go_dpc.Figure()
                 _fig_mdc.add_trace(_go_dpc.Bar(
-                    x=_noop_vals, y=_mdc_names_list, orientation="h",
-                    name="手術なし", marker_color="#3b82f6",
-                ))
-                _fig_mdc.add_trace(_go_dpc.Bar(
                     x=_surg_vals, y=_mdc_names_list, orientation="h",
                     name="手術あり", marker_color="#f59e0b",
+                ))
+                _fig_mdc.add_trace(_go_dpc.Bar(
+                    x=_noop_vals, y=_mdc_names_list, orientation="h",
+                    name="手術なし", marker_color="#3b82f6",
                     text=[f"{t:,}件" for t in _total_vals], textposition="outside",
                 ))
                 _fig_mdc.update_layout(
