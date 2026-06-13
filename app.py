@@ -3698,45 +3698,75 @@ with tab5:
         # ── 職種別 経年推移 ──────────────────────────────────────────
         st.markdown('<div class="section-header">職種別 経年推移</div>', unsafe_allow_html=True)
 
+        # col: (常勤列名, 非常勤列名, ラベル, 常勤色, 非常勤色)
         _staff_trend_defs = [
-            ("常勤医師数",          "常勤医師",          "#e74c3c"),
-            ("常勤看護師数",         "常勤看護師",         "#3498db"),
-            ("常勤理学療法士数",     "理学療法士（PT）",   "#10b981"),
-            ("常勤作業療法士数",     "作業療法士（OT）",   "#f59e0b"),
-            ("常勤言語聴覚士数",     "言語聴覚士（ST）",   "#8b5cf6"),
-            ("常勤薬剤師数",         "薬剤師",             "#06b6d4"),
-            ("常勤診療放射線技師数", "診療放射線技師",     "#ec4899"),
-            ("常勤臨床検査技師数",   "臨床検査技師",       "#84cc16"),
+            ("常勤医師数",          "非常勤医師数",          "医師",             "#e74c3c", "#f1948a"),
+            ("常勤看護師数",         "非常勤看護師数",         "看護師",           "#3498db", "#85c1e9"),
+            ("常勤理学療法士数",     "非常勤理学療法士数",     "理学療法士（PT）", "#10b981", "#6ee7b7"),
+            ("常勤作業療法士数",     "非常勤作業療法士数",     "作業療法士（OT）", "#f59e0b", "#fcd34d"),
+            ("常勤言語聴覚士数",     "非常勤言語聴覚士数",     "言語聴覚士（ST）", "#8b5cf6", "#c4b5fd"),
+            ("常勤薬剤師数",         "非常勤薬剤師数",         "薬剤師",           "#06b6d4", "#67e8f9"),
+            ("常勤診療放射線技師数", "非常勤診療放射線技師数", "診療放射線技師",   "#ec4899", "#f9a8d4"),
+            ("常勤臨床検査技師数",   "非常勤臨床検査技師数",   "臨床検査技師",     "#84cc16", "#bef264"),
         ]
-        _trend_avail = [(col, lbl, clr) for col, lbl, clr in _staff_trend_defs if col in trend_df.columns and trend_df[col].notna().any()]
+        _trend_avail = [
+            (ccol, pcol, lbl, cclr, pclr)
+            for ccol, pcol, lbl, cclr, pclr in _staff_trend_defs
+            if ccol in trend_df.columns and trend_df[ccol].notna().any()
+        ]
 
         if _trend_avail:
-            # 2列グリッドで並べる
             for _row_start in range(0, len(_trend_avail), 2):
                 _row_defs = _trend_avail[_row_start:_row_start + 2]
                 _st_cols = st.columns(len(_row_defs))
-                for (col, lbl, clr), _stc in zip(_row_defs, _st_cols):
-                    _td = trend_df[["報告年度", col]].dropna().sort_values("報告年度")
-                    if not _td.empty:
-                        _sfig = _go_staff.Figure(_go_staff.Bar(
-                            x=_td["報告年度"].astype(str) + "年度",
-                            y=_td[col],
-                            marker_color=clr,
-                            text=[f"{int(v):,}人" for v in _td[col]],
-                            textposition="outside",
+                for (ccol, pcol, lbl, cclr, pclr), _stc in zip(_row_defs, _st_cols):
+                    _years = trend_df["報告年度"].dropna().sort_values().unique()
+                    _x = [str(int(y)) + "年度" for y in _years]
+                    _c_vals = [
+                        int(trend_df.loc[trend_df["報告年度"] == y, ccol].fillna(0).iloc[0])
+                        if len(trend_df.loc[trend_df["報告年度"] == y]) > 0 else 0
+                        for y in _years
+                    ]
+                    _has_part = pcol in trend_df.columns and trend_df[pcol].notna().any()
+                    _p_vals = [
+                        int(trend_df.loc[trend_df["報告年度"] == y, pcol].fillna(0).iloc[0])
+                        if _has_part and len(trend_df.loc[trend_df["報告年度"] == y]) > 0 else 0
+                        for y in _years
+                    ]
+                    _sfig = _go_staff.Figure()
+                    _sfig.add_trace(_go_staff.Bar(
+                        name="常勤",
+                        x=_x,
+                        y=_c_vals,
+                        marker_color=cclr,
+                        text=[f"{v:,}" for v in _c_vals],
+                        textposition="inside",
+                        width=0.5,
+                    ))
+                    if _has_part and any(v > 0 for v in _p_vals):
+                        _sfig.add_trace(_go_staff.Bar(
+                            name="非常勤",
+                            x=_x,
+                            y=_p_vals,
+                            marker_color=pclr,
+                            text=[f"{v:,}" for v in _p_vals],
+                            textposition="inside",
                             width=0.5,
                         ))
-                        _sfig.update_layout(
-                            title=dict(text=f"{lbl}数 経年推移", font=dict(size=14)),
-                            yaxis=dict(title="人数", rangemode="tozero"),
-                            xaxis=dict(type="category"),
-                            showlegend=False,
-                            height=320,
-                            margin=dict(t=50, b=30, l=50, r=20),
-                            font=dict(family="Noto Sans JP, sans-serif"),
-                        )
-                        _stc.plotly_chart(_sfig, use_container_width=True)
+                    _sfig.update_layout(
+                        title=dict(text=f"{lbl}数 経年推移", font=dict(size=14)),
+                        barmode="stack",
+                        yaxis=dict(title="人数", rangemode="tozero"),
+                        xaxis=dict(type="category"),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        showlegend=_has_part,
+                        height=320,
+                        margin=dict(t=50, b=30, l=50, r=20),
+                        font=dict(family="Noto Sans JP, sans-serif"),
+                    )
+                    _stc.plotly_chart(_sfig, use_container_width=True)
 
+        st.caption("※ 非常勤スタッフ数は施設票の再インポート後に表示されます")
         st.markdown("---")
 
         # ── 地域内スタッフ比較 ──────────────────────────────────────
