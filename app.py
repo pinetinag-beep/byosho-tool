@@ -3754,15 +3754,21 @@ with tab5:
                             width=0.5,
                         ))
                     _sfig.update_layout(
-                        title=dict(text=f"{lbl}数 経年推移", font=dict(size=14)),
+                        title_text=f"{lbl}数 経年推移",
+                        title_font_size=14,
                         barmode="stack",
-                        yaxis=dict(title="人数", rangemode="tozero"),
-                        xaxis=dict(type="category"),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        yaxis_title="人数",
+                        yaxis_rangemode="tozero",
+                        xaxis_type="category",
                         showlegend=_has_part,
+                        legend_orientation="h",
+                        legend_yanchor="bottom",
+                        legend_y=1.02,
+                        legend_xanchor="right",
+                        legend_x=1.0,
                         height=320,
                         margin=dict(t=50, b=30, l=50, r=20),
-                        font=dict(family="Noto Sans JP, sans-serif"),
+                        font_family="Noto Sans JP, sans-serif",
                     )
                     _stc.plotly_chart(_sfig, use_container_width=True)
 
