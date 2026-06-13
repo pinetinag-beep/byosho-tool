@@ -377,8 +377,21 @@ def upsert_table(con: duckdb.DuckDBPyConnection, table: str, df: pd.DataFrame, p
     if df.empty:
         print(f"  [skip] {table}: データなし")
         return
-    # テーブルが存在しなければ CREATE、存在すれば DELETE+INSERT（年度指定）
-    con.execute(f"CREATE TABLE IF NOT EXISTS {table} AS SELECT * FROM df WHERE 1=0")
+    # 既存テーブルの列を確認
+    existing_cols = None
+    try:
+        existing_cols = [row[0] for row in con.execute(f"DESCRIBE {table}").fetchall()]
+    except Exception:
+        pass  # テーブルが存在しない
+
+    if existing_cols is None:
+        con.execute(f"CREATE TABLE {table} AS SELECT * FROM df WHERE 1=0")
+    elif list(existing_cols) != list(df.columns):
+        # スキーマ変更 → DROP して再作成
+        print(f"  [schema change] {table}: 列変更のためテーブルを再作成 ({len(existing_cols)}列→{len(df.columns)}列)")
+        con.execute(f"DROP TABLE {table}")
+        con.execute(f"CREATE TABLE {table} AS SELECT * FROM df WHERE 1=0")
+
     if "年度" in pk_cols and "年度" in df.columns:
         year_val = df["年度"].iloc[0]
         con.execute(f"DELETE FROM {table} WHERE 年度 = {year_val}")
