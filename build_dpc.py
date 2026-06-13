@@ -2,7 +2,7 @@
 DPCデータをDuckDBに取り込むスクリプト。
 
 使い方:
-    py build_dpc.py --dir C:\path\to\dpc_data --match dpc_matching_full.csv
+    py build_dpc.py --dir C:/path/to/dpc_data --match dpc_matching_full.csv
 
 引数:
     --dir    DPCファイルが入ったフォルダ（デフォルト: dpc_data）
