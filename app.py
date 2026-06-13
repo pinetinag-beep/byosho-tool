@@ -3728,12 +3728,20 @@ with tab5:
                         for y in _years
                     ]
                     _has_part = pcol in trend_df.columns and trend_df[pcol].notna().any()
-                    _p_vals = [
-                        int(trend_df.loc[trend_df["報告年度"] == y, pcol].fillna(0).iloc[0])
-                        if _has_part and len(trend_df.loc[trend_df["報告年度"] == y]) > 0 else 0
+                    _p_fvals = [
+                        float(trend_df.loc[trend_df["報告年度"] == y, pcol].fillna(0).iloc[0])
+                        if _has_part and len(trend_df.loc[trend_df["報告年度"] == y]) > 0 else 0.0
                         for y in _years
                     ]
-                    _sfig = _go_staff.Figure()
+                    _sfig = _go_staff.Figure(layout=dict(
+                        title=dict(text=f"{lbl}数 経年推移"),
+                        barmode="stack",
+                        showlegend=bool(_has_part),
+                        height=320,
+                        margin=dict(t=50, b=30, l=50, r=20),
+                        yaxis=dict(title="人数", rangemode="tozero"),
+                        xaxis=dict(type="category"),
+                    ))
                     _sfig.add_trace(_go_staff.Bar(
                         name="常勤",
                         x=_x,
@@ -3743,25 +3751,16 @@ with tab5:
                         textposition="inside",
                         width=0.5,
                     ))
-                    if _has_part and any(v > 0 for v in _p_vals):
+                    if _has_part and any(v > 0 for v in _p_fvals):
                         _sfig.add_trace(_go_staff.Bar(
                             name="非常勤（常勤換算）",
                             x=_x,
-                            y=_p_vals,
+                            y=_p_fvals,
                             marker_color=pclr,
-                            text=[f"{v:.1f}" for v in _p_vals],
+                            text=[f"{v:.1f}" for v in _p_fvals],
                             textposition="inside",
                             width=0.5,
                         ))
-                    _sfig.update_layout(
-                        title_text=f"{lbl}数 経年推移",
-                        barmode="stack",
-                        showlegend=bool(_has_part),
-                        height=320,
-                        margin={"t": 50, "b": 30, "l": 50, "r": 20},
-                    )
-                    _sfig.update_yaxes(title_text="人数", rangemode="tozero")
-                    _sfig.update_xaxes(type="category")
                     _stc.plotly_chart(_sfig, use_container_width=True)
 
         st.caption("※ 非常勤は常勤換算数（FTE）で表示。施設票の再インポート後に反映されます")
