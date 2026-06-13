@@ -324,8 +324,9 @@ def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
             if current_dpc is None:
                 continue
 
-            # 手術コード99(総計)と97(手術有)の件数・在院日数のみ保存
-            if v3 in ("99", "97") and v2 in ("件数", "在院日数"):
+            # 手術コード99(総計)・97(手術有)・個別術式コード(01/02/03)を収集
+            # 97が欠損の疾患（例: DPC 010020）は個別術式コードを合算してフォールバック
+            if v3 in ("99", "97", "01", "02", "03") and v2 in ("件数", "在院日数"):
                 col_map.append((ci, current_dpc, current_disease or "", v2, v3))
 
         if not col_map:
@@ -348,13 +349,35 @@ def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
                 key = (dpc6, disease)
                 if key not in dpc_vals:
                     dpc_vals[key] = {"dpc6": dpc6, "疾患名": disease}
-                col_key = f"{'件数' if metric == '件数' else '在院日数'}_{'総計' if surg_code == '99' else '手術有'}"
-                dpc_vals[key][col_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
+                prefix = "件数" if metric == "件数" else "在院日数"
+                if surg_code == "99":
+                    col_key = f"{prefix}_総計"
+                    dpc_vals[key][col_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
+                elif surg_code == "97":
+                    col_key = f"{prefix}_手術有"
+                    dpc_vals[key][col_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
+                elif surg_code in ("01", "02", "03"):
+                    # 個別術式コードを一時キーに保存（97フォールバック用）
+                    sub_key = f"_sub_{prefix}_{surg_code}"
+                    dpc_vals[key][sub_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
 
             for (dpc6, disease), vals in dpc_vals.items():
+                # 97(手術有合計)が NaN の場合、個別術式コード(01/02/03)の合算でフォールバック
+                for prefix in ("件数", "在院日数"):
+                    main_key = f"{prefix}_手術有"
+                    if pd.isna(vals.get(main_key)):
+                        sub_vals = [
+                            vals.get(f"_sub_{prefix}_{c}")
+                            for c in ("01", "02", "03")
+                        ]
+                        non_nan = [v for v in sub_vals if v is not None and not pd.isna(v)]
+                        if non_nan:
+                            vals[main_key] = sum(non_nan)
+                # 一時キーを除去してレコード化
+                rec_vals = {k: v for k, v in vals.items() if not k.startswith("_sub_")}
                 rec = {
                     "年度": year, "告示番号": ban, "施設名": name,
-                    "MDC": mdc_code, **vals,
+                    "MDC": mdc_code, **rec_vals,
                 }
                 all_records.append(rec)
 
