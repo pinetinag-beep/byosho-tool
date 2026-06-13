@@ -3788,7 +3788,33 @@ with tab5:
         if len(region_df_staff) > 0:
             metrics = ["医師数_per100床", "看護師数_per100床"]
             hosp_vals = region_df_staff[region_df_staff["医療機関名"] == hospital][metrics].squeeze()
-            region_means = region_df_staff[metrics].mean()
+
+            # 病院カテゴリ分類（支配的な病床種別で判定）
+            def _bed_category(row):
+                total = pd.to_numeric(row.get("合計_許可病床数", 0), errors="coerce") or 0
+                if total == 0:
+                    return "その他"
+                acute  = pd.to_numeric(row.get("高度急性期_許可病床数", 0), errors="coerce") or 0
+                acute += pd.to_numeric(row.get("急性期_許可病床数",     0), errors="coerce") or 0
+                recov  = pd.to_numeric(row.get("回復期_許可病床数",     0), errors="coerce") or 0
+                chron  = pd.to_numeric(row.get("慢性期_許可病床数",     0), errors="coerce") or 0
+                if acute / total >= 0.5:  return "急性期系"
+                if recov / total >= 0.5:  return "回復期系"
+                if chron / total >= 0.5:  return "慢性期系"
+                return "混合"
+
+            _cat_col_exists = "合計_許可病床数" in region_df_staff.columns
+            if _cat_col_exists:
+                region_df_staff["_hosp_cat"] = region_df_staff.apply(_bed_category, axis=1)
+                _hosp_row = region_df_staff[region_df_staff["医療機関名"] == hospital]
+                _hosp_cat = _hosp_row["_hosp_cat"].iloc[0] if len(_hosp_row) > 0 else "その他"
+                _same_cat = region_df_staff[region_df_staff["_hosp_cat"] == _hosp_cat]
+                region_means = _same_cat[metrics].mean()
+                _n_same = len(_same_cat)
+                _cat_label = f"同カテゴリ平均（{_hosp_cat}・{_n_same}院）"
+            else:
+                region_means = region_df_staff[metrics].mean()
+                _cat_label = f"地域平均（{len(region_df_staff)}院）"
 
             sv1, sv2 = st.columns(2)
             for sv, m, label in zip(
@@ -3800,7 +3826,7 @@ with tab5:
                     sv.metric(
                         label,
                         f"{hv:.1f}人",
-                        f"{hv - rv:+.1f}（地域平均比）",
+                        f"{hv - rv:+.1f}（{_cat_label}比）",
                     )
 
 
