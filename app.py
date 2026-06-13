@@ -3745,11 +3745,11 @@ with tab5:
                     ))
                     if _has_part and any(v > 0 for v in _p_vals):
                         _sfig.add_trace(_go_staff.Bar(
-                            name="非常勤",
+                            name="非常勤（常勤換算）",
                             x=_x,
                             y=_p_vals,
                             marker_color=pclr,
-                            text=[f"{v:,}" for v in _p_vals],
+                            text=[f"{v:.1f}" for v in _p_vals],
                             textposition="inside",
                             width=0.5,
                         ))
@@ -3766,7 +3766,7 @@ with tab5:
                     )
                     _stc.plotly_chart(_sfig, use_container_width=True)
 
-        st.caption("※ 非常勤スタッフ数は施設票の再インポート後に表示されます")
+        st.caption("※ 非常勤は常勤換算数（FTE）で表示。施設票の再インポート後に反映されます")
         st.markdown("---")
 
         # ── 地域内スタッフ比較 ──────────────────────────────────────
