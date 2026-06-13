@@ -258,6 +258,20 @@ def load_readmission(path: str, year: int) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+def _cell_str(val) -> str:
+    """Excelセル値を文字列化。数値型（97.0→"97"）も正規化する。"""
+    if pd.isna(val):
+        return ""
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        try:
+            i = int(val)
+            if i == val:
+                return str(i)
+        except (ValueError, OverflowError):
+            pass
+    return str(val).strip()
+
+
 # ── 疾患別手術別集計（施設別 MDCxx） ──────────────────────────────────────────
 def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
     xl = pd.ExcelFile(path)
@@ -294,11 +308,12 @@ def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
         for ci in range(3, len(row0)):
             v0 = row0[ci]
             v1 = row1[ci]
-            v2 = str(row2[ci]).strip() if not pd.isna(row2[ci]) else ""
-            v3 = str(row3[ci]).strip() if not pd.isna(row3[ci]) else ""
+            v2 = _cell_str(row2[ci])
+            v3 = _cell_str(row3[ci])
 
-            if isinstance(v0, str) and re.match(r"^\d{5}[\dx]$", v0.strip(), re.IGNORECASE):
-                current_dpc = v0.strip()
+            v0s = _cell_str(v0)
+            if re.match(r"^\d{5}[\dx]$", v0s, re.IGNORECASE):
+                current_dpc = v0s
             if isinstance(v1, str) and v1.strip() and not v1.strip().startswith("NaN"):
                 current_disease = v1.strip()
 
