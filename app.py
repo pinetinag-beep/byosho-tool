@@ -3699,41 +3699,43 @@ with tab5:
         st.markdown('<div class="section-header">職種別 経年推移</div>', unsafe_allow_html=True)
 
         _staff_trend_defs = [
-            ("常勤医師数",  "常勤医師",  "#e74c3c"),
-            ("常勤看護師数", "常勤看護師", "#3498db"),
+            ("常勤医師数",          "常勤医師",          "#e74c3c"),
+            ("常勤看護師数",         "常勤看護師",         "#3498db"),
+            ("常勤理学療法士数",     "理学療法士（PT）",   "#10b981"),
+            ("常勤作業療法士数",     "作業療法士（OT）",   "#f59e0b"),
+            ("常勤言語聴覚士数",     "言語聴覚士（ST）",   "#8b5cf6"),
+            ("常勤薬剤師数",         "薬剤師",             "#06b6d4"),
+            ("常勤診療放射線技師数", "診療放射線技師",     "#ec4899"),
+            ("常勤臨床検査技師数",   "臨床検査技師",       "#84cc16"),
         ]
-        _trend_avail = [(col, lbl, clr) for col, lbl, clr in _staff_trend_defs if col in trend_df.columns]
+        _trend_avail = [(col, lbl, clr) for col, lbl, clr in _staff_trend_defs if col in trend_df.columns and trend_df[col].notna().any()]
 
         if _trend_avail:
-            _st_cols = st.columns(len(_trend_avail))
-            for (col, lbl, clr), _stc in zip(_trend_avail, _st_cols):
-                _td = trend_df[["報告年度", col]].dropna().sort_values("報告年度")
-                if not _td.empty:
-                    _sfig = _go_staff.Figure(_go_staff.Bar(
-                        x=_td["報告年度"].astype(str) + "年度",
-                        y=_td[col],
-                        marker_color=clr,
-                        text=[f"{int(v):,}人" for v in _td[col]],
-                        textposition="outside",
-                        width=0.5,
-                    ))
-                    _sfig.update_layout(
-                        title=dict(text=f"{lbl}数 経年推移", font=dict(size=14)),
-                        yaxis=dict(title="人数", rangemode="tozero"),
-                        xaxis=dict(type="category"),
-                        showlegend=False,
-                        height=320,
-                        margin=dict(t=50, b=30, l=50, r=20),
-                        font=dict(family="Noto Sans JP, sans-serif"),
-                    )
-                    _stc.plotly_chart(_sfig, use_container_width=True)
-                else:
-                    _stc.info(f"{lbl}のデータがありません")
-
-        st.caption(
-            "※ 理学療法士・作業療法士・言語聴覚士等のデータは"
-            "病床機能報告（厚労省様式1）に含まれていないため表示できません"
-        )
+            # 2列グリッドで並べる
+            for _row_start in range(0, len(_trend_avail), 2):
+                _row_defs = _trend_avail[_row_start:_row_start + 2]
+                _st_cols = st.columns(len(_row_defs))
+                for (col, lbl, clr), _stc in zip(_row_defs, _st_cols):
+                    _td = trend_df[["報告年度", col]].dropna().sort_values("報告年度")
+                    if not _td.empty:
+                        _sfig = _go_staff.Figure(_go_staff.Bar(
+                            x=_td["報告年度"].astype(str) + "年度",
+                            y=_td[col],
+                            marker_color=clr,
+                            text=[f"{int(v):,}人" for v in _td[col]],
+                            textposition="outside",
+                            width=0.5,
+                        ))
+                        _sfig.update_layout(
+                            title=dict(text=f"{lbl}数 経年推移", font=dict(size=14)),
+                            yaxis=dict(title="人数", rangemode="tozero"),
+                            xaxis=dict(type="category"),
+                            showlegend=False,
+                            height=320,
+                            margin=dict(t=50, b=30, l=50, r=20),
+                            font=dict(family="Noto Sans JP, sans-serif"),
+                        )
+                        _stc.plotly_chart(_sfig, use_container_width=True)
 
         st.markdown("---")
 
