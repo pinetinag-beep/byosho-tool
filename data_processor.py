@@ -176,6 +176,11 @@ def load_mhlw_shisetsu(file_bytes: bytes) -> pd.DataFrame:
     df = pd.read_excel(io.BytesIO(file_bytes), header=4, skiprows=[5])
     df.columns = [str(c).strip() for c in df.columns]
 
+    # DEBUG: 常勤・非常勤関連列名を出力（確認後削除）
+    import sys
+    _dbg = [(i, c) for i, c in enumerate(df.columns) if "常勤" in c]
+    print("DEBUG shisetsu 常勤列:", _dbg[:40], file=sys.stderr)
+
     code_col = _find_col(df.columns, "医療機関コード")
 
     keep = {}
