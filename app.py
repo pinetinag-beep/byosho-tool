@@ -1072,7 +1072,7 @@ if st.session_state.get("_view_mode") == "region":
             _rname = _rg_list.iloc[_ri]["医療機関名"]
             _rbeds = _rg_list.iloc[_ri]["合計_許可病床数"]
             with _rg_cols[_ri % 3]:
-                _stat_parts = [f"🛏 {int(_rbeds):,}床"]
+                _stat_parts = [f"🛏 {int(_rbeds):,}床" if pd.notna(_rbeds) else "🛏 -床"]
                 if "合計稼働率" in _rg_list.columns:
                     _rocc = _rg_list.iloc[_ri]["合計稼働率"]
                     if _rocc is not None and not pd.isna(_rocc):
@@ -3654,26 +3654,34 @@ with tab4:
         if len(trend_df) >= 2:
             first_y = trend_df.iloc[0]
             last_y  = trend_df.iloc[-1]
-            delta_beds = int(last_y["合計_許可病床数"]) - int(first_y["合計_許可病床数"])
-            delta_occ  = (
-                last_y["合計_稼働病床数"] / max(last_y["合計_許可病床数"], 1) -
-                first_y["合計_稼働病床数"] / max(first_y["合計_許可病床数"], 1)
-            ) * 100
-            st.markdown('<div class="section-header">期間内変化サマリー</div>', unsafe_allow_html=True)
-            sc1, sc2, sc3 = st.columns(3)
-            sc1.metric(
-                f"許可病床数 ({int(first_y['報告年度'])}→{int(last_y['報告年度'])})",
-                f"{int(last_y['合計_許可病床数']):,}床",
-                f"{delta_beds:+,}床",
-            )
-            sc2.metric(
-                "稼働率変化",
-                f"{last_y['合計_稼働病床数'] / max(last_y['合計_許可病床数'],1)*100:.1f}%",
-                f"{delta_occ:+.1f}pt",
-            )
-            if "常勤医師数" in trend_df.columns:
-                delta_doc = int(last_y["常勤医師数"]) - int(first_y["常勤医師数"])
-                sc3.metric("常勤医師数変化", f"{int(last_y['常勤医師数']):,}人", f"{delta_doc:+,}人")
+            _f_beds = pd.to_numeric(first_y.get("合計_許可病床数"), errors="coerce")
+            _l_beds = pd.to_numeric(last_y.get("合計_許可病床数"), errors="coerce")
+            _f_act  = pd.to_numeric(first_y.get("合計_稼働病床数"), errors="coerce")
+            _l_act  = pd.to_numeric(last_y.get("合計_稼働病床数"), errors="coerce")
+            if pd.notna(_f_beds) and pd.notna(_l_beds):
+                delta_beds = int(_l_beds) - int(_f_beds)
+                st.markdown('<div class="section-header">期間内変化サマリー</div>', unsafe_allow_html=True)
+                sc1, sc2, sc3 = st.columns(3)
+                sc1.metric(
+                    f"許可病床数 ({int(first_y['報告年度'])}→{int(last_y['報告年度'])})",
+                    f"{int(_l_beds):,}床",
+                    f"{delta_beds:+,}床",
+                )
+                if pd.notna(_f_act) and pd.notna(_l_act):
+                    delta_occ = (
+                        _l_act / max(_l_beds, 1) - _f_act / max(_f_beds, 1)
+                    ) * 100
+                    sc2.metric(
+                        "稼働率変化",
+                        f"{_l_act / max(_l_beds, 1) * 100:.1f}%",
+                        f"{delta_occ:+.1f}pt",
+                    )
+                if "常勤医師数" in trend_df.columns:
+                    _f_doc = pd.to_numeric(first_y.get("常勤医師数"), errors="coerce")
+                    _l_doc = pd.to_numeric(last_y.get("常勤医師数"), errors="coerce")
+                    if pd.notna(_f_doc) and pd.notna(_l_doc):
+                        delta_doc = int(_l_doc) - int(_f_doc)
+                        sc3.metric("常勤医師数変化", f"{int(_l_doc):,}人", f"{delta_doc:+,}人")
 
 
 # ── TAB 5: スタッフ分析 ────────────────────────────────────
@@ -4484,12 +4492,19 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                 _sdisp = _dp_surg[["疾患名","MDC","dpc6"] + [c for c in [_cnt_col,_surg_col,_los_col] if c]].copy()
                 _sdisp = _sdisp.dropna(subset=[_cnt_col])
                 _sdisp = _sdisp[_sdisp[_cnt_col] > 0].copy()
-                _sdisp[_cnt_col] = _sdisp[_cnt_col].astype(int)
-                if _surg_col:
-                    _sdisp["手術実施率"] = (_sdisp[_surg_col] / _sdisp[_cnt_col]).map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "-")
+                # 件数_総計=code99=手術なし、真の総計=手術なし+手術あり
+                if _surg_col and _surg_col in _sdisp.columns:
+                    _sdisp["_真の総計"] = (_sdisp[_cnt_col].fillna(0) + _sdisp[_surg_col].fillna(0)).astype(int)
+                    _sdisp["手術実施率"] = (
+                        _sdisp[_surg_col] / _sdisp["_真の総計"].replace(0, float("nan"))
+                    ).map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "-")
+                    _disp_cnt_col = "_真の総計"
+                else:
+                    _sdisp[_cnt_col] = _sdisp[_cnt_col].astype(int)
+                    _disp_cnt_col = _cnt_col
                 if _los_col:
                     _sdisp["平均在院日数"] = _sdisp[_los_col].map(lambda x: f"{x:.1f}日" if pd.notna(x) else "-")
-                _sdisp = _sdisp.rename(columns={_cnt_col: "件数", "dpc6": "DPC6桁コード"})
+                _sdisp = _sdisp.rename(columns={_disp_cnt_col: "件数", "dpc6": "DPC6桁コード"})
                 _show = ["DPC6桁コード","疾患名","件数"]
                 if "手術実施率" in _sdisp.columns: _show.append("手術実施率")
                 if "平均在院日数" in _sdisp.columns: _show.append("平均在院日数")
