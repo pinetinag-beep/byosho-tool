@@ -43,22 +43,24 @@ MDC_NAMES = {
 }
 
 
-def detect_file_type(path: str) -> str:
+def detect_file_type(path: str, verbose: bool = False) -> str:
     try:
         xl = pd.ExcelFile(path)
         sheets = xl.sheet_names
     except Exception:
         return "unknown"
 
-    if "施設概要表" in sheets:
+    sheets_stripped = [s.strip() for s in sheets]
+
+    if "施設概要表" in sheets_stripped:
         return "gaiyou"
-    if "施設別MDC別比率" in sheets:
+    if "施設別MDC別比率" in sheets_stripped:
         return "mdc_ratio"
-    if "高度医療" in sheets:
+    if "高度医療" in sheets_stripped:
         return "procedure_stats"
-    if "件数" in sheets or "件数 " in sheets:
+    if any(s in ("件数", "件数 ") for s in sheets):
         return "mdc_cases"
-    if any(re.match(r"^MDC\d{2}$", s) for s in sheets):
+    if any(re.match(r"^MDC\d{2}$", s) for s in sheets_stripped):
         return "surgery_detail"
     if any("DPC6桁" in s for s in sheets):
         return "type_aggregate"  # 施設類型別 → スキップ
@@ -71,6 +73,8 @@ def detect_file_type(path: str) -> str:
                 return "readmission"
         except Exception:
             pass
+    if verbose:
+        print(f"    [unknown sheets] {sheets}")
     return "unknown"
 
 
@@ -391,6 +395,7 @@ def main():
     parser.add_argument("--match", default="dpc_matching_full.csv", help="突合CSVパス")
     parser.add_argument("--db", default="data/byosho.duckdb", help="DuckDBパス")
     parser.add_argument("--year", type=int, default=2024, help="データ年度（令和6年度=2024）")
+    parser.add_argument("--diag", action="store_true", help="unknownファイルのシート名を表示して終了")
     args = parser.parse_args()
 
     if not os.path.isdir(args.dir):
@@ -415,11 +420,28 @@ def main():
         "unknown": [],
     }
     for f in xlsx_files:
-        ft = detect_file_type(f)
+        ft = detect_file_type(f, verbose=args.diag)
         categorized[ft].append(f)
         print(f"  {os.path.basename(f)} → {ft}")
 
     print()
+    # --diag: unknownのシート名を表示して終了
+    if args.diag:
+        unknown_files = categorized["unknown"]
+        if unknown_files:
+            print(f"=== unknown ファイル {len(unknown_files)} 件のシート名 ===")
+            for f in unknown_files[:20]:  # 最大20件
+                try:
+                    xl = pd.ExcelFile(f)
+                    print(f"  {os.path.basename(f)}: {xl.sheet_names}")
+                except Exception as e:
+                    print(f"  {os.path.basename(f)}: ERROR {e}")
+            if len(unknown_files) > 20:
+                print(f"  ... 他 {len(unknown_files)-20} 件")
+        else:
+            print("unknown ファイルはありません")
+        return
+
     con = duckdb.connect(args.db)
 
     # 1. マッチングテーブル
