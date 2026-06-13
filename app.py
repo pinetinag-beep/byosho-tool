@@ -3755,21 +3755,13 @@ with tab5:
                         ))
                     _sfig.update_layout(
                         title_text=f"{lbl}数 経年推移",
-                        title_font_size=14,
                         barmode="stack",
-                        yaxis_title="人数",
-                        yaxis_rangemode="tozero",
-                        xaxis_type="category",
-                        showlegend=_has_part,
-                        legend_orientation="h",
-                        legend_yanchor="bottom",
-                        legend_y=1.02,
-                        legend_xanchor="right",
-                        legend_x=1.0,
+                        showlegend=bool(_has_part),
                         height=320,
-                        margin=dict(t=50, b=30, l=50, r=20),
-                        font_family="Noto Sans JP, sans-serif",
+                        margin={"t": 50, "b": 30, "l": 50, "r": 20},
                     )
+                    _sfig.update_yaxes(title_text="人数", rangemode="tozero")
+                    _sfig.update_xaxes(type="category")
                     _stc.plotly_chart(_sfig, use_container_width=True)
 
         st.caption("※ 非常勤は常勤換算数（FTE）で表示。施設票の再インポート後に反映されます")
