@@ -3789,19 +3789,18 @@ with tab5:
             metrics = ["医師数_per100床", "看護師数_per100床"]
             hosp_vals = region_df_staff[region_df_staff["医療機関名"] == hospital][metrics].squeeze()
 
-            # 病院カテゴリ分類（支配的な病床種別で判定）
+            # 病院カテゴリ分類（地域比較タブと同じ考え方: 最大比率の種別が35%以上なら採用）
             def _bed_category(row):
                 total = pd.to_numeric(row.get("合計_許可病床数", 0), errors="coerce") or 0
                 if total == 0:
-                    return "その他"
-                acute  = pd.to_numeric(row.get("高度急性期_許可病床数", 0), errors="coerce") or 0
-                acute += pd.to_numeric(row.get("急性期_許可病床数",     0), errors="coerce") or 0
+                    return "混合・その他"
+                acute  = (pd.to_numeric(row.get("高度急性期_許可病床数", 0), errors="coerce") or 0)
+                acute += (pd.to_numeric(row.get("急性期_許可病床数",     0), errors="coerce") or 0)
                 recov  = pd.to_numeric(row.get("回復期_許可病床数",     0), errors="coerce") or 0
                 chron  = pd.to_numeric(row.get("慢性期_許可病床数",     0), errors="coerce") or 0
-                if acute / total >= 0.5:  return "急性期系"
-                if recov / total >= 0.5:  return "回復期系"
-                if chron / total >= 0.5:  return "慢性期系"
-                return "混合"
+                ratios = {"急性期系": acute / total, "回復期系": recov / total, "慢性期系": chron / total}
+                best, best_r = max(ratios.items(), key=lambda x: x[1])
+                return best if best_r >= 0.35 else "混合・その他"
 
             _cat_col_exists = "合計_許可病床数" in region_df_staff.columns
             if _cat_col_exists:
