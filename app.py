@@ -3064,7 +3064,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if _ds_surg_sel != "すべて" and _ds_has_surg_detail:
             _surg_avail = _ds_filtered["件数_手術有"].notna().any() if "件数_手術有" in _ds_filtered.columns else False
             if not _surg_avail:
-                st.info("この疾患の手術有無別データは現在非公表です（消化器系のみ提供）。「すべて」に切り替えてください。")
+                st.info("この疾患の手術有無別データは公表されていません。「すべて」に切り替えると患者総数で比較できます。")
 
         # 告示番号単位で集計
         _ds_agg: dict = {_ds_cnt_col: "sum", "施設名": "first"}
