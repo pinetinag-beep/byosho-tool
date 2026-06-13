@@ -3632,7 +3632,9 @@ with tab3:
 
 with tab4:
     if len(trend_df) < 2:
-        st.info("経年比較には複数年度のデータが必要です。サンプルデータは4年分（2020〜2023年度）含まれています。")
+        _yrs_in_data = sorted(df["報告年度"].dropna().unique().astype(int))
+        _yr_str = "・".join(str(y) for y in _yrs_in_data)
+        st.info(f"この病院の経年データが1年度分しかありません（現在のデータセット: {_yr_str}年度）。複数年度のデータを取り込むと経年比較が表示されます。")
     else:
         c1, c2 = st.columns(2)
         with c1:
