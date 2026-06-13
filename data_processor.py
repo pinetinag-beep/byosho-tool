@@ -196,15 +196,20 @@ def load_mhlw_shisetsu(file_bytes: bytes) -> pd.DataFrame:
         (["施設全体_臨床検査技師_常勤", "常勤_臨床検査技師", "臨床検査技師_常勤", "常勤臨床検査技師"],   "常勤臨床検査技師数",  "非常勤臨床検査技師数"),
     ]
     _col_list = df.columns.tolist()
+    print(f"[STAFFDBG] total cols={len(_col_list)}")
     for kw_list, joko_dst, hiji_dst in _staff_pairs:
         for kw in kw_list:
             joko_col = _find_col(_col_list, kw)
             if joko_col:
                 keep[joko_dst] = pd.to_numeric(df[joko_col], errors="coerce").fillna(0).astype(int)
                 joko_idx = _col_list.index(joko_col)
+                next_col = _col_list[joko_idx + 1] if joko_idx + 1 < len(_col_list) else "NONE"
+                print(f"[STAFFDBG] {joko_dst}: col={repr(joko_col)} idx={joko_idx} next={repr(next_col)}")
                 if joko_idx + 1 < len(_col_list):
                     keep[hiji_dst] = pd.to_numeric(df[_col_list[joko_idx + 1]], errors="coerce").fillna(0)
                 break
+        else:
+            print(f"[STAFFDBG] {joko_dst}: NO MATCH for {kw_list}")
 
     for kw in ["救急車の受入件数", "救急搬送"]:
         if "救急搬送件数" not in keep:
