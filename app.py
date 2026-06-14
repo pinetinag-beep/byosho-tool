@@ -3619,15 +3619,16 @@ with tab1:
             else:
                 _sk_matched = pd.DataFrame()
 
+            _sk_covered_prefs = set(_sk_df["都道府県コード"].unique())
+
+            st.markdown('<div class="section-header">施設基準届出（診療報酬）</div>', unsafe_allow_html=True)
+
             if not _sk_matched.empty:
                 _sk_items = _sk_matched["受理届出名称"].dropna().tolist()
                 _sk_ym = _sk_matched["年月"].iloc[0] if "年月" in _sk_matched.columns else ""
-
-                st.markdown('<div class="section-header">施設基準届出（診療報酬）</div>', unsafe_allow_html=True)
                 if _sk_ym:
                     st.caption(f"出典：診療報酬 施設基準届出情報（{_sk_ym} 現在）")
 
-                # 主要バッジ
                 _SK_BADGES = [
                     ("集中治療室管理料",                   "ICU",           "#e74c3c"),
                     ("ハイケアユニット",                    "HCU",           "#e67e22"),
@@ -3665,9 +3666,16 @@ with tab1:
                     for _item in sorted(_sk_items):
                         st.markdown(f"- {_item}")
 
-            elif _sk_pref_code and _sk_pref_code in _sk_df["都道府県コード"].unique():
-                # 都道府県データはあるが病院名がマッチしなかった
-                pass  # 名称不一致は無言でスキップ
+            elif _sk_pref_code and _sk_pref_code in _sk_covered_prefs:
+                # 都道府県データはあるが病院名がマッチしなかった（診療所等は対象外）
+                st.caption(f"この病院の施設基準データが見つかりませんでした（{pref}のデータは収録済み）。")
+
+            else:
+                _sk_covered_names = [PREF_CODE_MAP[c] for c in sorted(_sk_covered_prefs) if c in PREF_CODE_MAP]
+                st.caption(
+                    f"施設基準データは現在 {'・'.join(_sk_covered_names)} のみ収録しています。"
+                    f"他地域は各地方厚生局からダウンロードして追加できます。"
+                )
 
 
 # ── TAB 2: 地域比較 ─────────────────────────────────────────
