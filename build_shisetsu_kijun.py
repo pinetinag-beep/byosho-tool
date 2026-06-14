@@ -65,34 +65,14 @@ def _normalize(name: str) -> str:
     return name.lower()
 
 
-def parse_file(path: str) -> tuple[pd.DataFrame, str]:
-    """
-    Excel 1ファイルをパースして (df, 年月文字列) を返す。
-    失敗時は (空DataFrame, "") を返す。
-
-    期待するシート構造:
-      行0: 空
-      行1: "[令和X年Y月Z日 現在]..." （年月情報を含む）
-      行2: 空
-      行3: ヘッダー行（項番、都道府県コード、…）
-      行4+: データ
-    """
-    try:
-        xl = pd.ExcelFile(path)
-        raw = pd.read_excel(path, sheet_name=xl.sheet_names[0], header=None, dtype=str)
-    except Exception as e:
-        print(f"  読み込みエラー: {e}")
-        return pd.DataFrame(), ""
-
+def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
+    """1シートのrawデータをパースして (df, 年月) を返す。"""
     if len(raw) < 5:
         return pd.DataFrame(), ""
 
-    # 年月を取得（行1の最初のセル）
     year_month = _wareki_to_seireki(raw.iloc[1, 0])
 
-    # データ部分（行4以降）
     data = raw.iloc[4:].copy().reset_index(drop=True)
-
     if data.shape[1] < 15:
         return pd.DataFrame(), year_month
 
@@ -104,10 +84,8 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str]:
         "受理届出名称", "受理記号",
     ]
 
-    # 医科のみ（歯科・その他を除外）
     data = data[data["区分"] == "医科"].copy()
 
-    # 都道府県コードを2桁文字列にそろえる
     def _fmt_pref(v):
         if pd.isna(v) or str(v).strip() in ("", "nan", "None"):
             return ""
@@ -116,9 +94,6 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str]:
         except (ValueError, TypeError):
             return ""
 
-    data["都道府県コード"] = data["都道府県コード"].apply(_fmt_pref)
-
-    # 医療機関番号を7桁文字列にそろえる
     def _fmt_code(v):
         if pd.isna(v) or str(v).strip() in ("", "nan", "None"):
             return ""
@@ -127,15 +102,11 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str]:
         except (ValueError, TypeError):
             return ""
 
+    data["都道府県コード"] = data["都道府県コード"].apply(_fmt_pref)
     data["医療機関番号"] = data["医療機関番号"].apply(_fmt_code)
-
-    # 正規化名称
     data["医療機関名_正規化"] = data["医療機関名称"].apply(_normalize)
-
-    # 年月カラム
     data["年月"] = year_month
 
-    # 必須フィールドが空の行を除去
     data = data[
         data["受理届出名称"].notna()
         & data["受理届出名称"].ne("")
@@ -147,6 +118,43 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str]:
         "医療機関名_正規化", "受理届出名称", "受理記号", "年月",
     ]
     return data[keep], year_month
+
+
+def parse_file(path: str) -> tuple[pd.DataFrame, str]:
+    """
+    Excel 1ファイルをパースして (df, 年月文字列) を返す。
+    複数シートがある場合はすべて結合する（東北局形式など）。
+    失敗時は (空DataFrame, "") を返す。
+
+    期待するシート構造:
+      行0: 空
+      行1: "[令和X年Y月Z日 現在]..." （年月情報を含む）
+      行2: 空
+      行3: ヘッダー行（項番、都道府県コード、…）
+      行4+: データ
+    """
+    try:
+        xl = pd.ExcelFile(path)
+    except Exception as e:
+        print(f"  読み込みエラー: {e}")
+        return pd.DataFrame(), ""
+
+    sheet_dfs: list[pd.DataFrame] = []
+    year_month = ""
+    for sname in xl.sheet_names:
+        try:
+            raw = pd.read_excel(path, sheet_name=sname, header=None, dtype=str)
+        except Exception:
+            continue
+        df_s, ym = _parse_sheet(raw)
+        if not df_s.empty:
+            sheet_dfs.append(df_s)
+            if not year_month:
+                year_month = ym
+
+    if not sheet_dfs:
+        return pd.DataFrame(), year_month
+    return pd.concat(sheet_dfs, ignore_index=True), year_month
 
 
 def main() -> None:
