@@ -38,6 +38,25 @@ def _normalize_name(name: str) -> str:
     name = name.lower()
     return name
 
+_LEGAL_PREFIXES_SK = [
+    "独立行政法人国立病院機構", "国家公務員共済組合連合会", "地方独立行政法人",
+    "社会医療法人財団", "社会医療法人", "国立大学法人", "公立大学法人",
+    "医療法人社団", "医療法人財団", "公益財団法人", "一般財団法人",
+    "公益社団法人", "一般社団法人", "社会福祉法人", "特定医療法人", "医療法人",
+    "学校法人", "宗教法人",
+]
+
+def _normalize_hospital_for_match(name: str) -> str:
+    """施設基準届出情報とのマッチング用：法人格プレフィックスを除去して正規化"""
+    if not isinstance(name, str):
+        return ""
+    name = unicodedata.normalize("NFKC", name).strip()
+    for prefix in _LEGAL_PREFIXES_SK:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    return re.sub(r'[\s　]', '', name).lower()
+
 from charts import (
     bed_donut, occupancy_gauge, bed_type_occupancy_bar,
     regional_bed_comparison, occupancy_scatter, share_bar, ranking_table_fig,
@@ -634,6 +653,14 @@ def _load_dpc_surgery_detail(_mtime: float = 0.0):
     df = pd.read_parquet(DPC_PARQUET_SURG)
     # 疾患名まで含めた完全重複のみ除去（同一dpc6でも疾患名が異なるレコードは別行）
     return df.drop_duplicates(subset=["年度", "告示番号", "MDC", "dpc6", "疾患名"], keep="first")
+
+SHISETSU_KIJUN_PARQUET = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
+
+@st.cache_data(show_spinner=False)
+def _load_shisetsu_kijun():
+    if not SHISETSU_KIJUN_PARQUET.exists():
+        return None
+    return pd.read_parquet(SHISETSU_KIJUN_PARQUET)
 
 _PREF_CODE_TO_NAME = {
     "01":"北海道","02":"青森県","03":"岩手県","04":"宮城県","05":"秋田県",
@@ -3573,6 +3600,74 @@ with tab1:
                         + "</div>"
                     )
                     st.markdown(badge_html, unsafe_allow_html=True)
+
+        # ── 施設基準届出セクション ──────────────────────
+        _sk_df = _load_shisetsu_kijun()
+        if _sk_df is not None and isinstance(hosp_row, pd.Series):
+            _sk_name_norm = _normalize_hospital_for_match(hospital)
+            _sk_pref_code = None
+            for _c, _n in PREF_CODE_MAP.items():
+                if _n == pref:
+                    _sk_pref_code = _c
+                    break
+
+            if _sk_pref_code:
+                _sk_matched = _sk_df[
+                    (_sk_df["医療機関名_正規化"] == _sk_name_norm)
+                    & (_sk_df["都道府県コード"] == _sk_pref_code)
+                ]
+            else:
+                _sk_matched = pd.DataFrame()
+
+            if not _sk_matched.empty:
+                _sk_items = _sk_matched["受理届出名称"].dropna().tolist()
+                _sk_ym = _sk_matched["年月"].iloc[0] if "年月" in _sk_matched.columns else ""
+
+                st.markdown('<div class="section-header">施設基準届出（診療報酬）</div>', unsafe_allow_html=True)
+                if _sk_ym:
+                    st.caption(f"出典：診療報酬 施設基準届出情報（{_sk_ym} 現在）")
+
+                # 主要バッジ
+                _SK_BADGES = [
+                    ("集中治療室管理料",                   "ICU",           "#e74c3c"),
+                    ("ハイケアユニット",                    "HCU",           "#e67e22"),
+                    ("救急医療管理加算",                    "救急受入",       "#c0392b"),
+                    ("超急性期脳卒中加算",                  "脳卒中tPA",     "#9b59b6"),
+                    ("一般病棟入院基本料",                  "一般病棟",       "#3498db"),
+                    ("特定機能病院入院基本料",               "特定機能病院",   "#8e44ad"),
+                    ("専門病院入院基本料",                  "専門病院",       "#8e44ad"),
+                    ("回復期リハビリテーション病棟",         "回復期リハ",     "#27ae60"),
+                    ("地域包括ケア病棟",                    "地域包括ケア",   "#16a085"),
+                    ("緩和ケア病棟",                        "緩和ケア",       "#7f8c8d"),
+                    ("精神病棟入院基本料",                  "精神科",         "#2980b9"),
+                    ("がん患者指導管理料",                  "がん専門",       "#f39c12"),
+                    ("在宅療養後方支援病院",                "在宅後方支援",   "#27ae60"),
+                    ("無菌治療室管理加算",                  "無菌室",         "#8e44ad"),
+                ]
+                active_badges = [
+                    (label, color)
+                    for keyword, label, color in _SK_BADGES
+                    if any(keyword in item for item in _sk_items)
+                ]
+
+                if active_badges:
+                    badge_html_sk = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'
+                    for label, color in active_badges:
+                        badge_html_sk += (
+                            f'<span style="background:{color};color:white;'
+                            f'border-radius:16px;padding:4px 12px;'
+                            f'font-size:0.82rem;font-weight:600;">{label}</span>'
+                        )
+                    badge_html_sk += "</div>"
+                    st.markdown(badge_html_sk, unsafe_allow_html=True)
+
+                with st.expander(f"届出項目一覧（{len(_sk_items)}件）"):
+                    for _item in sorted(_sk_items):
+                        st.markdown(f"- {_item}")
+
+            elif _sk_pref_code and _sk_pref_code in _sk_df["都道府県コード"].unique():
+                # 都道府県データはあるが病院名がマッチしなかった
+                pass  # 名称不一致は無言でスキップ
 
 
 # ── TAB 2: 地域比較 ─────────────────────────────────────────
