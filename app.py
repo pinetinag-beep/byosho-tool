@@ -239,6 +239,30 @@ def _render_footer():
                     type="primary",
                     key="_ftr_dl_parquet",
                 )
+            st.divider()
+            st.caption("📊 DPC・病床機能・施設基準届出 統合表")
+            _df_for_export = st.session_state.get("df")
+            if _df_for_export is not None and not _df_for_export.empty:
+                if st.button("統合表を生成する", use_container_width=True, key="_ftr_gen_integrated"):
+                    with st.spinner("生成中..."):
+                        try:
+                            _xl_bytes = _build_integrated_excel(_df_for_export)
+                            st.session_state["_integrated_excel"] = _xl_bytes
+                        except Exception as _e:
+                            st.error(f"エラー: {_e}")
+                if st.session_state.get("_integrated_excel"):
+                    _yr = int(_df_for_export["報告年度"].max())
+                    st.download_button(
+                        "📥 統合表 Excel をダウンロード",
+                        data=st.session_state["_integrated_excel"],
+                        file_name=f"医療機関統合表_{_yr}年度.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        type="primary",
+                        key="_ftr_dl_integrated",
+                    )
+            else:
+                st.caption("データ読み込み後に使用できます")
 
     st.markdown(
         "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
@@ -661,6 +685,101 @@ def _load_shisetsu_kijun():
     if not SHISETSU_KIJUN_PARQUET.exists():
         return None
     return pd.read_parquet(SHISETSU_KIJUN_PARQUET)
+
+
+def _build_integrated_excel(df_all: pd.DataFrame) -> bytes:
+    """病床機能報告 × DPC × 施設基準届出 の統合表を Excel バイト列で返す。"""
+    import io as _io
+
+    # ── 最新年度の病床機能報告 ──
+    latest_year = int(df_all["報告年度"].max())
+    base = df_all[df_all["報告年度"] == latest_year].copy()
+
+    base_cols = [
+        "医療機関コード", "医療機関名", "都道府県名", "二次医療圏名",
+        "合計_許可病床数", "合計_稼働病床数",
+        "高度急性期_許可病床数", "急性期_許可病床数",
+        "回復期_許可病床数", "慢性期_許可病床数",
+        "常勤医師数", "非常勤医師数",
+        "常勤看護師数", "非常勤看護師数",
+        "常勤理学療法士数", "常勤作業療法士数", "常勤言語聴覚士数",
+        "救急搬送件数",
+        "CT台数", "MRI台数", "内視鏡手術支援機器台数",
+        "PET台数", "PETCT台数", "ガンマナイフ台数",
+    ]
+    base = base[[c for c in base_cols if c in base.columns]].copy()
+    base.insert(0, "報告年度", latest_year)
+
+    # ── DPC 結合 ──
+    dpc_match = _load_dpc_match(_DPC_MATCH_MTIME)
+    dpc_hosp  = _load_dpc_hospitals()
+    if dpc_match is not None and dpc_hosp is not None:
+        _dpc_latest = dpc_hosp[dpc_hosp["年度"] == dpc_hosp["年度"].max()].copy()
+        _dpc_merged = dpc_match.merge(
+            _dpc_latest[["施設名", "病院類型", "DPC算定病床数"]],
+            left_on="DPC施設名", right_on="施設名", how="left"
+        )
+        base = base.merge(
+            _dpc_merged[["病床報告施設名", "病院類型", "DPC算定病床数"]],
+            left_on="医療機関名", right_on="病床報告施設名", how="left"
+        ).drop(columns=["病床報告施設名"], errors="ignore")
+        base.insert(
+            base.columns.get_loc("合計_許可病床数"),
+            "DPC対象",
+            base["DPC算定病床数"].notna().map({True: "○", False: "×"}),
+        )
+
+    # ── 施設基準届出 ピボット ──
+    _KIJUN_ITEMS = [
+        ("一般病棟入院基本料",              "一般病棟入院基本料"),
+        ("特定機能病院",                    "特定機能病院入院基本料"),
+        ("地域包括ケア病棟",                "地域包括ケア病棟入院料"),
+        ("地域包括医療病棟",                "地域包括医療病棟入院料"),
+        ("回復期リハビリ病棟",              "回復期リハビリテーション病棟入院料"),
+        ("緩和ケア病棟",                    "緩和ケア病棟入院料"),
+        ("精神病棟",                        "精神病棟入院基本料"),
+        ("救急医療管理加算",                "救急医療管理加算"),
+        ("超急性期脳卒中加算(tPA)",         "超急性期脳卒中加算"),
+        ("ICU",                             "集中治療室管理料"),
+        ("HCU",                             "ハイケアユニット入院医療管理料"),
+        ("脳血管疾患等リハビリ(Ⅰ)",        "脳血管疾患等リハビリテーション料（Ⅰ）"),
+        ("運動器リハビリ(Ⅰ)",              "運動器リハビリテーション料（Ⅰ）"),
+        ("呼吸器リハビリ(Ⅰ)",              "呼吸器リハビリテーション料（Ⅰ）"),
+        ("がん患者指導管理料",              "がん患者指導管理料"),
+        ("外来化学療法加算",                "外来化学療法加算"),
+        ("ロボット手術",                    "ロボット支援下内視鏡手術用支援機器加算"),
+        ("在宅療養後方支援病院",            "在宅療養後方支援病院"),
+        ("データ提出加算",                  "データ提出加算"),
+        ("薬剤管理指導料",                  "薬剤管理指導料"),
+    ]
+
+    sk_df = _load_shisetsu_kijun()
+    if sk_df is not None:
+        _pref_to_code = {v: k for k, v in PREF_CODE_MAP.items()}
+        for col_name, kw in _KIJUN_ITEMS:
+            _sub = sk_df[sk_df["受理届出名称"].str.contains(kw, na=False, regex=False)]
+            _sub_set: dict[str, set[str]] = {}
+            for _, r in _sub[["都道府県コード", "医療機関名_正規化"]].drop_duplicates().iterrows():
+                _sub_set.setdefault(r["都道府県コード"], set()).add(r["医療機関名_正規化"])
+
+            def _has_kijun(row, _ss=_sub_set):
+                _c = _pref_to_code.get(row["都道府県名"], "")
+                _n = _normalize_hospital_for_match(row["医療機関名"])
+                if not _n or _c not in _ss:
+                    return "×"
+                _names = _ss[_c]
+                return "○" if (_n in _names or any(sn.endswith(_n) for sn in _names)) else "×"
+
+            base[col_name] = base.apply(_has_kijun, axis=1)
+
+    buf = _io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        base.to_excel(writer, sheet_name=f"統合表_{latest_year}年度", index=False)
+        ws = writer.sheets[f"統合表_{latest_year}年度"]
+        for col_cells in ws.columns:
+            max_len = max(len(str(c.value or "")) for c in col_cells)
+            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 40)
+    return buf.getvalue()
 
 _PREF_CODE_TO_NAME = {
     "01":"北海道","02":"青森県","03":"岩手県","04":"宮城県","05":"秋田県",
