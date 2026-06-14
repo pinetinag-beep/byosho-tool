@@ -16,6 +16,7 @@ __pycache__/
 !dpc_readmission.parquet
 !dpc_surgery_detail.parquet
 !dpc_match.parquet
+!shisetsu_kijun_cache.parquet
 
 # DuckDB（バイナリ、大きいため除外）
 data/*.duckdb
