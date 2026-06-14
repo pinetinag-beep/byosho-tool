@@ -4683,6 +4683,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     f'<div class="metric-card" style="border-top-color:#f59e0b;">'
                     f'<div class="metric-label">手術実施率</div>'
                     f'<div class="metric-value">{_surg_rate*100:.1f}%</div>'
+                    # f'<div class="metric-sub">再入院率 {_readm_rate*100:.2f}%</div></div>',  # 非表示中
                     f'<div class="metric-sub">&nbsp;</div></div>',
                     unsafe_allow_html=True,
                 )
@@ -4757,6 +4758,47 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
                 )
                 st.plotly_chart(_fig_mdc, use_container_width=True)
+
+        # ── 再入院・再転棟率（非表示中） ──
+        # if not _dp_readm.empty:
+        #     st.markdown('<div class="section-header">再入院・再転棟</div>', unsafe_allow_html=True)
+        #     _readm_row    = _dp_readm.iloc[0]
+        #     _readm_rate   = float(_readm_row.get("再入院率", 0) or 0)
+        #     _retrans_rate = float(_readm_row.get("再転棟率", 0) or 0)
+        #     _readm_med    = float(_dp_readm_all["再入院率"].median()) if _dp_readm_all is not None and "再入院率" in _dp_readm_all.columns else 0
+        #     _retrans_med  = float(_dp_readm_all["再転棟率"].median()) if _dp_readm_all is not None and "再転棟率" in _dp_readm_all.columns else 0
+        #     _ra1, _ra2 = st.columns(2)
+        #     _ra1.markdown(
+        #         f'<div class="metric-card" style="border-top-color:#ef4444;">'
+        #         f'<div class="metric-label">再入院率</div>'
+        #         f'<div class="metric-value">{_readm_rate*100:.2f}%</div>'
+        #         f'<div class="metric-sub">全施設中央値 {_readm_med*100:.2f}%</div></div>',
+        #         unsafe_allow_html=True,
+        #     )
+        #     _ra2.markdown(
+        #         f'<div class="metric-card" style="border-top-color:#f97316;">'
+        #         f'<div class="metric-label">再転棟率</div>'
+        #         f'<div class="metric-value">{_retrans_rate*100:.3f}%</div>'
+        #         f'<div class="metric-sub">全施設中央値 {_retrans_med*100:.3f}%</div></div>',
+        #         unsafe_allow_html=True,
+        #     )
+        #     _period_cols = ["再入院_3日以内","再入院_4-7日","再入院_8-14日","再入院_15-28日"]
+        #     _period_labels = ["3日以内","4〜7日","8〜14日","15〜28日"]
+        #     _period_vals = [float(_readm_row.get(c, 0) or 0) * 100 for c in _period_cols if c in _readm_row.index]
+        #     if len(_period_vals) == 4 and any(v > 0 for v in _period_vals):
+        #         import plotly.graph_objects as _go_readm
+        #         _fig_r = _go_readm.Figure(_go_readm.Bar(
+        #             x=_period_labels, y=_period_vals,
+        #             marker_color=["#fca5a5","#fb923c","#fbbf24","#a3e635"],
+        #             text=[f"{v:.1f}%" for v in _period_vals], textposition="outside",
+        #         ))
+        #         _fig_r.update_layout(
+        #             title="再入院 期間別内訳（再入院例中の割合）",
+        #             yaxis_title="%", height=280,
+        #             margin=dict(l=10, r=10, t=40, b=20),
+        #             font=dict(family="Noto Sans JP, sans-serif", size=12),
+        #         )
+        #         st.plotly_chart(_fig_r, use_container_width=True)
 
         # ── 主要疾患・手術 TOP20 ──
         if not _dp_surg.empty:
