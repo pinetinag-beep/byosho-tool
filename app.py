@@ -3624,47 +3624,155 @@ with tab1:
             st.markdown('<div class="section-header">施設基準届出（診療報酬）</div>', unsafe_allow_html=True)
 
             if not _sk_matched.empty:
-                _sk_items = _sk_matched["受理届出名称"].dropna().tolist()
+                _sk_items_df = (
+                    _sk_matched[["受理届出名称", "受理記号"]]
+                    .drop_duplicates()
+                    .reset_index(drop=True)
+                )
                 _sk_ym = _sk_matched["年月"].iloc[0] if "年月" in _sk_matched.columns else ""
                 if _sk_ym:
                     st.caption(f"出典：診療報酬 施設基準届出情報（{_sk_ym} 現在）")
 
-                _SK_BADGES = [
-                    ("集中治療室管理料",                   "ICU",           "#e74c3c"),
-                    ("ハイケアユニット",                    "HCU",           "#e67e22"),
-                    ("救急医療管理加算",                    "救急受入",       "#c0392b"),
-                    ("超急性期脳卒中加算",                  "脳卒中tPA",     "#9b59b6"),
-                    ("一般病棟入院基本料",                  "一般病棟",       "#3498db"),
-                    ("特定機能病院入院基本料",               "特定機能病院",   "#8e44ad"),
-                    ("専門病院入院基本料",                  "専門病院",       "#8e44ad"),
-                    ("回復期リハビリテーション病棟",         "回復期リハ",     "#27ae60"),
-                    ("地域包括ケア病棟",                    "地域包括ケア",   "#16a085"),
-                    ("緩和ケア病棟",                        "緩和ケア",       "#7f8c8d"),
-                    ("精神病棟入院基本料",                  "精神科",         "#2980b9"),
-                    ("がん患者指導管理料",                  "がん専門",       "#f39c12"),
-                    ("在宅療養後方支援病院",                "在宅後方支援",   "#27ae60"),
-                    ("無菌治療室管理加算",                  "無菌室",         "#8e44ad"),
-                ]
-                active_badges = [
-                    (label, color)
-                    for keyword, label, color in _SK_BADGES
-                    if any(keyword in item for item in _sk_items)
+                _SK_GROUPS_DEF = [
+                    ("病床・入院体制", "#3498db", [
+                        "入院基本料", "入院時食事療養",
+                        "地域包括ケア病棟", "緩和ケア病棟", "回復期リハビリテーション病棟",
+                        "療養病棟入院料", "障害者施設等入院基本料", "短期滞在手術等基本料",
+                    ]),
+                    ("救急・集中治療", "#e74c3c", [
+                        "救急医療管理加算", "集中治療室管理料", "ハイケアユニット",
+                        "超急性期脳卒中加算", "新生児集中治療", "院内トリアージ",
+                        "小児入院医療管理料",
+                    ]),
+                    ("手術・麻酔", "#8e44ad", [
+                        "腹腔鏡", "胸腔鏡", "切除術", "切断術", "植込術", "交換術",
+                        "修復術", "センチネルリンパ節", "体外衝撃波", "麻酔管理料",
+                        "輸血管理料", "輸血適正使用加算", "術後疼痛管理", "周術期薬剤管理",
+                        "人工肛門・人工膀胱", "椎間板内酵素注入", "刺激装置植込術",
+                        "膀胱水圧拡張術", "精巣温存手術", "ゲル充填人工乳房",
+                        "乳癌センチネルリンパ節", "乳腺悪性腫瘍手術",
+                        "ペースメーカー", "大動脈バルーン", "手術の通則の16",
+                        "手術の通則の19", "緊急整復固定加算", "下肢創傷処置管理料",
+                        "ストーマ合併症加算", "組織拡張器による再建",
+                    ]),
+                    ("検査・画像診断", "#2980b9", [
+                        "検体検査管理加算", "遺伝学的検査", "画像診断管理加算",
+                        "ＣＴ撮影", "ＭＲＩ撮影", "病理診断管理加算",
+                        "遺伝カウンセリング加算", "ＨＰＶ核酸検出", "ＢＲＣＡ",
+                        "冠動脈ＣＴ", "乳房ＭＲＩ", "前立腺針生検法",
+                        "ヘッドアップティルト", "長期継続頭蓋内脳波", "神経学的検査",
+                        "胎児心エコー", "内服・点滴誘発試験",
+                        "放射線治療専任加算", "外来放射線", "高エネルギー放射線",
+                        "定位放射線治療", "画像誘導放射線治療", "一回線量増加加算",
+                        "体外照射呼吸性移動",
+                    ]),
+                    ("リハビリテーション", "#27ae60", [
+                        "リハビリテーション料", "摂食嚥下機能回復",
+                        "がん患者リハビリテーション料", "排尿自立支援加算",
+                        "外来排尿自立指導料", "二次性骨折予防継続管理料",
+                        "小児運動器疾患指導管理料",
+                    ]),
+                    ("がん・専門診療", "#f39c12", [
+                        "がん", "抗悪性腫瘍", "外来腫瘍化学療法診療料",
+                        "悪性腫瘍病理組織標本加算", "外来化学療法加算",
+                        "婦人科特定疾患治療管理料",
+                    ]),
+                    ("精神科", "#9b59b6", [
+                        "精神病棟", "精神療養病棟", "精神疾患診療体制加算",
+                        "認知症ケア加算", "せん妄ハイリスク",
+                    ]),
+                    ("在宅・地域連携", "#16a085", [
+                        "在宅療養後方支援病院", "在宅患者訪問", "訪問看護",
+                        "在宅時医学総合管理料", "在宅持続陽圧呼吸療法",
+                        "開放型病院共同指導料", "がん治療連携計画策定料",
+                        "ハイリスク妊産婦共同管理料", "ハイリスク妊産婦連携指導料",
+                        "肝炎インターフェロン", "ハイリスク妊娠管理加算",
+                        "ハイリスク分娩管理加算",
+                    ]),
+                    ("入院管理・加算", "#7f8c8d", [
+                        "医療ＤＸ", "診療録管理体制加算", "医師事務作業補助",
+                        "急性期看護補助", "看護職員夜間配置", "療養環境加算",
+                        "重症者等療養環境", "栄養サポートチーム加算",
+                        "医療安全対策加算", "感染対策向上加算",
+                        "患者サポート体制充実加算", "報告書管理体制加算",
+                        "褥瘡ハイリスク", "入退院支援加算",
+                        "地域医療体制確保加算", "データ提出加算",
+                        "看護職員処遇改善評価料", "入院ベースアップ評価料",
+                        "後発医薬品使用体制加算", "バイオ後続品使用体制加算",
+                        "病棟薬剤業務実施加算", "無菌製剤処理料",
+                        "人工腎臓", "透析液水質確保加算", "導入期加算",
+                        "下肢末梢動脈疾患指導管理加算",
+                        "外来栄養食事指導料", "糖尿病合併症管理料",
+                        "糖尿病透析予防指導管理料",
+                    ]),
                 ]
 
-                if active_badges:
-                    badge_html_sk = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'
-                    for label, color in active_badges:
-                        badge_html_sk += (
-                            f'<span style="background:{color};color:white;'
-                            f'border-radius:16px;padding:4px 12px;'
-                            f'font-size:0.82rem;font-weight:600;">{label}</span>'
+                MAX_CHIPS = 6
+
+                # グループ分類
+                _sk_group_results = []
+                _sk_assigned_idx = set()
+                for _grp_name, _grp_color, _grp_kws in _SK_GROUPS_DEF:
+                    _grp_rows = _sk_items_df[
+                        _sk_items_df["受理届出名称"].apply(
+                            lambda x: any(kw in str(x) for kw in _grp_kws)
                         )
-                    badge_html_sk += "</div>"
-                    st.markdown(badge_html_sk, unsafe_allow_html=True)
+                    ]
+                    if not _grp_rows.empty:
+                        _chips = []
+                        for _, _r in _grp_rows.iterrows():
+                            _code = str(_r["受理記号"]).strip()
+                            _chips.append(
+                                _code if _code not in ("", "nan") else str(_r["受理届出名称"])[:12]
+                            )
+                            _sk_assigned_idx.add(_r.name)
+                        _sk_group_results.append((_grp_name, _grp_color, _chips, _grp_rows))
 
-                with st.expander(f"届出項目一覧（{len(_sk_items)}件）"):
-                    for _item in sorted(_sk_items):
-                        st.markdown(f"- {_item}")
+                _sk_unassigned = _sk_items_df[~_sk_items_df.index.isin(_sk_assigned_idx)]
+                if not _sk_unassigned.empty:
+                    _chips = []
+                    for _, _r in _sk_unassigned.iterrows():
+                        _code = str(_r["受理記号"]).strip()
+                        _chips.append(
+                            _code if _code not in ("", "nan") else str(_r["受理届出名称"])[:12]
+                        )
+                    _sk_group_results.append(("その他", "#95a5a6", _chips, _sk_unassigned))
+
+                # 2カラムカードグリッド
+                _sk_col_a, _sk_col_b = st.columns(2)
+                for _gi, (_grp_name, _grp_color, _chips, _grp_rows) in enumerate(_sk_group_results):
+                    _sk_col = _sk_col_a if _gi % 2 == 0 else _sk_col_b
+                    with _sk_col:
+                        _chips_html = ""
+                        for _chip in _chips[:MAX_CHIPS]:
+                            _chips_html += (
+                                f'<span style="display:inline-block;background:{_grp_color}22;'
+                                f'color:{_grp_color};border:1px solid {_grp_color}55;'
+                                f'border-radius:10px;padding:2px 8px;font-size:0.72rem;'
+                                f'margin:2px 2px;white-space:nowrap;">{_chip}</span>'
+                            )
+                        _extra = len(_chips) - MAX_CHIPS
+                        if _extra > 0:
+                            _chips_html += (
+                                f'<span style="color:#8899aa;font-size:0.72rem;margin-left:4px;">'
+                                f'+{_extra}件</span>'
+                            )
+                        st.markdown(
+                            f'<div style="background:#1a2133;border-left:3px solid {_grp_color};'
+                            f'border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
+                            f'<div style="color:{_grp_color};font-size:0.72rem;font-weight:700;'
+                            f'letter-spacing:.3px;margin-bottom:6px;">{_grp_name}</div>'
+                            f'<div style="line-height:1.8;">{_chips_html}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                # フル一覧（エキスパンダー）
+                with st.expander(f"届出項目 全一覧（{len(_sk_items_df)}件）"):
+                    for _grp_name, _grp_color, _chips, _grp_rows in _sk_group_results:
+                        st.markdown(f"**{_grp_name}**")
+                        for _, _r in _grp_rows.iterrows():
+                            st.markdown(f"- {_r['受理届出名称']}")
 
             elif _sk_pref_code and _sk_pref_code in _sk_covered_prefs:
                 # 都道府県データはあるが病院名がマッチしなかった（診療所等は対象外）
