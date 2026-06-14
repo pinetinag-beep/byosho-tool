@@ -1747,6 +1747,50 @@ if st.session_state.get("_view_mode") == "search":
             s_has_gamma    = st.checkbox("ガンマナイフあり",     key="s_has_gamma",
                 help="様式1（施設票）\nデータ列: ガンマナイフ台数（1台以上を条件）")
 
+        # ── 施設基準届出フィルター ──
+        _sk_df_filt = _load_shisetsu_kijun()
+        if _sk_df_filt is not None:
+            st.markdown("---")
+            st.markdown("**📋 施設基準届出（診療報酬）**")
+            _sk_covered = set(_sk_df_filt["都道府県コード"].unique())
+            _sk_covered_names = "・".join(
+                PREF_CODE_MAP[c] for c in sorted(_sk_covered) if c in PREF_CODE_MAP
+            )
+            st.caption(f"データあり: {_sk_covered_names}")
+
+            _SK_FILTER_OPTS = [
+                ("ICU（集中治療室管理料）",        "集中治療室管理料"),
+                ("HCU（ハイケアユニット）",         "ハイケアユニット"),
+                ("救急医療管理加算",                "救急医療管理加算"),
+                ("超急性期脳卒中加算（tPA）",       "超急性期脳卒中加算"),
+                ("一般病棟入院基本料",              "一般病棟入院基本料"),
+                ("特定機能病院",                    "特定機能病院入院基本料"),
+                ("回復期リハビリテーション病棟",    "回復期リハビリテーション病棟入院料"),
+                ("地域包括ケア病棟",                "地域包括ケア病棟入院料"),
+                ("緩和ケア病棟",                    "緩和ケア病棟入院料"),
+                ("精神科入院病棟",                  "精神病棟入院基本料"),
+                ("在宅療養後方支援病院",            "在宅療養後方支援病院"),
+                ("脳血管疾患等リハビリ（Ⅰ）",      "脳血管疾患等リハビリテーション料（Ⅰ）"),
+                ("がん患者指導管理料",              "がん患者指導管理料"),
+                ("データ提出加算",                  "データ提出加算"),
+            ]
+            _sk_label_to_kw = dict(_SK_FILTER_OPTS)
+            _s_kijun_sel = st.multiselect(
+                "届出項目（複数選択でOR検索）",
+                options=[lb for lb, _ in _SK_FILTER_OPTS],
+                key="s_kijun_sel",
+                placeholder="例: ICU、回復期リハビリテーション病棟 …",
+            )
+            _s_kijun_kw_text = st.text_input(
+                "届出名称キーワード（部分一致）",
+                placeholder="例: ロボット　ハイケア",
+                key="s_kijun_kw_text",
+                help="受理届出名称に含まれる語句で直接検索（スペース区切りでAND）",
+            )
+        else:
+            _s_kijun_sel      = []
+            _s_kijun_kw_text  = ""
+
     # ── フィルタリング処理 ──
     s_df = df[df["報告年度"] == s_year].copy()
 
@@ -1757,6 +1801,31 @@ if st.session_state.get("_view_mode") == "search":
     if s_kw:
         _norm_kw = _normalize_name(s_kw)
         s_df = s_df[s_df["医療機関名"].apply(_normalize_name).str.contains(_norm_kw, na=False)]
+
+    # 施設基準届出フィルター
+    if _sk_df_filt is not None and (_s_kijun_sel or _s_kijun_kw_text.strip()):
+        _kw_list   = [_sk_label_to_kw[lb] for lb in _s_kijun_sel]
+        _text_kws  = [w for w in _s_kijun_kw_text.strip().split() if w]
+        _sk_sub    = _sk_df_filt.copy()
+        if _kw_list:
+            _sk_sub = _sk_sub[_sk_sub["受理届出名称"].apply(
+                lambda x: any(kw in str(x) for kw in _kw_list)
+            )]
+        for _tw in _text_kws:
+            _sk_sub = _sk_sub[_sk_sub["受理届出名称"].str.contains(_tw, na=False)]
+        # (都道府県コード, 正規化名称) の集合を構築
+        _sk_matched_set: dict[str, set[str]] = {}
+        for _, _r in _sk_sub[["都道府県コード", "医療機関名_正規化"]].drop_duplicates().iterrows():
+            _sk_matched_set.setdefault(_r["都道府県コード"], set()).add(_r["医療機関名_正規化"])
+        _pref_name_to_code = {v: k for k, v in PREF_CODE_MAP.items()}
+        def _in_sk(row):
+            _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
+            _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
+            if not _n or _c not in _sk_matched_set:
+                return False
+            _names = _sk_matched_set[_c]
+            return _n in _names or any(sn.endswith(_n) for sn in _names)
+        s_df = s_df[s_df.apply(_in_sk, axis=1)]
 
     # 手術データをマージ
     _ORGAN_LABELS = [
