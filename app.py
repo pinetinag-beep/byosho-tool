@@ -3612,10 +3612,17 @@ with tab1:
                     break
 
             if _sk_pref_code:
+                # 完全一致（優先）
                 _sk_matched = _sk_df[
                     (_sk_df["医療機関名_正規化"] == _sk_name_norm)
                     & (_sk_df["都道府県コード"] == _sk_pref_code)
                 ]
+                # サフィックス一致（法人名+団体名+施設名 に対応）
+                if _sk_matched.empty and _sk_name_norm:
+                    _sk_matched = _sk_df[
+                        (_sk_df["医療機関名_正規化"].str.endswith(_sk_name_norm))
+                        & (_sk_df["都道府県コード"] == _sk_pref_code)
+                    ]
             else:
                 _sk_matched = pd.DataFrame()
 
