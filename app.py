@@ -1820,10 +1820,10 @@ div[data-testid="stTabPanel"] {
 }
 </style>
 """, unsafe_allow_html=True)
-    _tab_equip, _tab_surg, _tab_kijun = st.tabs(["🏥 病床・設備", "✂️ 手術", "📋 施設基準届出"])
+    _tab_equip, _tab_surg, _tab_kijun = st.tabs(["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"])
 
     with _tab_equip:
-        _eq1, _eq2 = st.columns(2)
+        _eq1, _eq2, _eq3 = st.columns(3)
         with _eq1:
             st.markdown("**CT**")
             ct_filter = st.radio(
@@ -1846,10 +1846,19 @@ div[data-testid="stTabPanel"] {
                 s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
                 s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
         with _eq2:
-            st.markdown("**その他設備**")
-            s_has_pet      = st.checkbox("PET / PET-CTあり",    key="s_has_pet")
-            s_has_robot_eq = st.checkbox("手術支援ロボットあり", key="s_has_robot_eq")
-            s_has_gamma    = st.checkbox("ガンマナイフあり",     key="s_has_gamma")
+            st.markdown("**放射線治療**")
+            s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
+            s_has_cyberknife = st.checkbox("サイバーナイフあり",             key="s_has_cyberknife")
+            s_has_gamma      = st.checkbox("ガンマナイフあり",               key="s_has_gamma")
+            st.markdown("**核医学**")
+            s_has_pet  = st.checkbox("PET / PET-CTあり", key="s_has_pet")
+            s_has_spect = st.checkbox("SPECTあり",       key="s_has_spect")
+        with _eq3:
+            st.markdown("**手術・カテーテル**")
+            s_has_robot_eq = st.checkbox("手術支援ロボットあり",          key="s_has_robot_eq")
+            s_has_angio    = st.checkbox("アンギオ（血管連続撮影）あり",  key="s_has_angio")
+            st.markdown("**その他**")
+            s_has_mammo = st.checkbox("マンモグラフィあり", key="s_has_mammo")
 
     with _tab_surg:
         _sg1, _sg2 = st.columns([1, 1])
@@ -2167,10 +2176,20 @@ div[data-testid="stTabPanel"] {
         _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
         _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
         s_df = s_df[(_pet_v > 0) | (_petct_v > 0)]
+    if s_has_spect and "SPECT台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["SPECT台数"], errors="coerce").fillna(0) > 0]
     if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
         s_df = s_df[pd.to_numeric(s_df["内視鏡手術支援機器台数"], errors="coerce").fillna(0) > 0]
+    if s_has_angio and "血管連続撮影装置台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["血管連続撮影装置台数"], errors="coerce").fillna(0) > 0]
+    if s_has_imrt and "IMRT台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["IMRT台数"], errors="coerce").fillna(0) > 0]
+    if s_has_cyberknife and "サイバーナイフ台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["サイバーナイフ台数"], errors="coerce").fillna(0) > 0]
     if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
         s_df = s_df[pd.to_numeric(s_df["ガンマナイフ台数"], errors="coerce").fillna(0) > 0]
+    if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
+        s_df = s_df[pd.to_numeric(s_df["マンモグラフィ台数"], errors="coerce").fillna(0) > 0]
 
     # ── 所要時間フィルター ──
     _tt_applied = False
@@ -2263,10 +2282,20 @@ div[data-testid="stTabPanel"] {
             _eshow.append("MRI台数")
     if s_has_pet:
         _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
+    if s_has_spect and "SPECT台数" in s_df.columns:
+        _eshow.append("SPECT台数")
     if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
         _eshow.append("内視鏡手術支援機器台数")
+    if s_has_angio and "血管連続撮影装置台数" in s_df.columns:
+        _eshow.append("血管連続撮影装置台数")
+    if s_has_imrt and "IMRT台数" in s_df.columns:
+        _eshow.append("IMRT台数")
+    if s_has_cyberknife and "サイバーナイフ台数" in s_df.columns:
+        _eshow.append("サイバーナイフ台数")
     if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
         _eshow.append("ガンマナイフ台数")
+    if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
+        _eshow.append("マンモグラフィ台数")
     _disp = _base + _sshow + _organ_show + _eshow
 
     result_s = (
