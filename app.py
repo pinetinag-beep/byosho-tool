@@ -2318,34 +2318,6 @@ div[data-testid="stTabPanel"] {
         key="s_csv_dl",
     )
 
-    # ── 詳細ナビゲーション ──
-    if not result_s.empty:
-        st.divider()
-        st.markdown("### 🏥 病院を選んで詳細を見る")
-        st.caption("病院名をクリックすると、その病院の詳細分析画面に移動します。")
-
-        # 病院名ボタングリッド
-        _nav_hospitals = result_s["医療機関名"].tolist()
-        _nav_cols = st.columns(3)
-        for _i, _hname in enumerate(_nav_hospitals[:30]):
-            with _nav_cols[_i % 3]:
-                if st.button(f"🏥 {_hname}", key=f"_snav_{_i}", use_container_width=True):
-                    _hrow = df[(df["医療機関名"] == _hname) & (df["報告年度"] == s_year)]
-                    if not _hrow.empty:
-                        _hr = _hrow.iloc[0]
-                        # サイドバーのselectbox描画後にwidgetキーを直接書き換えると
-                        # StreamlitAPIExceptionが出るため _nav_jump 経由で渡す
-                        st.session_state["_nav_jump"] = {
-                            "year":     int(_hr["報告年度"]),
-                            "pref":     str(_hr["都道府県名"]),
-                            "region":   str(_hr["二次医療圏名"]),
-                            "hospital": _hname,
-                        }
-                        st.session_state["_view_mode"] = "detail"
-                        st.rerun()
-
-        if len(_nav_hospitals) > 30:
-            st.caption(f"※ 先頭30件を表示。全{len(_nav_hospitals):,}件はCSVをダウンロードしてください。")
 
     # 検索モードはここで終了
     _render_footer()
