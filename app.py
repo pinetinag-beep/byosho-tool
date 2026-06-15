@@ -1718,10 +1718,18 @@ if st.session_state.get("_view_mode") == "search":
     st.markdown("## 🔍 条件で病院を検索")
 
     # ════════════════════════════════════════════════
-    # STEP 1: エリアを選ぶ
+    # STEP 1: エリアを絞り込む
     # ════════════════════════════════════════════════
-    st.markdown("**① エリアを選ぶ**")
-    _sa, _sb, _sc, _sd = st.columns([1, 2, 2, 2])
+    st.markdown(
+        "<div style='border-left:4px solid #3b82f6;padding:8px 14px;background:#eff6ff;"
+        "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
+        "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
+        "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+        "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    _sa, _sb, _sc = st.columns([1, 2, 2])
     with _sa:
         s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
         s_year = st.selectbox("年度", s_years_list, key="s_year")
@@ -1739,8 +1747,11 @@ if st.session_state.get("_view_mode") == "search":
         if st.session_state.get("s_region") not in s_all_regions:
             st.session_state["s_region"] = "全二次医療圏"
         s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region")
-    with _sd:
-        s_kw = st.text_input("病院名キーワード", placeholder="例: 大学病院", key="s_kw")
+    s_kw = st.text_input(
+        "病院名キーワード",
+        placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
+        key="s_kw",
+    )
 
     # 所要時間（折りたたみ）
     _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
@@ -1767,7 +1778,48 @@ if st.session_state.get("_view_mode") == "search":
     # ════════════════════════════════════════════════
     # STEP 2: 絞り込み条件を選ぶ
     # ════════════════════════════════════════════════
-    st.markdown("**② 絞り込み条件を選ぶ**")
+    st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
+    st.divider()
+    st.markdown(
+        "<div style='border-left:4px solid #f59e0b;padding:8px 14px;background:#fffbeb;"
+        "border-radius:0 6px 6px 0;margin-bottom:16px;'>"
+        "<span style='font-weight:700;font-size:1rem;color:#78350f;'>② 絞り込み条件を選ぶ</span>"
+        "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+        "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("""
+<style>
+/* 検索条件タブをフォルダ型に */
+div[data-testid="stTabs"] > div:first-child {
+    gap: 4px;
+}
+div[data-testid="stTabs"] button[data-baseweb="tab"] {
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    padding: 8px 20px !important;
+    border-radius: 8px 8px 0 0 !important;
+    border: 1.5px solid #e5e7eb !important;
+    border-bottom: none !important;
+    background: #f9fafb !important;
+    color: #6b7280 !important;
+    margin-bottom: -1px;
+}
+div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+    background: #ffffff !important;
+    color: #1f2937 !important;
+    border-color: #d1d5db !important;
+    border-bottom: 2px solid #ffffff !important;
+}
+div[data-testid="stTabPanel"] {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 0 8px 8px 8px;
+    padding: 16px !important;
+    background: #ffffff;
+}
+</style>
+""", unsafe_allow_html=True)
     _tab_equip, _tab_surg, _tab_kijun = st.tabs(["🏥 病床・設備", "✂️ 手術", "📋 施設基準届出"])
 
     with _tab_equip:
