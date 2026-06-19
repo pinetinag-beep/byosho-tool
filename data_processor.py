@@ -428,9 +428,9 @@ def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
 
     df = df[keep_cols].copy()
 
-    # * → NaN → 0 変換
+    # * → -1（マスク値センチネル）、それ以外は数値変換
     for col in list(src_to_dst.keys()) + list(organ_src_to_dst.keys()):
-        df[col] = df[col].replace("*", np.nan)
+        df[col] = df[col].replace("*", -1)
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     # 都道府県名変換
