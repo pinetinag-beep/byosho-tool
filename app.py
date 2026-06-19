@@ -1121,38 +1121,6 @@ if st.session_state.get("_view_mode") == "home":
                 st.session_state["_view_mode"] = "dpc_search"
                 st.rerun()
 
-    # ── よく探される条件（クイックプリセット）────────────────────
-    st.markdown("<div style='padding-top:32px;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        "<p style='color:#6b7280;font-size:0.82rem;margin-bottom:8px;'>よく探される条件</p>",
-        unsafe_allow_html=True,
-    )
-    _pq1, _pq2, _pq3, _pq4, _pq5 = st.columns(5)
-    with _pq1:
-        if st.button("🏥 急性期病院", use_container_width=True, key="_pq_kyusei"):
-            st.session_state["_view_mode"] = "search"
-            st.session_state["s_kw"] = "急性期"
-            st.rerun()
-    with _pq2:
-        if st.button("🚑 救急搬送受入", use_container_width=True, key="_pq_emg"):
-            st.session_state["_view_mode"] = "search"
-            st.session_state["s_kw"] = ""
-            st.rerun()
-    with _pq3:
-        if st.button("🎓 大学病院", use_container_width=True, key="_pq_univ"):
-            st.session_state["_view_mode"] = "search"
-            st.session_state["s_kw"] = "大学病院"
-            st.rerun()
-    with _pq4:
-        if st.button("📍 高度急性期あり", use_container_width=True, key="_pq_kodokyu"):
-            st.session_state["_view_mode"] = "search"
-            st.session_state["s_kw"] = ""
-            st.rerun()
-    with _pq5:
-        if st.button("🗺️ 地域で比較", use_container_width=True, key="_pq_region"):
-            st.session_state["_view_mode"] = "region"
-            st.rerun()
-
     _render_footer()
     st.stop()
 
