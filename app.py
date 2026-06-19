@@ -108,7 +108,7 @@ def _render_header():
         st.markdown(
             "<div style='padding:10px 0 2px;'>"
             "<span style='font-size:1.05rem;font-weight:800;color:#111827;'>"
-            "🏥 病床機能報告</span></div>",
+            "🏥 ホーム</span></div>",
             unsafe_allow_html=True,
         )
     else:
@@ -120,7 +120,7 @@ def _render_header():
                 st.rerun()
         with _hc2:
             _sep = "<span style='color:#d1d5db;margin:0 5px;'>›</span>"
-            _parts = ["<span style='color:#9ca3af;'>🏥 病床機能報告</span>"]
+            _parts = ["<span style='color:#9ca3af;'>🏥 ホーム</span>"]
             if mode == "detail":
                 if _pref:     _parts.append(f"<span style='color:#6b7280;'>{_pref}</span>")
                 if _region:   _parts.append(f"<span style='color:#6b7280;'>{_region}</span>")
