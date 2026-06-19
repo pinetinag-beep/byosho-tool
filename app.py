@@ -1028,10 +1028,6 @@ if st.session_state.get("_view_mode") == "home":
              letter-spacing:-0.02em;">
     地域の医療提供体制を可視化する
   </h1>
-  <p style="font-size:0.9rem;color:#9ca3af;margin:0 0 28px;line-height:1.8;">
-    全国 <strong style="color:#2563eb;font-size:1.05rem;">{_lnd_n:,}</strong> 病院 &nbsp;·&nbsp;
-    {_lnd_pref_cnt} 都道府県 &nbsp;·&nbsp; {_lnd_ymin}〜{_lnd_ymax}年度
-  </p>
   <p style="font-size:1rem;font-weight:600;color:#374151;margin:0;">どうやって探しますか？</p>
 </div>""",
         unsafe_allow_html=True,
