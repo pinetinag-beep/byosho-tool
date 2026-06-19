@@ -373,7 +373,9 @@ def detail_bed_type_table(ward_df: pd.DataFrame, hospital_name: str) -> pd.DataF
         else:
             rate = 0.0
         zaitou_per_day = zaitou / 365 if zaitou > 0 else max_use
-        avg_los = round(zaitou / nyutou, 1) if zaitou > 0 and nyutou > 0 else None
+        taitou  = float(r.get("退棟患者数", 0) or 0)
+        denom   = (nyutou + taitou) / 2
+        avg_los = round(zaitou / denom, 1) if zaitou > 0 and denom > 0 else None
         rows.append({
             "機能区分":          r.get("機能区分", ""),
             "入院基本料":        r.get("入院基本料", ""),
