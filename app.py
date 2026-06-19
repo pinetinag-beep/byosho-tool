@@ -2173,11 +2173,13 @@ div[data-testid="stTabPanel"] {
         if s_surg_logic == "OR（いずれか該当）":
             _or_mask = pd.Series(False, index=s_df.index)
             for _, _col in _active_surg_checks:
-                _or_mask = _or_mask | (pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0)
+                _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
+                _or_mask = _or_mask | (_v != 0)  # -1（マスク値）も「あり」として含む
             s_df = s_df[_or_mask]
         else:  # AND（すべて該当）
             for _, _col in _active_surg_checks:
-                s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+                _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
+                s_df = s_df[_v != 0]  # -1（マスク値）も「あり」として含む
 
     # ── CT フィルター ──
     _CT_SPEC_COLS = ["CT_64列以上", "CT_16〜64列", "CT_16列未満", "CT_その他"]
@@ -2377,10 +2379,10 @@ div[data-testid="stTabPanel"] {
         "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%,d 台"),
     }
     for _c in _sshow:
-        _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 件")
+        _col_cfg[_c] = st.column_config.TextColumn(format="%s 件")
     for _c in _organ_show:
         _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
-        _col_cfg[_c] = st.column_config.NumberColumn(_label, format="%,d 件")
+        _col_cfg[_c] = st.column_config.TextColumn(_label)
     for _c in _eshow:
         if _c not in _col_cfg:
             _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
@@ -2388,12 +2390,26 @@ div[data-testid="stTabPanel"] {
         _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
         _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
 
-    st.dataframe(result_s, hide_index=True, use_container_width=True, column_config=_col_cfg)
+    # -1（マスク値）を表示用に "*" へ変換（手術列のみ）
+    result_s_disp = result_s.copy()
+    for _c in _sshow + _organ_show:
+        if _c in result_s_disp.columns:
+            _v = pd.to_numeric(result_s_disp[_c], errors="coerce").fillna(0)
+            result_s_disp[_c] = _v.apply(
+                lambda x: "*" if x == -1 else (f"{int(x):,}" if x > 0 else "0")
+            )
 
-    # CSVダウンロード
+    st.dataframe(result_s_disp, hide_index=True, use_container_width=True, column_config=_col_cfg)
+
+    # CSVダウンロード（CSV も -1 → "*"）
+    _csv_df = result_s.copy()
+    for _c in _sshow + _organ_show:
+        if _c in _csv_df.columns:
+            _v = pd.to_numeric(_csv_df[_c], errors="coerce").fillna(0)
+            _csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else int(x))
     st.download_button(
         "📥 CSV ダウンロード",
-        result_s.to_csv(index=False).encode("utf-8-sig"),
+        _csv_df.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"hospital_search_{s_year}.csv",
         mime="text/csv",
         key="s_csv_dl",
