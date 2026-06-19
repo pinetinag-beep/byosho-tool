@@ -2341,7 +2341,7 @@ div[data-testid="stTabPanel"] {
         "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%,d 台"),
     }
     for _c in _sshow:
-        _col_cfg[_c] = st.column_config.TextColumn(format="%s 件")
+        _col_cfg[_c] = st.column_config.TextColumn()
     for _c in _organ_show:
         _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
         _col_cfg[_c] = st.column_config.TextColumn(_label)
