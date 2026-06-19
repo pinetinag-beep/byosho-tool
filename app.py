@@ -909,7 +909,7 @@ def _si(val):
 
 if st.session_state.df is None:
     _render_header()
-    st.markdown("## 🏥 地域の医療提供体制を可視化する")
+    st.markdown("## 🏥 全国の病院の情報を調べる")
     _d1, _d2 = st.columns(2)
     with _d1:
         st.info("""
@@ -1026,7 +1026,7 @@ if st.session_state.get("_view_mode") == "home":
 <div style="text-align:center;padding:48px 0 32px;">
   <h1 style="font-size:2.3rem;font-weight:900;color:#111827;margin:0 0 14px;line-height:1.2;
              letter-spacing:-0.02em;">
-    地域の医療提供体制を可視化する
+    全国の病院の情報を調べる
   </h1>
   <p style="font-size:1rem;font-weight:600;color:#374151;margin:0;">どうやって探しますか？</p>
 </div>""",
