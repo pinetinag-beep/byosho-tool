@@ -222,7 +222,7 @@ def load_mdc_ratio(path: str, year: int) -> pd.DataFrame:
             continue
         rec = {"年度": year, "告示番号": ban, "施設名": row.iloc[2]}
         for col_idx, mdc_name in mdc_cols.items():
-            rec[mdc_name] = pd.to_numeric(row.iloc[col_idx], errors="coerce")
+            rec[mdc_name] = _to_num(row.iloc[col_idx])
         records.append(rec)
     return pd.DataFrame(records)
 
@@ -249,15 +249,15 @@ def load_readmission(path: str, year: int) -> pd.DataFrame:
             "年度": year,
             "告示番号": ban,
             "施設名": row.iloc[2],
-            "再入院率": pd.to_numeric(row.iloc[3], errors="coerce"),
-            "再転棟率": pd.to_numeric(row.iloc[4], errors="coerce"),
+            "再入院率": _to_num(row.iloc[3]),
+            "再転棟率": _to_num(row.iloc[4]),
         }
         # 3日以内, 4-7日, 8-14日, 15-28日の内訳も格納
         col_names = ["再入院_3日以内", "再入院_4-7日", "再入院_8-14日", "再入院_15-28日"]
         for j, cn in enumerate(col_names):
             idx = 5 + j
             if idx < len(row):
-                rec[cn] = pd.to_numeric(row.iloc[idx], errors="coerce")
+                rec[cn] = _to_num(row.iloc[idx])
         records.append(rec)
     return pd.DataFrame(records)
 
@@ -274,6 +274,13 @@ def _cell_str(val) -> str:
         except (ValueError, OverflowError):
             pass
     return str(val).strip()
+
+
+def _to_num(val):
+    """* → -1（マスク値センチネル）、それ以外は数値変換（変換不能はNaN）。"""
+    if str(val).strip() == "*":
+        return -1
+    return pd.to_numeric(val, errors="coerce")
 
 
 # ── 疾患別手術別集計（施設別 MDCxx） ──────────────────────────────────────────
@@ -352,14 +359,14 @@ def load_surgery_detail(path: str, year: int) -> pd.DataFrame:
                 prefix = "件数" if metric == "件数" else "在院日数"
                 if surg_code == "99":
                     col_key = f"{prefix}_総計"
-                    dpc_vals[key][col_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
+                    dpc_vals[key][col_key] = _to_num(row.iloc[ci])
                 elif surg_code == "97":
                     col_key = f"{prefix}_手術有"
-                    dpc_vals[key][col_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
+                    dpc_vals[key][col_key] = _to_num(row.iloc[ci])
                 elif surg_code in ("01", "02", "03"):
                     # 個別術式コードを一時キーに保存（97フォールバック用）
                     sub_key = f"_sub_{prefix}_{surg_code}"
-                    dpc_vals[key][sub_key] = pd.to_numeric(row.iloc[ci], errors="coerce")
+                    dpc_vals[key][sub_key] = _to_num(row.iloc[ci])
 
             for (dpc6, disease), vals in dpc_vals.items():
                 # 97(手術有合計)が NaN の場合、個別術式コード(01/02/03)の合算でフォールバック

@@ -3312,9 +3312,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
             _ds_surg_all if _ds_mdc_key is None
             else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
         )
-        _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) > 0
+        _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) != 0
         if "件数_手術有" in _ds_disease_src.columns:
-            _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) > 0)
+            _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) != 0)
         _ds_disease_src = _ds_disease_src[_ds_disease_mask]
         _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
         # セッションステート検証（MDC変更時に古い疾患名が残らないように）
@@ -3410,9 +3410,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if _ds_geo_scope == "都道府県" and _ds_pref_sel:
             _ds_result = _ds_result[_ds_result["都道府県名"] == _ds_pref_sel]
 
-        # 非公表除外
+        # 非公表除外（0件を除く。-1はマスク値なので残す）
         if _ds_hide_nan:
-            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna() & (_ds_result[_ds_cnt_col] > 0)]
+            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna() & (_ds_result[_ds_cnt_col] != 0)]
 
         # 平均在院日数カラムを作成
         if _ds_los_col and _ds_los_col in _ds_result.columns:
@@ -3429,10 +3429,11 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
         # カラム表示設定
         _total_n = len(_ds_result)
-        _total_patients = int(_ds_result[_ds_cnt_col].sum()) if _ds_cnt_col in _ds_result.columns else 0
+        # -1（マスク値）を除いた実件数合計
+        _total_patients = int(_ds_result[_ds_cnt_col].clip(lower=0).sum()) if _ds_cnt_col in _ds_result.columns else 0
         st.caption(
             f"**{_total_n:,}病院** が対象 / 疾患: {_ds_disease}"
-            + (f" / 合計 {_total_patients:,}例" if not _ds_hide_nan else "")
+            + (f" / 合計 {_total_patients:,}例（＊除く）" if not _ds_hide_nan else "")
         )
 
         _ds_show_cols = ["施設名", "病院区分", "都道府県名", _ds_cnt_col]
@@ -3440,13 +3441,20 @@ if st.session_state.get("_view_mode") == "dpc_search":
             "施設名":    st.column_config.TextColumn("病院名"),
             "病院区分":  st.column_config.TextColumn("区分"),
             "都道府県名": st.column_config.TextColumn("都道府県"),
-            _ds_cnt_col: st.column_config.NumberColumn("患者数", format="%d例"),
+            _ds_cnt_col: st.column_config.TextColumn("患者数"),
         }
         if "平均在院日数" in _ds_result.columns:
             _ds_show_cols.append("平均在院日数")
-            _ds_col_cfg["平均在院日数"] = st.column_config.NumberColumn("平均在院日数", format="%.1f日")
+            _ds_col_cfg["平均在院日数"] = st.column_config.TextColumn("平均在院日数")
 
-        _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]]
+        # -1（マスク値）を "*" に変換した表示用コピー
+        _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
+        for _c in [_ds_cnt_col, "平均在院日数"]:
+            if _c in _ds_disp.columns:
+                _v = pd.to_numeric(_ds_disp[_c], errors="coerce")
+                _ds_disp[_c] = _v.apply(
+                    lambda x: "*" if x == -1 else ("" if pd.isna(x) else (f"{int(x):,}例" if _c == _ds_cnt_col else f"{x:.1f}日"))
+                )
 
         # 前回選択した病院のバナーをテーブルの上に表示（地図モードと同じパターン）
         _dsc_last = st.session_state.get("_dsc_last_selected")
