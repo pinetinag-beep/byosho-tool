@@ -189,9 +189,9 @@ def _render_footer():
                     st.session_state.pop(key, None)
                 st.rerun()
             st.divider()
-            st.caption("🔬 2021年 手術データ（様式2 全7ファイル）を更新")
+            st.caption("🔬 手術データの取り込み（様式2）")
             _y2_files = st.file_uploader(
-                "000953885〜000953892.xlsx（7ファイル、複数選択可）",
+                "Excelファイルを選択（2021年は7地域ファイルを全て選択）",
                 type=["xlsx", "xls"],
                 accept_multiple_files=True,
                 key="_ftr_yoshiki2_upload",
