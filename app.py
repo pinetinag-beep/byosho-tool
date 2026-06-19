@@ -909,7 +909,7 @@ def _si(val):
 
 if st.session_state.df is None:
     _render_header()
-    st.markdown("## 🏥 病床機能報告 分析・比較ツール")
+    st.markdown("## 🏥 地域の医療提供体制を可視化する")
     _d1, _d2 = st.columns(2)
     with _d1:
         st.info("""
@@ -1024,8 +1024,6 @@ if st.session_state.get("_view_mode") == "home":
     st.markdown(
         f"""
 <div style="text-align:center;padding:48px 0 32px;">
-  <p style="font-size:0.72rem;color:#9ca3af;font-weight:700;letter-spacing:0.18em;
-             text-transform:uppercase;margin-bottom:10px;">厚生労働省 病床機能報告</p>
   <h1 style="font-size:2.3rem;font-weight:900;color:#111827;margin:0 0 14px;line-height:1.2;
              letter-spacing:-0.02em;">
     地域の医療提供体制を可視化する
