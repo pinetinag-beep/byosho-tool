@@ -362,23 +362,26 @@ def detail_bed_type_table(ward_df: pd.DataFrame, hospital_name: str) -> pd.DataF
 
     rows = []
     for _, r in sub.iterrows():
-        kyoka   = float(r.get("許可病床数", 0) or 0)
-        max_use = float(r.get("最大使用病床数", 0) or 0)
-        zaitou  = float(r.get("在棟延べ数", 0) or 0)
-        # 在棟患者延べ数/365/許可病床数 が正式な稼働率
+        kyoka    = float(r.get("許可病床数", 0) or 0)
+        max_use  = float(r.get("最大使用病床数", 0) or 0)
+        zaitou   = float(r.get("在棟延べ数", 0) or 0)
+        nyutou   = float(r.get("新規入棟患者数", 0) or 0)
         if zaitou > 0 and kyoka > 0:
             rate = round(zaitou / 365 / kyoka * 100, 1)
         elif kyoka > 0:
             rate = round(max_use / kyoka * 100, 1)
         else:
             rate = 0.0
+        zaitou_per_day = zaitou / 365 if zaitou > 0 else max_use
+        avg_los = round(zaitou / nyutou, 1) if zaitou > 0 and nyutou > 0 else None
         rows.append({
             "機能区分":          r.get("機能区分", ""),
             "入院基本料":        r.get("入院基本料", ""),
-            "届出病床数":        int(r.get("届出病床数", 0) or 0),
-            "許可病床数":        int(kyoka),
-            "平均在棟患者数/日": f"{zaitou / 365:.1f}" if zaitou > 0 else f"{max_use:.1f}",
-            "稼働率(%)":         rate,
+            "届出病床数":        f"{int(r.get('届出病床数', 0) or 0)}床",
+            "許可病床数":        f"{int(kyoka)}床",
+            "平均在棟患者数/日": f"{zaitou_per_day:.1f}人",
+            "平均在院日数":      f"{avg_los}日" if avg_los is not None else "—",
+            "稼働率":            f"{rate}%",
         })
     return pd.DataFrame(rows)
 
