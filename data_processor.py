@@ -428,9 +428,15 @@ def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
 
     df = df[keep_cols].copy()
 
-    # * → -1（マスク値センチネル）、それ以外は数値変換
+    # * / ＊（全角）→ -1（マスク値センチネル）、それ以外は数値変換
+    def _to_sentinel(x):
+        s = str(x).strip()
+        if s in ("*", "＊"):
+            return -1
+        return x
+
     for col in list(src_to_dst.keys()) + list(organ_src_to_dst.keys()):
-        df[col] = df[col].replace("*", -1)
+        df[col] = df[col].apply(_to_sentinel)
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     # 都道府県名変換
@@ -443,25 +449,37 @@ def load_mhlw_yoshiki2(file_bytes: bytes, year: int = 2024) -> pd.DataFrame:
     if "二次医療圏名" not in df.columns:
         df["二次医療圏名"] = "不明"
 
-    # 病院単位に集計（病棟単位を合算）
+    # 病院単位に集計（複数行を1行に）
+    # -1（マスク値）をそのまま sum() すると負の合計になるため、専用集計関数を使う：
+    # - 正の値がある → 正の値のみ合計（-1 は「少数例あり」として加算しない）
+    # - 正の値なし、-1 あり → -1 を返す（マスク値であることを維持）
+    # - すべて 0 → 0
+    def _sentinel_sum(s):
+        pos = s[s > 0]
+        if len(pos) > 0:
+            return float(pos.sum())
+        if (s == -1).any():
+            return -1.0
+        return 0.0
+
     group_keys = ["医療機関名", "都道府県名", "二次医療圏名"]
     if code_col:
         group_keys = [code_col] + group_keys
 
     all_val_cols = list(src_to_dst.keys()) + list(organ_src_to_dst.keys())
-    agg = df.groupby(group_keys, as_index=False)[all_val_cols].sum()
+    agg = df.groupby(group_keys, as_index=False)[all_val_cols].agg(_sentinel_sum)
     agg = agg.rename(columns={**src_to_dst, **organ_src_to_dst})
     if code_col and code_col in agg.columns:
         agg = agg.rename(columns={code_col: "医療機関コード"})
     agg["報告年度"] = year
 
-    # 少なくとも1つの手術列に正の値がある行を残す（* マスク列は0扱いのため緩めに判定）
+    # 少なくとも1つの手術列に正の値 or マスク値（-1）がある行を残す
     val_cols_renamed = list(src_to_dst.values()) + list(organ_src_to_dst.values())
     existing = [c for c in val_cols_renamed if c in agg.columns]
     if existing:
-        mask = agg[existing].sum(axis=1) > 0
+        mask = (agg[existing] > 0).any(axis=1) | (agg[existing] == -1).any(axis=1)
     else:
-        mask = agg["手術総数"] > 0
+        mask = (agg["手術総数"] > 0) | (agg["手術総数"] == -1)
     return agg[mask].copy()
 
 

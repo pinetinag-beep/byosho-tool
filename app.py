@@ -190,8 +190,10 @@ def _render_footer():
                 st.rerun()
             st.divider()
             st.caption("🔬 手術データの取り込み（様式2）")
+            _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")
+            _y2_hint = "2021年は7地域ファイルを全て選択" if _y2_year_sel == 2021 else "全国1ファイルを選択"
             _y2_files = st.file_uploader(
-                "Excelファイルを選択（2021年は7地域ファイルを全て選択）",
+                f"Excelファイルを選択（{_y2_hint}）",
                 type=["xlsx", "xls"],
                 accept_multiple_files=True,
                 key="_ftr_yoshiki2_upload",
@@ -204,7 +206,7 @@ def _render_footer():
                     for _i, _f in enumerate(_y2_files):
                         _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
                         _fb_bytes = _f.read()
-                        _part = load_mhlw_yoshiki2(_fb_bytes, year=2021)
+                        _part = load_mhlw_yoshiki2(_fb_bytes, year=_y2_year_sel)
                         _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
                         _parts.append(_part)
                     _prog.progress(1.0, text="集計中...")
@@ -215,7 +217,7 @@ def _render_footer():
                         _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
                         _existing = st.session_state.get("surgery_df")
                         if _existing is not None and not _existing.empty:
-                            _existing = _existing[_existing["報告年度"] != 2021]
+                            _existing = _existing[_existing["報告年度"] != _y2_year_sel]
                             _merged = pd.concat([_existing, _surg_new], ignore_index=True)
                         else:
                             _merged = _surg_new
@@ -226,7 +228,7 @@ def _render_footer():
                         st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
                         _prog.empty()
                         _status.empty()
-                        st.success(f"✅ 2021年: {len(_surg_new):,} 病院取り込み完了")
+                        st.success(f"✅ {_y2_year_sel}年: {len(_surg_new):,} 病院取り込み完了")
                 except Exception as _e:
                     st.error(f"エラー: {_e}")
             if st.session_state.get("_yoshiki2_parquet"):
