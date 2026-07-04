@@ -17,6 +17,8 @@ from pathlib import Path
 import pdfplumber
 import pandas as pd
 
+from build_shisetsu_kijun import _normalize
+
 # 項番が医療機関番号の直前にスペースなしで連結される（例:"13901,1802,6"=項番139+
 # 医療機関番号01,1802,6）ため、行頭からではなく末尾から医療機関番号部分を検索する。
 KIKAN_BANGO_ANCHOR_RE = re.compile(r'(\d{2})[,・-](\d{3,5})[,・-](\d{1,2})$')
@@ -213,6 +215,7 @@ def parse_pdf(path: str, kigou_map: dict, pref_name_hint: str = "") -> tuple[pd.
                     "都道府県名": pref_name,
                     "医療機関番号": iryo_bango,
                     "医療機関名称": meisho,
+                    "医療機関名_正規化": _normalize(meisho),
                     "受理届出名称": meisho_todokede,
                     "受理記号": kigou,
                     "受理番号": f"第{num}号",
