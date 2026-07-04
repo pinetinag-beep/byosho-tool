@@ -3942,8 +3942,9 @@ with tab1:
             st.markdown('<div class="section-header">施設基準届出（診療報酬）</div>', unsafe_allow_html=True)
 
             if not _sk_matched.empty:
+                _sk_detail_cols = [c for c in ["区分", "病棟数", "病床数"] if c in _sk_matched.columns]
                 _sk_items_df = (
-                    _sk_matched[["受理届出名称", "受理記号"]]
+                    _sk_matched[["受理届出名称", "受理記号"] + _sk_detail_cols]
                     .drop_duplicates()
                     .reset_index(drop=True)
                 )
@@ -4090,7 +4091,12 @@ with tab1:
                     for _grp_name, _grp_color, _chips, _grp_rows in _sk_group_results:
                         st.markdown(f"**{_grp_name}**")
                         for _, _r in _grp_rows.iterrows():
-                            st.markdown(f"- {_r['受理届出名称']}")
+                            _kubun = str(_r.get("区分", "")).strip()
+                            _byoto = str(_r.get("病棟数", "")).strip()
+                            _byosho = str(_r.get("病床数", "")).strip()
+                            _detail_parts = [p for p in [_kubun, _byoto, _byosho] if p and p != "nan"]
+                            _detail = f"（{'・'.join(_detail_parts)}）" if _detail_parts else ""
+                            st.markdown(f"- {_r['受理届出名称']}{_detail}")
 
             elif _sk_pref_code and _sk_pref_code in _sk_covered_prefs:
                 # 都道府県データはあるが病院名がマッチしなかった（診療所等は対象外）
