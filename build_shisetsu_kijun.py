@@ -65,23 +65,54 @@ def _normalize(name: str) -> str:
     return name.lower()
 
 
+# 「備考（見出し）」列に現れるラベルのうち、専用列として保持するもの。
+# 表記ゆれ（全角スペース混入・末尾スペース・「届出に係る」プレフィックス等）を
+# 正規化したうえでこのキーに一致させる。
+_KNOWN_DETAIL_LABELS = {
+    "病棟種別": "病棟種別",
+    "病床区分": "病床区分",
+    "病棟数":   "病棟数",
+    "病床数":   "病床数",
+    "区分":     "区分",
+}
+
+
+def _normalize_label(label: str) -> str:
+    """備考（見出し）のラベルを正規化する（全角/半角スペース除去、前置き除去）。"""
+    s = unicodedata.normalize("NFKC", str(label))
+    s = re.sub(r"[\s　]", "", s)
+    s = re.sub(r"^届出に係る", "", s)
+    return s
+
+
 def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
-    """1シートのrawデータをパースして (df, 年月) を返す。"""
+    """
+    1シートのrawデータをパースして (df, 年月) を返す。
+
+    1つの届出は複数行に展開されている:
+      1行目: 受理届出名称・受理記号・受理番号・算定開始年月日 を持ち、
+             「備考（見出し）」「備考（データ）」は空。
+      2行目以降: 同じ届出の内訳（病棟種別・病床区分・病棟数・病床数・区分等）が
+             「備考（見出し）」「備考（データ）」のペアとして1行ずつ入る。
+    「備考（見出し）」が空の行を届出の開始とみなし、それ以降の行を
+    直前の届出の内訳として紐づける。
+    """
     if len(raw) < 5:
         return pd.DataFrame(), ""
 
     year_month = _wareki_to_seireki(raw.iloc[1, 0])
 
     data = raw.iloc[4:].copy().reset_index(drop=True)
-    if data.shape[1] < 15:
+    if data.shape[1] < 24:
         return pd.DataFrame(), year_month
 
-    data = data.iloc[:, :15].copy()
+    data = data.iloc[:, :24].copy()
     data.columns = [
         "項番", "都道府県コード", "都道府県名", "区分",
         "医療機関番号", "併設医療機関番号", "医療機関記号番号", "医療機関名称",
         "郵便番号", "住所", "電話番号", "FAX番号", "病床数",
-        "受理届出名称", "受理記号",
+        "受理届出名称", "受理記号", "受理番号", "算定開始年月日", "個別有効開始年月日",
+        "備考見出し", "備考データ", "市町村コード", "市町村名", "種別コード", "種別",
     ]
 
     data = data[data["区分"] == "医科"].copy()
@@ -104,20 +135,53 @@ def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
 
     data["都道府県コード"] = data["都道府県コード"].apply(_fmt_pref)
     data["医療機関番号"] = data["医療機関番号"].apply(_fmt_code)
-    data["医療機関名_正規化"] = data["医療機関名称"].apply(_normalize)
-    data["年月"] = year_month
 
-    data = data[
-        data["受理届出名称"].notna()
-        & data["受理届出名称"].ne("")
-        & data["医療機関番号"].ne("")
+    data = data[data["医療機関番号"].ne("")].reset_index(drop=True)
+
+    # 「備考見出し」が空 = 新しい届出の開始行。累積和でグループIDを振る。
+    is_header = data["備考見出し"].isna() | data["備考見出し"].astype(str).str.strip().eq("")
+    data["_group_id"] = is_header.cumsum()
+
+    header_rows = data[is_header].copy()
+    header_rows = header_rows[
+        header_rows["受理届出名称"].notna() & header_rows["受理届出名称"].ne("")
     ]
+
+    detail_rows = data[~is_header]
+
+    # グループごとに 備考見出し→備考データ の辞書を作る
+    details_by_group: dict[int, dict[str, str]] = {}
+    for gid, grp in detail_rows.groupby("_group_id"):
+        d: dict[str, str] = {}
+        others: list[str] = []
+        for _, r in grp.iterrows():
+            label = _normalize_label(r["備考見出し"])
+            value = str(r["備考データ"]).strip() if pd.notna(r["備考データ"]) else ""
+            if not value:
+                continue
+            key = _KNOWN_DETAIL_LABELS.get(label)
+            if key and key not in d:
+                d[key] = value
+            else:
+                others.append(f"{label}:{value}")
+        if others:
+            d["内訳その他"] = "；".join(others)
+        details_by_group[gid] = d
+
+    for col in ["病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他"]:
+        header_rows[col] = header_rows["_group_id"].map(
+            lambda gid: details_by_group.get(gid, {}).get(col, "")
+        )
+
+    header_rows["医療機関名_正規化"] = header_rows["医療機関名称"].apply(_normalize)
+    header_rows["年月"] = year_month
 
     keep = [
         "都道府県コード", "都道府県名", "医療機関番号", "医療機関名称",
-        "医療機関名_正規化", "受理届出名称", "受理記号", "年月",
+        "医療機関名_正規化", "受理届出名称", "受理記号", "受理番号", "算定開始年月日",
+        "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "年月",
     ]
-    return data[keep], year_month
+    return header_rows[keep].reset_index(drop=True), year_month
 
 
 def parse_file(path: str) -> tuple[pd.DataFrame, str]:
