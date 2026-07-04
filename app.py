@@ -84,6 +84,24 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── ブラウザ自動翻訳の抑止 ──────────────────────────────────
+# Chrome等の自動翻訳が日本語ページを誤って再翻訳し、「地域包括ケア」が
+# 「地域含むケア」のように書き換わってしまう事象への対策。
+# st.markdown内の<script>はinnerHTML経由のため実行されないので、
+# components.html（同一オリジンiframe）経由でwindow.parentのDOMを操作する。
+components.html("""
+<script>
+if (!window.parent.document.querySelector('meta[name="google"]')) {
+    const meta = window.parent.document.createElement('meta');
+    meta.name = 'google';
+    meta.content = 'notranslate';
+    window.parent.document.head.appendChild(meta);
+}
+window.parent.document.documentElement.lang = "ja";
+window.parent.document.documentElement.classList.add("notranslate");
+</script>
+""", height=0)
+
 # ── Google Analytics ───────────────────────────────────────
 st.markdown("""
 <!-- Google tag (gtag.js) -->
