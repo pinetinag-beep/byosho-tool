@@ -84,6 +84,24 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── ブラウザ自動翻訳の抑止 ──────────────────────────────────
+# Chrome等の自動翻訳が日本語ページを誤って再翻訳し、「地域包括ケア」が
+# 「地域含むケア」のように書き換わってしまう事象への対策。
+# st.markdown内の<script>はinnerHTML経由のため実行されないので、
+# components.html（同一オリジンiframe）経由でwindow.parentのDOMを操作する。
+components.html("""
+<script>
+if (!window.parent.document.querySelector('meta[name="google"]')) {
+    const meta = window.parent.document.createElement('meta');
+    meta.name = 'google';
+    meta.content = 'notranslate';
+    window.parent.document.head.appendChild(meta);
+}
+window.parent.document.documentElement.lang = "ja";
+window.parent.document.documentElement.classList.add("notranslate");
+</script>
+""", height=0)
+
 # ── Google Analytics ───────────────────────────────────────
 st.markdown("""
 <!-- Google tag (gtag.js) -->
@@ -687,8 +705,13 @@ def _load_shisetsu_kijun():
     if not SHISETSU_KIJUN_PARQUET.exists():
         return None
     df = pd.read_parquet(SHISETSU_KIJUN_PARQUET)
-    # 同一病院×同一届出が複数月分存在するため、検索用途に必要な一意組み合わせに圧縮
-    df = df.drop_duplicates(subset=["都道府県コード", "医療機関番号", "受理届出名称"])
+    # 同一病院×同一届出が複数月分存在するため、検索用途に必要な一意組み合わせに圧縮。
+    # 受理番号も含めるのは、同一届出名称でも病棟ごとに区分（急性期一般入院料１〜６等）
+    # が異なる別registrationのケースがあるため（受理番号がその識別子になる）。
+    _dedup_cols = ["都道府県コード", "医療機関番号", "受理届出名称"]
+    if "受理番号" in df.columns:
+        _dedup_cols.append("受理番号")
+    df = df.drop_duplicates(subset=_dedup_cols)
     for col in ["都道府県コード", "都道府県名", "受理届出名称"]:
         if col in df.columns:
             df[col] = df[col].astype("category")
@@ -3937,8 +3960,9 @@ with tab1:
             st.markdown('<div class="section-header">施設基準届出（診療報酬）</div>', unsafe_allow_html=True)
 
             if not _sk_matched.empty:
+                _sk_detail_cols = [c for c in ["区分", "病棟数", "病床数"] if c in _sk_matched.columns]
                 _sk_items_df = (
-                    _sk_matched[["受理届出名称", "受理記号"]]
+                    _sk_matched[["受理届出名称", "受理記号"] + _sk_detail_cols]
                     .drop_duplicates()
                     .reset_index(drop=True)
                 )
@@ -4085,7 +4109,12 @@ with tab1:
                     for _grp_name, _grp_color, _chips, _grp_rows in _sk_group_results:
                         st.markdown(f"**{_grp_name}**")
                         for _, _r in _grp_rows.iterrows():
-                            st.markdown(f"- {_r['受理届出名称']}")
+                            _kubun = str(_r.get("区分", "")).strip()
+                            _byoto = str(_r.get("病棟数", "")).strip()
+                            _byosho = str(_r.get("病床数", "")).strip()
+                            _detail_parts = [p for p in [_kubun, _byoto, _byosho] if p and p != "nan"]
+                            _detail = f"（{'・'.join(_detail_parts)}）" if _detail_parts else ""
+                            st.markdown(f"- {_r['受理届出名称']}{_detail}")
 
             elif _sk_pref_code and _sk_pref_code in _sk_covered_prefs:
                 # 都道府県データはあるが病院名がマッチしなかった（診療所等は対象外）
