@@ -687,8 +687,13 @@ def _load_shisetsu_kijun():
     if not SHISETSU_KIJUN_PARQUET.exists():
         return None
     df = pd.read_parquet(SHISETSU_KIJUN_PARQUET)
-    # 同一病院×同一届出が複数月分存在するため、検索用途に必要な一意組み合わせに圧縮
-    df = df.drop_duplicates(subset=["都道府県コード", "医療機関番号", "受理届出名称"])
+    # 同一病院×同一届出が複数月分存在するため、検索用途に必要な一意組み合わせに圧縮。
+    # 受理番号も含めるのは、同一届出名称でも病棟ごとに区分（急性期一般入院料１〜６等）
+    # が異なる別registrationのケースがあるため（受理番号がその識別子になる）。
+    _dedup_cols = ["都道府県コード", "医療機関番号", "受理届出名称"]
+    if "受理番号" in df.columns:
+        _dedup_cols.append("受理番号")
+    df = df.drop_duplicates(subset=_dedup_cols)
     for col in ["都道府県コード", "都道府県名", "受理届出名称"]:
         if col in df.columns:
             df[col] = df[col].astype("category")

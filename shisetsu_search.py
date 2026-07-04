@@ -143,7 +143,10 @@ def load_data() -> pd.DataFrame | None:
     if not DATA_PATH.exists():
         return None
     df = pd.read_parquet(DATA_PATH)
-    df = df.drop_duplicates(subset=["都道府県コード", "医療機関番号", "受理届出名称"])
+    dedup_cols = ["都道府県コード", "医療機関番号", "受理届出名称"]
+    if "受理番号" in df.columns:
+        dedup_cols.append("受理番号")
+    df = df.drop_duplicates(subset=dedup_cols)
     return df
 
 
@@ -193,6 +196,12 @@ with tab_kw:
         placeholder="例: ロボット支援下、ハイケアユニット、地域包括ケア",
         key="todokede_kw",
     )
+    kubun_kw = st.text_input(
+        "区分キーワード（部分一致・入院基本料の段階等）",
+        placeholder="例: 急性期一般入院料１、地域一般入院料、療養病棟入院料１",
+        key="kubun_kw",
+        help="一般病棟入院基本料・療養病棟入院基本料などの段階（急性期一般入院料１〜６等）で絞り込みます",
+    )
 
 st.divider()
 
@@ -210,11 +219,14 @@ if hosp_kw.strip():
 
 kw_list = [LABEL_TO_KEYWORD[lb] for lb in selected_labels]
 text_kw = st.session_state.get("todokede_kw", "").strip()
+kubun_kw = st.session_state.get("kubun_kw", "").strip()
 
 if kw_list:
     result = result[result["受理届出名称"].apply(lambda x: any(kw in str(x) for kw in kw_list))]
 if text_kw:
     result = result[result["受理届出名称"].str.contains(text_kw, na=False)]
+if kubun_kw and "区分" in result.columns:
+    result = result[result["区分"].astype(str).str.contains(kubun_kw, na=False)]
 
 # ── 結果表示 ──────────────────────────────────────────────
 n_hosp = result["医療機関番号"].nunique()
@@ -223,7 +235,10 @@ st.markdown(f"### 検索結果： {n_hosp:,} 医療機関 / {len(result):,} 件"
 if result.empty:
     st.info("該当する医療機関が見つかりませんでした。条件を変更してください。")
 else:
-    display_cols = ["都道府県名", "医療機関名称", "受理届出名称", "受理記号", "年月"]
+    display_cols = [
+        "都道府県名", "医療機関名称", "受理届出名称", "区分",
+        "病棟種別", "病棟数", "病床数", "受理記号", "年月",
+    ]
     display_cols = [c for c in display_cols if c in result.columns]
     st.dataframe(
         result[display_cols].sort_values(["都道府県名", "医療機関名称"]),
