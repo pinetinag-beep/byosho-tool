@@ -1185,23 +1185,30 @@ if st.session_state.get("_view_mode") == "region":
 
     st.markdown("## 📋 地域から病院を選ぶ")
 
-    _rg_c1, _rg_c2, _rg_c3 = st.columns(3)
-    with _rg_c1:
-        _rg_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-        _rg_year  = st.selectbox("年度", _rg_years, key="_rg_year")
-    with _rg_c2:
-        _rg_prefs = _sort_prefs(_df_all["都道府県名"].unique())
-        if st.session_state.get("_rg_pref") not in _rg_prefs:
-            st.session_state["_rg_pref"] = _rg_prefs[0] if _rg_prefs else None
-        _rg_pref = st.selectbox("都道府県", _rg_prefs, key="_rg_pref")
-    with _rg_c3:
-        _rg_regions = sorted(
-            r for r in _df_all[_df_all["都道府県名"] == _rg_pref]["二次医療圏名"].unique()
-            if r != "不明"
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.78rem;font-weight:700;color:#2563eb;"
+            "letter-spacing:.03em;margin-bottom:10px;'>"
+            "①年度 → ②都道府県 → ③二次医療圏 の順に絞り込んでください</div>",
+            unsafe_allow_html=True,
         )
-        if st.session_state.get("_rg_region") not in _rg_regions:
-            st.session_state["_rg_region"] = _rg_regions[0] if _rg_regions else None
-        _rg_region = st.selectbox("二次医療圏", _rg_regions, key="_rg_region")
+        _rg_c1, _rg_c2, _rg_c3 = st.columns(3)
+        with _rg_c1:
+            _rg_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
+            _rg_year  = st.selectbox("📅 年度", _rg_years, key="_rg_year")
+        with _rg_c2:
+            _rg_prefs = _sort_prefs(_df_all["都道府県名"].unique())
+            if st.session_state.get("_rg_pref") not in _rg_prefs:
+                st.session_state["_rg_pref"] = _rg_prefs[0] if _rg_prefs else None
+            _rg_pref = st.selectbox("🗾 都道府県", _rg_prefs, key="_rg_pref")
+        with _rg_c3:
+            _rg_regions = sorted(
+                r for r in _df_all[_df_all["都道府県名"] == _rg_pref]["二次医療圏名"].unique()
+                if r != "不明"
+            )
+            if st.session_state.get("_rg_region") not in _rg_regions:
+                st.session_state["_rg_region"] = _rg_regions[0] if _rg_regions else None
+            _rg_region = st.selectbox("🏘️ 二次医療圏", _rg_regions, key="_rg_region")
 
     st.markdown("---")
 
