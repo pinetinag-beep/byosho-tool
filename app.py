@@ -372,6 +372,12 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 .landing-group-title { font-size: 1.05rem; font-weight: 800; color: #111827; margin: 0 0 4px; }
 .landing-group-desc  { font-size: 0.82rem; color: #6b7280; margin: 0 0 14px; }
 
+/* ── 「地域から選ぶ」の絞り込みボックス（青系で操作パネルを強調） ── */
+.st-key-rg_filter_box {
+    border-color: #93c5fd !important;
+    background: #eff6ff !important;
+}
+
 /* ── 検索バー（ホーム画面） ── */
 .home-search-wrap input {
     font-size: 1.05rem !important;
@@ -1185,9 +1191,9 @@ if st.session_state.get("_view_mode") == "region":
 
     st.markdown("## 📋 地域から病院を選ぶ")
 
-    with st.container(border=True):
+    with st.container(border=True, key="rg_filter_box"):
         st.markdown(
-            "<div style='font-size:0.78rem;font-weight:700;color:#2563eb;"
+            "<div style='font-size:0.78rem;font-weight:700;color:#1d4ed8;"
             "letter-spacing:.03em;margin-bottom:10px;'>"
             "①年度 → ②都道府県 → ③二次医療圏 の順に絞り込んでください</div>",
             unsafe_allow_html=True,
