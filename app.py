@@ -2041,18 +2041,29 @@ div[data-testid="stTabPanel"] {
                         label_visibility="visible",
                     )
                     _s_kijun_sel.extend(_sel)
-                    # 選んだ届出名称に区分の選択肢があれば、その場ですぐ下に表示する
+                    # 選んだ届出名称に区分の選択肢があれば、その場ですぐ下に「派生条件」
+                    # として視覚的に分かるボックス（枠線＋アイコン＋補足文）で表示する。
+                    # 周囲の選択肢グループと同じ見た目だと出現に気づかれないため、
+                    # st.container(border=True) で明確に区別する。
                     for _sel_label in _sel:
                         _kopts = _NYUIN_KUBUN_OPTIONS.get(_sel_label)
                         if _kopts:
-                            _ksel = st.multiselect(
-                                f"→ 「{_sel_label}」の区分で絞り込む（任意）",
-                                options=_kopts,
-                                key=f"s_kubun_{_sel_label}",
-                                placeholder="指定なし（すべて含む）",
-                                help="病床機能報告データから直接絞り込みます",
-                            )
-                            _s_kubun_sel.extend(_ksel)
+                            with st.container(border=True):
+                                st.markdown(
+                                    f"<div style='font-size:0.82rem;font-weight:600;"
+                                    f"color:#b45309;margin-bottom:4px;'>"
+                                    f"🔎 「{_sel_label}」を選択中 → さらに区分で絞り込めます</div>",
+                                    unsafe_allow_html=True,
+                                )
+                                _ksel = st.multiselect(
+                                    "区分（任意）",
+                                    options=_kopts,
+                                    key=f"s_kubun_{_sel_label}",
+                                    placeholder="指定なし（すべて含む）",
+                                    help="病床機能報告データから直接絞り込みます",
+                                    label_visibility="collapsed",
+                                )
+                                _s_kubun_sel.extend(_ksel)
 
             st.markdown("---")
             _s_kijun_kw_text = st.text_input(
