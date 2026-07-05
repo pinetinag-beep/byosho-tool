@@ -2030,10 +2030,40 @@ div[data-testid="stTabPanel"] {
                 key="s_kijun_kw_text",
                 help="受理届出名称に含まれる語句で検索（1フィールド・完全部分一致）",
             )
+
+            st.markdown("---")
+            st.markdown(
+                "##### 入院基本料の区分で絞り込む"
+                "<span style='color:#6b7280;font-size:0.8rem;margin-left:8px;'>"
+                "（病床機能報告データ。地方厚生局によっては届出名称のみで区分が"
+                "無い場合があるため、病床機能報告から直接絞り込みます）</span>",
+                unsafe_allow_html=True,
+            )
+            _NYUIN_KUBUN_OPTIONS = {
+                "一般病棟": [
+                    "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
+                    "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
+                    "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
+                    "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
+                ],
+                "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
+                "障害者施設等": [
+                    "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
+                    "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
+                    "障害者施設等特定入院基本料",
+                ],
+            }
+            _kc1, _kc2, _kc3 = st.columns(3)
+            _s_kubun_sel: list[str] = []
+            for _kcol, (_kname, _kopts) in zip([_kc1, _kc2, _kc3], _NYUIN_KUBUN_OPTIONS.items()):
+                with _kcol:
+                    _ksel = st.multiselect(_kname, options=_kopts, key=f"s_kubun_{_kname}", placeholder="選択…")
+                    _s_kubun_sel.extend(_ksel)
         else:
             _sk_label_to_kw   = {}
             _s_kijun_sel      = []
             _s_kijun_kw_text  = ""
+            _s_kubun_sel      = []
 
     # ── フィルタリング処理 ──
     s_df = df[df["報告年度"] == s_year].copy()
@@ -2070,6 +2100,18 @@ div[data-testid="stTabPanel"] {
             _names = _sk_matched_set[_c]
             return _n in _names or any(sn.endswith(_n) for sn in _names)
         s_df = s_df[s_df.apply(_in_sk, axis=1)]
+
+    # 入院基本料の区分フィルター（病床機能報告データから絞り込み。届出名称のみで
+    # 区分を公表しない地方厚生局があるため、こちらは全国データで確実に絞り込める）
+    if _s_kubun_sel:
+        _ward_df_kubun = st.session_state.get("ward_df")
+        if _ward_df_kubun is not None and not _ward_df_kubun.empty:
+            _kubun_matched = _ward_df_kubun[
+                (_ward_df_kubun["入院基本料"].isin(_s_kubun_sel))
+                & (_ward_df_kubun["報告年度"] == s_year)
+            ]
+            _kubun_hosp_names = set(_kubun_matched["医療機関名"].unique())
+            s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
 
     # 手術データをマージ
     _ORGAN_LABELS = [
