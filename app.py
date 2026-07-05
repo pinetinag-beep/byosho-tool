@@ -2008,9 +2008,28 @@ div[data-testid="stTabPanel"] {
             ]
             _sk_label_to_kw = {lb: kw for _, items in _SK_SEARCH_GROUPS for lb, kw in items}
 
+            # 「一般病棟入院基本料」等を選んだ直後に区分（急性期一般入院料１〜等）を
+            # 追加で絞り込めるようにする。地方厚生局によっては届出名称のみで区分を
+            # 公表していないため、選択時は病床機能報告データを直接参照して絞り込む。
+            _NYUIN_KUBUN_OPTIONS = {
+                "一般病棟入院基本料": [
+                    "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
+                    "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
+                    "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
+                    "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
+                ],
+                "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
+                "障害者施設等病棟": [
+                    "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
+                    "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
+                    "障害者施設等特定入院基本料",
+                ],
+            }
+
             # 2列でグループ表示
             _kg1, _kg2 = st.columns(2)
             _s_kijun_sel: list[str] = []
+            _s_kubun_sel: list[str] = []
             for _gi, (_grp_name, _grp_items) in enumerate(_SK_SEARCH_GROUPS):
                 _col = _kg1 if _gi % 2 == 0 else _kg2
                 with _col:
@@ -2022,6 +2041,18 @@ div[data-testid="stTabPanel"] {
                         label_visibility="visible",
                     )
                     _s_kijun_sel.extend(_sel)
+                    # 選んだ届出名称に区分の選択肢があれば、その場ですぐ下に表示する
+                    for _sel_label in _sel:
+                        _kopts = _NYUIN_KUBUN_OPTIONS.get(_sel_label)
+                        if _kopts:
+                            _ksel = st.multiselect(
+                                f"→ 「{_sel_label}」の区分で絞り込む（任意）",
+                                options=_kopts,
+                                key=f"s_kubun_{_sel_label}",
+                                placeholder="指定なし（すべて含む）",
+                                help="病床機能報告データから直接絞り込みます",
+                            )
+                            _s_kubun_sel.extend(_ksel)
 
             st.markdown("---")
             _s_kijun_kw_text = st.text_input(
@@ -2030,35 +2061,6 @@ div[data-testid="stTabPanel"] {
                 key="s_kijun_kw_text",
                 help="受理届出名称に含まれる語句で検索（1フィールド・完全部分一致）",
             )
-
-            st.markdown("---")
-            st.markdown(
-                "##### 入院基本料の区分で絞り込む"
-                "<span style='color:#6b7280;font-size:0.8rem;margin-left:8px;'>"
-                "（病床機能報告データ。地方厚生局によっては届出名称のみで区分が"
-                "無い場合があるため、病床機能報告から直接絞り込みます）</span>",
-                unsafe_allow_html=True,
-            )
-            _NYUIN_KUBUN_OPTIONS = {
-                "一般病棟": [
-                    "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
-                    "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
-                    "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
-                    "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
-                ],
-                "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
-                "障害者施設等": [
-                    "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
-                    "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
-                    "障害者施設等特定入院基本料",
-                ],
-            }
-            _kc1, _kc2, _kc3 = st.columns(3)
-            _s_kubun_sel: list[str] = []
-            for _kcol, (_kname, _kopts) in zip([_kc1, _kc2, _kc3], _NYUIN_KUBUN_OPTIONS.items()):
-                with _kcol:
-                    _ksel = st.multiselect(_kname, options=_kopts, key=f"s_kubun_{_kname}", placeholder="選択…")
-                    _s_kubun_sel.extend(_ksel)
         else:
             _sk_label_to_kw   = {}
             _s_kijun_sel      = []
