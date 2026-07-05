@@ -1216,7 +1216,8 @@ if st.session_state.get("_view_mode") == "region":
                 st.session_state["_rg_region"] = _rg_regions[0] if _rg_regions else None
             _rg_region = st.selectbox("🏘️ 二次医療圏", _rg_regions, key="_rg_region")
 
-    st.markdown("---")
+    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🏥 検索結果</div>', unsafe_allow_html=True)
 
     # 病院一覧
     _rg_extra_cols = ["医療機関名", "合計_許可病床数"]
@@ -1236,7 +1237,7 @@ if st.session_state.get("_view_mode") == "region":
     if _rg_list.empty:
         st.info("この年度・地域のデータがありません")
     else:
-        st.markdown(f"**{_rg_region}　{len(_rg_list)}院**")
+        st.caption(f"{_rg_region}　**{len(_rg_list)}院** が該当")
         _rg_cols = st.columns(3)
         for _ri, _rrow in enumerate(_rg_list.itertuples(index=False)):
             _rname = _rg_list.iloc[_ri]["医療機関名"]
