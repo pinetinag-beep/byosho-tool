@@ -22,7 +22,9 @@ from build_shisetsu_kijun import _normalize
 # 項番が医療機関番号の直前にスペースなしで連結される（例:"13901,1802,6"=項番139+
 # 医療機関番号01,1802,6）ため、行頭からではなく末尾から医療機関番号部分を検索する。
 KIKAN_BANGO_ANCHOR_RE = re.compile(r'(\d{2})[,・-](\d{3,5})[,・-](\d{1,2})$')
-CONFIRM_RE = re.compile(r'^（(?P<label>.+?)）第(?P<num>\d+)号')
+# 病床数列の値（数字）が確定行のテキストに結合されることがある
+# （例:"378（医療ＤＸ）第494号"）ため、^アンカーは付けずsearchで検出する。
+CONFIRM_RE = re.compile(r'（(?P<label>.+?)）第(?P<num>\d+)号')
 DETAIL_KV_RE = re.compile(r'^(?P<label>[^:：]+)[:：](?P<value>.*)$')
 
 PREF_NAME_TO_CODE = {
@@ -182,7 +184,7 @@ def parse_pdf(path: str, kigou_map: dict, pref_name_hint: str = "") -> tuple[pd.
             # 受理番号確定行ごとに、次の確定行が現れるまでの備考行を集める
             confirm_entries = []  # (doctop, kigou, num)
             for dtop_, text in jb_lines:
-                m = CONFIRM_RE.match(text)
+                m = CONFIRM_RE.search(text)
                 if m:
                     confirm_entries.append((dtop_, m.group("label"), m.group("num")))
 
