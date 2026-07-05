@@ -3966,6 +3966,44 @@ with tab1:
                     .drop_duplicates()
                     .reset_index(drop=True)
                 )
+
+                # 施設基準届出（地方厚生局）は厚生局によって区分（急性期一般入院料等の
+                # 段階）を公表していない場合がある。病床機能報告は病床を持つ医療機関が
+                # 毎年義務的に報告する全国統一フォーマットのため、一般病棟・療養病棟・
+                # 障害者施設等の区分はここから確実に補完できる（精神病棟・有床診療所・
+                # 結核病棟は病床機能報告の対象外のため対象外）。
+                if "区分" in _sk_items_df.columns:
+                    _SK_NYUIN_KEYWORD_MAP = {
+                        "一般病棟入院基本料": [
+                            "急性期一般入院料", "地域一般入院料", "一般病棟特別入院基本料",
+                            "特定機能病院一般病棟", "専門病院", "特定一般病棟入院料",
+                        ],
+                        "療養病棟入院基本料": ["療養病棟入院料", "療養病棟特別入院基本料"],
+                        "障害者施設等入院基本料": ["障害者施設等"],
+                    }
+                    _ward_df_all = st.session_state.get("ward_df")
+                    if _ward_df_all is not None and not _ward_df_all.empty:
+                        _hosp_wards = _ward_df_all[
+                            (_ward_df_all["医療機関名"] == hospital)
+                            & (_ward_df_all["報告年度"] == year)
+                        ]
+                        _hosp_wards_kubun: dict[str, str] = {}
+                        for _sk_name, _kw_list in _SK_NYUIN_KEYWORD_MAP.items():
+                            _matched_wards = _hosp_wards[
+                                _hosp_wards["入院基本料"].apply(
+                                    lambda x: any(kw in str(x) for kw in _kw_list)
+                                )
+                            ]
+                            _vals = [v for v in _matched_wards["入院基本料"].dropna().unique() if v != "-"]
+                            if _vals:
+                                _hosp_wards_kubun[_sk_name] = "・".join(sorted(_vals))
+
+                        if _hosp_wards_kubun:
+                            def _fill_kubun(row):
+                                if str(row["区分"]).strip():
+                                    return row["区分"]
+                                return _hosp_wards_kubun.get(row["受理届出名称"], row["区分"])
+                            _sk_items_df["区分"] = _sk_items_df.apply(_fill_kubun, axis=1)
                 _sk_ym = _sk_matched["年月"].iloc[0] if "年月" in _sk_matched.columns else ""
                 if _sk_ym:
                     st.caption(f"出典：診療報酬 施設基準届出情報（{_sk_ym} 現在）")
