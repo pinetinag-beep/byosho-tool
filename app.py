@@ -3787,13 +3787,28 @@ _tab_labels = [
     "📊 病院概要",
     "🗺️ 地図",
     "🏆 地域比較",
-    "📋 ランキング",
+    "🏅 ランキング",
     "📈 経年トレンド",
     "👨‍⚕️ スタッフ分析",
-    "📋 詳細分析",
+    "🛏️ 病床・手術分析",
 ]
 if _is_dpc:
     _tab_labels.append("🏥 DPC分析")
+
+# 各タブに何が入っているか一目でわかるよう、タブを描画する直前に簡潔な案内を表示する
+# （st.tabs自体はラベルしか見えず中身は開くまで分からない上、タブ内部で出力すると
+#  そのタブの一番下＝スクロールした先にしか表示されず発見の助けにならないため、
+#  タブバーより上に置く）
+st.caption(
+    "💡 **タブの中身**　"
+    "📊病院概要: 基本情報・DPC上位疾患・医療設備・施設基準届出（区分含む）　"
+    "🗺️地図: 所在地・移動時間　"
+    "🏆地域比較: 医療圏内での位置づけ　"
+    "🏅ランキング: 指標別の順位　"
+    "📈経年トレンド: 年度ごとの推移　"
+    "👨‍⚕️スタッフ分析: 職種別の配置状況　"
+    "🛏️病床・手術分析: 入院基本料別病床数・在宅復帰率・手術実績"
+)
 
 _all_tabs = st.tabs(_tab_labels)
 tab1, tab7, tab2, tab3, tab4, tab5, tab6 = _all_tabs[:7]
@@ -4197,6 +4212,24 @@ with tab1:
                             unsafe_allow_html=True,
                         )
 
+                # 入院基本料の区分（急性期一般入院料１等）はカード内のチップ表記
+                # （受理記号のみ）では見えないため、常時表示のバッジで明示する
+                # （折りたたみ式の「全一覧」の中に埋もれて発見されないのを防ぐ）
+                _sk_kubun_values = sorted({
+                    v for v in _sk_items_df.get("区分", pd.Series(dtype=str)).astype(str)
+                    if v.strip() and v.strip() != "nan"
+                })
+                if _sk_kubun_values:
+                    st.markdown(
+                        '<div style="background:#134e2e33;border:1px solid #22c55e55;'
+                        'border-radius:8px;padding:8px 12px;margin:4px 0 10px 0;">'
+                        '<span style="color:#22c55e;font-weight:700;font-size:0.72rem;">'
+                        '🛏️ 入院基本料の区分：</span> '
+                        f'<span style="font-size:0.85rem;">{"・".join(_sk_kubun_values)}</span>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+
                 # フル一覧（エキスパンダー）
                 with st.expander(f"届出項目 全一覧（{len(_sk_items_df)}件）"):
                     for _grp_name, _grp_color, _chips, _grp_rows in _sk_group_results:
@@ -4475,7 +4508,7 @@ with tab5:
                     )
 
 
-# ── TAB 6: 詳細分析 ────────────────────────────────────────
+# ── TAB 6: 病床・手術分析 ──────────────────────────────────
 
 with tab6:
     ward_df = st.session_state.ward_df
