@@ -368,6 +368,10 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 .method-card .mc-title { font-size: 0.95rem; font-weight: 700; color: #111827; margin-bottom: 7px; }
 .method-card .mc-desc  { font-size: 0.79rem; color: #6b7280; line-height: 1.65; }
 
+/* ── ランディングのグループ見出し（目的別） ── */
+.landing-group-title { font-size: 1.05rem; font-weight: 800; color: #111827; margin: 0 0 4px; }
+.landing-group-desc  { font-size: 0.82rem; color: #6b7280; margin: 0 0 14px; }
+
 /* ── 検索バー（ホーム画面） ── */
 .home-search-wrap input {
     font-size: 1.05rem !important;
@@ -1058,7 +1062,7 @@ if st.session_state.get("_view_mode") == "home":
         unsafe_allow_html=True,
     )
 
-    # ── 検索メソッドカード（2行 × 3列）────────────────────────
+    # ── 検索メソッドカード（「何がしたいか」で3グループに分類）──
     def _method_card(icon, title, desc):
         return (
             f"<div class='method-card'>"
@@ -1068,6 +1072,15 @@ if st.session_state.get("_view_mode") == "home":
             f"</div>"
         )
 
+    def _landing_group_header(title, desc):
+        st.markdown(
+            f"<div class='landing-group-title'>{title}</div>"
+            f"<div class='landing-group-desc'>{desc}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # グループ1: 特定の病院を調べる ──────────────────────────
+    _landing_group_header("🔍 特定の病院を調べる", "病院名・地域・地図から、個別の病院ページを開きます")
     _mc1, _mc2, _mc3 = st.columns(3, gap="medium")
     with _mc1:
         st.markdown(_method_card("🔍", "病院名で探す",
@@ -1110,6 +1123,8 @@ if st.session_state.get("_view_mode") == "home":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # グループ2: 条件で絞り込む ──────────────────────────────
+    _landing_group_header("🎯 条件で絞り込む", "距離・設備・疾患などの条件で、全国の病院を横断的に絞り込みます")
     _mc4, _mc5, _mc6 = st.columns(3, gap="medium")
     with _mc4:
         st.markdown(_method_card("📍", "距離・所要時間で探す",
@@ -1124,21 +1139,24 @@ if st.session_state.get("_view_mode") == "home":
             st.session_state["_view_mode"] = "search"
             st.rerun()
     with _mc6:
-        st.markdown(_method_card("🏛️", "地域医療構想を分析",
-            "二次医療圏ごとの急性期拠点・<br>機能分担をスコアリングします"), unsafe_allow_html=True)
-        if st.button("地域医療構想を見る →", use_container_width=True, key="_lnd_vision_go"):
-            st.session_state["_view_mode"] = "region_vision"
-            st.rerun()
-
-    if DPC_PARQUET_SURG.exists():
-        st.markdown("<br>", unsafe_allow_html=True)
-        _mc7, _mc8, _mc9 = st.columns(3, gap="medium")
-        with _mc7:
+        if DPC_PARQUET_SURG.exists():
             st.markdown(_method_card("🏥", "DPC疾患別 病院検索",
                 "手術件数・在院日数を疾患ごとに<br>全国・都道府県・二次医療圏で比較"), unsafe_allow_html=True)
             if st.button("DPC疾患別で探す →", use_container_width=True, key="_lnd_dpc_go"):
                 st.session_state["_view_mode"] = "dpc_search"
                 st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # グループ3: 地域全体を分析する ────────────────────────────
+    _landing_group_header("📊 地域全体を分析する", "二次医療圏単位で、地域医療構想の視点から俯瞰します")
+    _mc7, _mc8, _mc9 = st.columns(3, gap="medium")
+    with _mc7:
+        st.markdown(_method_card("🏛️", "地域医療構想を分析",
+            "二次医療圏ごとの急性期拠点・<br>機能分担をスコアリングします"), unsafe_allow_html=True)
+        if st.button("地域医療構想を見る →", use_container_width=True, key="_lnd_vision_go"):
+            st.session_state["_view_mode"] = "region_vision"
+            st.rerun()
 
     _render_footer()
     st.stop()
