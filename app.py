@@ -372,8 +372,11 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 .landing-group-title { font-size: 1.05rem; font-weight: 800; color: #111827; margin: 0 0 4px; }
 .landing-group-desc  { font-size: 0.82rem; color: #6b7280; margin: 0 0 14px; }
 
-/* ── 「地域から選ぶ」の絞り込みボックス（青系で操作パネルを強調） ── */
-.st-key-rg_filter_box {
+/* ── 絞り込みボックス（青系で操作パネルを強調・全検索ページ共通） ── */
+.st-key-rg_filter_box,
+.st-key-ms_filter_box,
+.st-key-dist_filter_box,
+.st-key-rv_filter_box {
     border-color: #93c5fd !important;
     background: #eff6ff !important;
 }
@@ -1305,37 +1308,38 @@ if st.session_state.get("_view_mode") == "map":
         if not _ms_has_db and not _ms_has_loc:
             st.warning("地図機能は公式座標データ（locations_cache.parquet）またはDuckDBがある場合のみ利用できます。")
         else:
-            _ms_c1, _ms_c2, _ms_c3 = st.columns(3)
-            with _ms_c1:
-                _ms_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
-                if st.session_state.get("_ms_pref") not in _ms_all_prefs:
-                    st.session_state["_ms_pref"] = _ms_all_prefs[0] if _ms_all_prefs else None
-                _ms_pref = st.selectbox("都道府県", _ms_all_prefs, key="_ms_pref")
-            with _ms_c2:
-                _ms_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-                _ms_year = st.selectbox("年度", _ms_years, key="_ms_year")
-            with _ms_c3:
-                _ms_scope = st.radio("表示範囲", ["都道府県全体", "二次医療圏を絞る"], horizontal=True, key="_ms_scope")
+            with st.container(border=True, key="ms_filter_box"):
+                _ms_c1, _ms_c2, _ms_c3 = st.columns(3)
+                with _ms_c1:
+                    _ms_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
+                    if st.session_state.get("_ms_pref") not in _ms_all_prefs:
+                        st.session_state["_ms_pref"] = _ms_all_prefs[0] if _ms_all_prefs else None
+                    _ms_pref = st.selectbox("🗾 都道府県", _ms_all_prefs, key="_ms_pref")
+                with _ms_c2:
+                    _ms_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
+                    _ms_year = st.selectbox("📅 年度", _ms_years, key="_ms_year")
+                with _ms_c3:
+                    _ms_scope = st.radio("表示範囲", ["都道府県全体", "二次医療圏を絞る"], horizontal=True, key="_ms_scope")
 
-            _ms_regions = sorted(
-                r for r in _df_all[_df_all["都道府県名"] == _ms_pref]["二次医療圏名"].unique()
-                if r != "不明"
-            )
-            if _ms_scope == "二次医療圏を絞る" and _ms_regions:
-                if st.session_state.get("_ms_region") not in _ms_regions:
-                    st.session_state["_ms_region"] = _ms_regions[0]
-                _ms_region = st.selectbox("二次医療圏", _ms_regions, key="_ms_region")
-                _ms_df = _df_all[
-                    (_df_all["都道府県名"] == _ms_pref) &
-                    (_df_all["二次医療圏名"] == _ms_region) &
-                    (_df_all["報告年度"] == _ms_year)
-                ].copy()
-            else:
-                _ms_region = None
-                _ms_df = _df_all[
-                    (_df_all["都道府県名"] == _ms_pref) &
-                    (_df_all["報告年度"] == _ms_year)
-                ].copy()
+                _ms_regions = sorted(
+                    r for r in _df_all[_df_all["都道府県名"] == _ms_pref]["二次医療圏名"].unique()
+                    if r != "不明"
+                )
+                if _ms_scope == "二次医療圏を絞る" and _ms_regions:
+                    if st.session_state.get("_ms_region") not in _ms_regions:
+                        st.session_state["_ms_region"] = _ms_regions[0]
+                    _ms_region = st.selectbox("🏘️ 二次医療圏", _ms_regions, key="_ms_region")
+                    _ms_df = _df_all[
+                        (_df_all["都道府県名"] == _ms_pref) &
+                        (_df_all["二次医療圏名"] == _ms_region) &
+                        (_df_all["報告年度"] == _ms_year)
+                    ].copy()
+                else:
+                    _ms_region = None
+                    _ms_df = _df_all[
+                        (_df_all["都道府県名"] == _ms_pref) &
+                        (_df_all["報告年度"] == _ms_year)
+                    ].copy()
 
             # 座標読み込み
             _ms_pref_code = _PREF_ORDER.get(_ms_pref, _ms_pref)
@@ -1362,7 +1366,9 @@ if st.session_state.get("_view_mode") == "map":
             _ms_df["lon"] = _ms_df["医療機関名"].map(lambda n: _ms_lookup(n)[1])
             _ms_valid = _ms_df.dropna(subset=["lat", "lon"])
 
-            st.markdown(f"**{_ms_pref}{'　' + _ms_region if _ms_region else ''}（{_ms_year}年度）— {len(_ms_df):,}病院 / 座標あり {len(_ms_valid):,}病院**")
+            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="section-header">🗺️ 検索結果</div>', unsafe_allow_html=True)
+            st.caption(f"{_ms_pref}{'　' + _ms_region if _ms_region else ''}（{_ms_year}年度）— **{len(_ms_df):,}病院** / 座標あり {len(_ms_valid):,}病院")
 
             if _ms_valid.empty:
                 st.info("表示できる病院がありません。座標データが必要です。")
@@ -1453,19 +1459,20 @@ if st.session_state.get("_view_mode") == "distance":
 
     st.markdown("## 📍 距離・所要時間で病院を探す")
 
-    _dist_addr = st.text_input(
-        "出発地（住所・ランドマーク）",
-        placeholder="例: 東京都新宿区西新宿2丁目8",
-        key="_dist_addr",
-    )
+    with st.container(border=True, key="dist_filter_box"):
+        _dist_addr = st.text_input(
+            "📍 出発地（住所・ランドマーク）",
+            placeholder="例: 東京都新宿区西新宿2丁目8",
+            key="_dist_addr",
+        )
 
-    _dist_c1, _dist_c2 = st.columns([2, 4])
-    with _dist_c1:
-        _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
-            key="_dist_max")
-    with _dist_c2:
-        _dist_mode = st.radio("移動手段", ["🚗 車", "🚌 電車・バス"],
-            horizontal=True, key="_dist_mode")
+        _dist_c1, _dist_c2 = st.columns([2, 4])
+        with _dist_c1:
+            _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
+                key="_dist_max")
+        with _dist_c2:
+            _dist_mode = st.radio("移動手段", ["🚗 車", "🚌 電車・バス"],
+                horizontal=True, key="_dist_mode")
 
     _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
     _dist_year  = _dist_years[0]
@@ -1690,9 +1697,11 @@ if st.session_state.get("_view_mode") == "distance":
                         )
                         _dist_result.index += 1
 
+                        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                        st.markdown('<div class="section-header">🏥 検索結果</div>', unsafe_allow_html=True)
                         if _transit_note:
                             st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
-                        st.markdown(f"**{len(_dist_result):,}病院が {_dist_max}分以内 — 出発地: {_dist_addr}**")
+                        st.caption(f"**{len(_dist_result):,}病院** が {_dist_max}分以内 — 出発地: {_dist_addr}")
                         _dist_col_cfg = {
                             "直線距離(km)":         st.column_config.NumberColumn("直線距離",     format="%.1f km"),
                             "所要時間(分)":         st.column_config.NumberColumn("所要時間",     format="%.1f 分"),
@@ -1757,10 +1766,10 @@ if st.session_state.get("_view_mode") == "search":
     _sa, _sb, _sc = st.columns([1, 2, 2])
     with _sa:
         s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-        s_year = st.selectbox("年度", s_years_list, key="s_year")
+        s_year = st.selectbox("📅 年度", s_years_list, key="s_year")
     with _sb:
         s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-        s_pref = st.selectbox("都道府県", s_all_prefs, key="s_pref")
+        s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
     with _sc:
         if s_pref != "全都道府県":
             s_all_regions = ["全二次医療圏"] + sorted(
@@ -1771,7 +1780,7 @@ if st.session_state.get("_view_mode") == "search":
             s_all_regions = ["全二次医療圏"]
         if st.session_state.get("s_region") not in s_all_regions:
             st.session_state["s_region"] = "全二次医療圏"
-        s_region = st.selectbox("二次医療圏", s_all_regions, key="s_region")
+        s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
     s_kw = st.text_input(
         "病院名キーワード",
         placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
@@ -2439,6 +2448,14 @@ div[data-testid="stTabPanel"] {
         result_s = result_s.sort_values("所要時間(分)").reset_index(drop=True)
 
     # ── 結果表示 ──
+    st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='border-left:4px solid #10b981;padding:8px 14px;background:#ecfdf5;"
+        "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
+        "<span style='font-weight:700;font-size:1rem;color:#065f46;'>③ 検索結果</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
 
     _col_cfg = {
@@ -2503,30 +2520,31 @@ if st.session_state.get("_view_mode") == "region_vision":
     import plotly.graph_objects as _go_rv
 
     # セレクター UI（サイドバー廃止により、メインエリアに移動）
-    _rv_sel_c1, _rv_sel_c2, _rv_sel_c3, _rv_sel_c4 = st.columns([2, 2, 3, 2])
-    with _rv_sel_c1:
-        _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-        if st.session_state.get("_rv_sel_year") not in _rv_years_list:
-            st.session_state["_rv_sel_year"] = _rv_years_list[0] if _rv_years_list else 2023
-        _rv_year = st.selectbox("分析年度", _rv_years_list, key="_rv_sel_year")
-    with _rv_sel_c2:
-        _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
-        if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
-            st.session_state["_rv_sel_pref"] = _rv_all_prefs[0] if _rv_all_prefs else None
-        _rv_pref = st.selectbox("都道府県", _rv_all_prefs, key="_rv_sel_pref")
-    with _rv_sel_c3:
-        _rv_regions_list = sorted(
-            r for r in _df_all[_df_all["都道府県名"] == _rv_pref]["二次医療圏名"].unique()
-            if r != "不明"
-        )
-        if st.session_state.get("_rv_sel_region") not in _rv_regions_list:
-            st.session_state["_rv_sel_region"] = _rv_regions_list[0] if _rv_regions_list else None
-        _rv_region = st.selectbox("二次医療圏", _rv_regions_list, key="_rv_sel_region")
-    with _rv_sel_c4:
-        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        if st.button("← ホームに戻る", key="_rv_back_btn", use_container_width=True):
-            st.session_state["_view_mode"] = "home"
-            st.rerun()
+    with st.container(border=True, key="rv_filter_box"):
+        _rv_sel_c1, _rv_sel_c2, _rv_sel_c3, _rv_sel_c4 = st.columns([2, 2, 3, 2])
+        with _rv_sel_c1:
+            _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
+            if st.session_state.get("_rv_sel_year") not in _rv_years_list:
+                st.session_state["_rv_sel_year"] = _rv_years_list[0] if _rv_years_list else 2023
+            _rv_year = st.selectbox("📅 分析年度", _rv_years_list, key="_rv_sel_year")
+        with _rv_sel_c2:
+            _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
+            if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
+                st.session_state["_rv_sel_pref"] = _rv_all_prefs[0] if _rv_all_prefs else None
+            _rv_pref = st.selectbox("🗾 都道府県", _rv_all_prefs, key="_rv_sel_pref")
+        with _rv_sel_c3:
+            _rv_regions_list = sorted(
+                r for r in _df_all[_df_all["都道府県名"] == _rv_pref]["二次医療圏名"].unique()
+                if r != "不明"
+            )
+            if st.session_state.get("_rv_sel_region") not in _rv_regions_list:
+                st.session_state["_rv_sel_region"] = _rv_regions_list[0] if _rv_regions_list else None
+            _rv_region = st.selectbox("🏘️ 二次医療圏", _rv_regions_list, key="_rv_sel_region")
+        with _rv_sel_c4:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if st.button("← ホームに戻る", key="_rv_back_btn", use_container_width=True):
+                st.session_state["_view_mode"] = "home"
+                st.rerun()
 
     # ── ヘッダー
     st.markdown(f"## 🗺️ {_rv_region} 地域医療構想分析")
