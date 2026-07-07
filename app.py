@@ -4128,6 +4128,21 @@ with tab1:
                 if _sk_ym:
                     st.caption(f"出典：診療報酬 施設基準届出情報（{_sk_ym} 現在）")
 
+                # 施設種別（病院／有床診療所／無床診療所）バッジ。入院基本料の届出
+                # パターンから判定した値（build_shisetsu_kijun.py の _classify_facility_types）。
+                if "施設種別" in _sk_matched.columns:
+                    _sk_fac_type = _sk_matched["施設種別"].iloc[0]
+                    _sk_fac_color = {
+                        "病院": "#3b82f6", "有床診療所": "#f59e0b", "無床診療所": "#6b7280",
+                    }.get(_sk_fac_type, "#6b7280")
+                    st.markdown(
+                        f'<span style="display:inline-block;background:{_sk_fac_color}22;'
+                        f'color:{_sk_fac_color};border:1px solid {_sk_fac_color}55;'
+                        f'border-radius:10px;padding:3px 10px;font-size:0.78rem;font-weight:700;'
+                        f'margin-bottom:8px;">🏷️ {_sk_fac_type}</span>',
+                        unsafe_allow_html=True,
+                    )
+
                 _SK_GROUPS_DEF = [
                     ("病床・入院体制", "#3498db", [
                         "入院基本料", "入院時食事療養",
