@@ -376,7 +376,8 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
 .st-key-rg_filter_box,
 .st-key-ms_filter_box,
 .st-key-dist_filter_box,
-.st-key-rv_filter_box {
+.st-key-rv_filter_box,
+.st-key-cs_filter_box {
     border-color: #93c5fd !important;
     background: #eff6ff !important;
 }
@@ -1155,6 +1156,16 @@ if st.session_state.get("_view_mode") == "home":
                 st.session_state["_view_mode"] = "dpc_search"
                 st.rerun()
 
+    if SHISETSU_KIJUN_PARQUET.exists():
+        st.markdown("<br>", unsafe_allow_html=True)
+        _mc10, _mc11, _mc12 = st.columns(3, gap="medium")
+        with _mc10:
+            st.markdown(_method_card("🩺", "診療所を探す",
+                "有床・無床診療所を含め、<br>施設基準届出データから直接検索します"), unsafe_allow_html=True)
+            if st.button("診療所を探す →", use_container_width=True, key="_lnd_clinic_go"):
+                st.session_state["_view_mode"] = "clinic_search"
+                st.rerun()
+
     st.markdown("<br>", unsafe_allow_html=True)
 
     # グループ3: 地域全体を分析する ────────────────────────────
@@ -1739,6 +1750,114 @@ if st.session_state.get("_view_mode") == "distance":
                                             "hospital": _dname,
                                         }
                                         st.rerun()
+
+    _render_footer()
+    st.stop()
+
+
+# ══════════════════════════════════════════════════════════
+# 診療所検索モード（施設基準届出データを直接検索）
+# ══════════════════════════════════════════════════════════
+# 既存の病院検索・地域から選ぶ等は病床機能報告データが起点のため、
+# ほぼ「病院」しか検索対象に載らない（有床診療所は施設基準届出データの
+# 3,916件のうち病床機能報告と名称一致するのは1件のみ）。有床・無床
+# 診療所を探すには、施設基準届出データ（shisetsu_kijun_cache.parquet）
+# を直接ベースにした、この専用の検索フローが必要。
+
+if st.session_state.get("_view_mode") == "clinic_search":
+    st.markdown("## 🩺 診療所を探す")
+    st.caption(
+        "病床機能報告（病院が中心）ではカバーされない有床診療所・無床診療所を含め、"
+        "施設基準届出データから直接検索します。"
+    )
+
+    _cs_df = _load_shisetsu_kijun()
+    if _cs_df is None:
+        st.warning("施設基準届出データが見つかりません。")
+    else:
+        with st.container(border=True, key="cs_filter_box"):
+            _cs_c1, _cs_c2 = st.columns(2)
+            with _cs_c1:
+                _cs_prefs = ["全都道府県"] + _sort_prefs(_cs_df["都道府県名"].unique())
+                _cs_pref = st.selectbox("🗾 都道府県", _cs_prefs, key="cs_pref")
+            with _cs_c2:
+                _cs_fac_sel = st.multiselect(
+                    "🏷️ 施設種別",
+                    options=["病院", "有床診療所", "無床診療所"],
+                    default=["有床診療所", "無床診療所"],
+                    key="cs_fac_type",
+                    help="入院基本料の届出パターンから判定（届出が無い場合は無床診療所と推定）",
+                )
+            _cs_kw = st.text_input(
+                "医療機関名キーワード", placeholder="例：〇〇クリニック、△△医院", key="cs_kw")
+            _cs_kijun_kw = st.text_input(
+                "届出名称キーワード（部分一致）", placeholder="例：在宅療養支援診療所", key="cs_kijun_kw")
+
+        # ── フィルタリング ──
+        _cs_sub = _cs_df.copy()
+        if _cs_pref != "全都道府県":
+            _cs_sub = _cs_sub[_cs_sub["都道府県名"] == _cs_pref]
+        if _cs_fac_sel:
+            _cs_sub = _cs_sub[_cs_sub["施設種別"].isin(_cs_fac_sel)]
+        if _cs_kw:
+            _cs_norm_kw = _normalize_name(_cs_kw)
+            _cs_sub = _cs_sub[_cs_sub["医療機関名称"].apply(_normalize_name).str.contains(_cs_norm_kw, na=False)]
+        if _cs_kijun_kw.strip():
+            _cs_sub = _cs_sub[_cs_sub["受理届出名称"].str.contains(_cs_kijun_kw.strip(), na=False)]
+
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        st.markdown('<div class="section-header">🩺 検索結果</div>', unsafe_allow_html=True)
+
+        _cs_key_cols = ["都道府県コード", "医療機関番号"]
+        _cs_insts = (
+            _cs_sub[_cs_key_cols + ["都道府県名", "医療機関名称", "住所", "施設種別"]]
+            .drop_duplicates(subset=_cs_key_cols)
+            .sort_values("医療機関名称")
+        )
+        st.caption(f"**{len(_cs_insts):,}件** が該当")
+
+        if _cs_insts.empty:
+            st.info("条件に一致する医療機関が見つかりませんでした。絞り込み条件を減らしてみてください。")
+        else:
+            _CS_FAC_COLOR = {"病院": "#3b82f6", "有床診療所": "#f59e0b", "無床診療所": "#6b7280"}
+            _CS_PAGE_SIZE = 100
+            _cs_page = _cs_insts.head(_CS_PAGE_SIZE)
+
+            # 届出項目一覧は表示対象（最大100件）分だけに絞ってからgroupbyする
+            # （マッチ件数が多い場合、全件に対してapplyすると非常に遅くなるため）。
+            # 都道府県コードはcategory dtypeなのでstrに変換してから連結する。
+            _cs_page_key = _cs_page["都道府県コード"].astype(str) + "_" + _cs_page["医療機関番号"].astype(str)
+            _cs_sub_key  = _cs_sub["都道府県コード"].astype(str) + "_" + _cs_sub["医療機関番号"].astype(str)
+            _cs_sub_page = _cs_sub[_cs_sub_key.isin(set(_cs_page_key))]
+            _cs_items_by_inst = _cs_sub_page.groupby(_cs_key_cols)["受理届出名称"].apply(
+                lambda s: sorted(s.dropna().unique())
+            ).to_dict()
+
+            for _, _cr in _cs_page.iterrows():
+                _fac_color = _CS_FAC_COLOR.get(_cr["施設種別"], "#6b7280")
+                # 住所の先頭（市区町村名部分）だけをタイトルに出す
+                _cs_city = re.match(r"^.{0,10}?[市区町村]", str(_cr.get("住所") or ""))
+                _cs_city_str = _cs_city.group() if _cs_city else ""
+                with st.expander(f"{_cr['医療機関名称']}　（{_cr['都道府県名']}{'　' + _cs_city_str if _cs_city_str else ''}）"):
+                    st.markdown(
+                        f'<span style="display:inline-block;background:{_fac_color}22;'
+                        f'color:{_fac_color};border:1px solid {_fac_color}55;'
+                        f'border-radius:10px;padding:3px 10px;font-size:0.78rem;font-weight:700;">'
+                        f'🏷️ {_cr["施設種別"]}</span>',
+                        unsafe_allow_html=True,
+                    )
+                    _cs_full_addr = str(_cr.get("住所") or "").strip()
+                    if _cs_full_addr:
+                        st.caption(f"📍 {_cs_full_addr}")
+                    _cs_items = _cs_items_by_inst.get(
+                        (_cr["都道府県コード"], _cr["医療機関番号"]), []
+                    )
+                    st.markdown(f"**届出項目（{len(_cs_items)}件）**")
+                    for _it in _cs_items:
+                        st.markdown(f"- {_it}")
+
+            if len(_cs_insts) > _CS_PAGE_SIZE:
+                st.caption(f"… 他 {len(_cs_insts) - _CS_PAGE_SIZE:,}件（都道府県やキーワードで絞り込んでください）")
 
     _render_footer()
     st.stop()
