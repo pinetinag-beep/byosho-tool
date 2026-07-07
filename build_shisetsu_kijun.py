@@ -176,9 +176,11 @@ def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
     header_rows["医療機関名_正規化"] = header_rows["医療機関名称"].apply(_normalize)
     header_rows["年月"] = year_month
 
+    # 「市町村名」列はどの厚生局のフォーマットでも常に空のため保持しない
+    # （住所の先頭に市区町村名が含まれているため、住所列だけで十分）。
     keep = [
         "都道府県コード", "都道府県名", "医療機関番号", "医療機関名称",
-        "医療機関名_正規化", "受理届出名称", "受理記号", "受理番号", "算定開始年月日",
+        "医療機関名_正規化", "住所", "受理届出名称", "受理記号", "受理番号", "算定開始年月日",
         "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "年月",
     ]
     return header_rows[keep].reset_index(drop=True), year_month
