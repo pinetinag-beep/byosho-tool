@@ -29,6 +29,34 @@ def _sort_prefs(pref_list):
     """都道府県名リストを都道府県コード順に並べる"""
     return sorted(pref_list, key=lambda p: _PREF_ORDER.get(p, "99"))
 
+
+def _reiwa_nendo(seireki_year: int) -> str:
+    """西暦の報告年度 → 「令和X年度」（令和1=2019）。"""
+    try:
+        y = int(seireki_year)
+    except (ValueError, TypeError):
+        return ""
+    r = y - 2018
+    return f"令和{r}年度" if r >= 1 else f"平成{y - 1988}年度"
+
+
+def _byosho_source(year: int) -> str:
+    """病床機能報告データの出典ラベル（例：令和5年度病床機能報告）。"""
+    return f"{_reiwa_nendo(year)}病床機能報告"
+
+
+def _dpc_source(year: int) -> str:
+    """DPC調査データの出典ラベル（例：令和6年度 DPC導入の影響評価調査）。"""
+    return f"{_reiwa_nendo(year)} DPC導入の影響評価に係る調査"
+
+
+def _source_tag(text: str) -> str:
+    """リスト右上などに置く控えめな出典ラベル（右寄せHTML）。"""
+    return (
+        f"<div style='text-align:right;font-size:0.72rem;color:#6E6A5E;"
+        f"margin:-6px 0 2px;'>データ出典：{text}</div>"
+    )
+
 def _normalize_name(name: str) -> str:
     """病院名の表記揺れを正規化（全角→半角、スペース除去、小文字化）"""
     if not isinstance(name, str):
@@ -1320,7 +1348,8 @@ if st.session_state.get("_view_mode") == "name_search":
             st.warning("見つかりませんでした。別のキーワードをお試しください。")
         else:
             _ns_hits = _ns_hits.sort_values("合計_許可病床数", ascending=False)
-            st.caption(f"**{len(_ns_hits):,}件**（{_ns_year}年度）")
+            st.markdown(_source_tag(_byosho_source(_ns_year)), unsafe_allow_html=True)
+            st.caption(f"**{len(_ns_hits):,}件**")
             _NS_PAGE = 60
             _ns_cols = st.columns(3)
             for _ni, (_, _nr) in enumerate(_ns_hits.head(_NS_PAGE).iterrows()):
@@ -1378,7 +1407,7 @@ if st.session_state.get("_view_mode") == "region":
             _rg_region = st.selectbox("🏘️ 二次医療圏", _rg_regions, key="_rg_region")
 
     st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-    st.markdown('<div class="section-header">🏥 検索結果</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
 
     # 病院一覧
     _rg_extra_cols = ["医療機関名", "合計_許可病床数"]
@@ -1398,6 +1427,7 @@ if st.session_state.get("_view_mode") == "region":
     if _rg_list.empty:
         st.info("この年度・地域のデータがありません")
     else:
+        st.markdown(_source_tag(_byosho_source(_rg_year)), unsafe_allow_html=True)
         st.caption(f"{_rg_region}　**{len(_rg_list)}院** が該当")
         _rg_cols = st.columns(3)
         for _ri, _rrow in enumerate(_rg_list.itertuples(index=False)):
@@ -1525,8 +1555,9 @@ if st.session_state.get("_view_mode") == "map":
             _ms_valid = _ms_df.dropna(subset=["lat", "lon"])
 
             st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-            st.markdown('<div class="section-header">🗺️ 検索結果</div>', unsafe_allow_html=True)
-            st.caption(f"{_ms_pref}{'　' + _ms_region if _ms_region else ''}（{_ms_year}年度）— **{len(_ms_df):,}病院** / 座標あり {len(_ms_valid):,}病院")
+            st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag(_byosho_source(_ms_year)), unsafe_allow_html=True)
+            st.caption(f"{_ms_pref}{'　' + _ms_region if _ms_region else ''} — **{len(_ms_df):,}病院** / 座標あり {len(_ms_valid):,}病院")
 
             if _ms_valid.empty:
                 st.info("表示できる病院がありません。座標データが必要です。")
@@ -1856,7 +1887,8 @@ if st.session_state.get("_view_mode") == "distance":
                         _dist_result.index += 1
 
                         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-                        st.markdown('<div class="section-header">🏥 検索結果</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
+                        st.markdown(_source_tag(_byosho_source(_dist_year)), unsafe_allow_html=True)
                         if _transit_note:
                             st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
                         st.caption(f"**{len(_dist_result):,}病院** が {_dist_max}分以内 — 出発地: {_dist_addr}")
@@ -2722,6 +2754,7 @@ div[data-testid="stTabPanel"] {
         "</div>",
         unsafe_allow_html=True,
     )
+    st.markdown(_source_tag(_byosho_source(s_year)), unsafe_allow_html=True)
     st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
 
     _col_cfg = {
@@ -2813,9 +2846,9 @@ if st.session_state.get("_view_mode") == "region_vision":
                 st.rerun()
 
     # ── ヘッダー
-    st.markdown(f"## 🗺️ {_rv_region} 地域医療構想分析")
+    st.markdown(f"## {_rv_region} 地域医療構想分析")
     st.caption(
-        f"{_rv_year}年度データ　|　{_rv_pref}　{_rv_region}　"
+        f"データ出典：{_byosho_source(_rv_year)}　|　{_rv_pref}　{_rv_region}　"
         "※ 本分析は病床機能報告データに基づく参考情報です。"
         "実際の構想策定には一次データ・専門家の関与が必要です。"
     )
@@ -3827,6 +3860,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
         _total_n = len(_ds_result)
         # -1（マスク値）を除いた実件数合計
         _total_patients = int(_ds_result[_ds_cnt_col].clip(lower=0).sum()) if _ds_cnt_col in _ds_result.columns else 0
+        _ds_year = int(_ds_surg_all["年度"].max()) if "年度" in _ds_surg_all.columns else None
+        if _ds_year:
+            st.markdown(_source_tag(_dpc_source(_ds_year)), unsafe_allow_html=True)
         st.caption(
             f"**{_total_n:,}病院** が対象 / 疾患: {_ds_disease}"
             + (f" / 合計 {_total_patients:,}例（＊除く）" if not _ds_hide_nan else "")
@@ -4072,6 +4108,7 @@ kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_
 kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース",       color="#0ea5e9")
 kpi_card(m5, "常勤医師数",  f"{doctors:,}人",               f"看護師 {nurses:,}人",     color="#14b8a6")
 
+st.markdown(_source_tag(_byosho_source(year)), unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 
@@ -4153,6 +4190,9 @@ with tab1:
                             _ov_noop_row = _ov_cases[_ov_cases["手術有無"] == "無し"]
                             _ov_surg_row = _ov_cases[_ov_cases["手術有無"] == "有り"]
                             st.markdown('<div class="section-header">DPC 患者件数 上位3領域</div>', unsafe_allow_html=True)
+                            _ov_dpc_year = int(_ov_cases_all["年度"].max()) if "年度" in _ov_cases_all.columns else None
+                            if _ov_dpc_year:
+                                st.markdown(_source_tag(_dpc_source(_ov_dpc_year)), unsafe_allow_html=True)
                             _ov_accent = ["#3b82f6", "#8b5cf6", "#06b6d4"]
                             _ov_cols = st.columns(3)
                             for _oi, ((_ov_key, _ov_val), _ov_col, _ov_ac) in enumerate(
