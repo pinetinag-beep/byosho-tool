@@ -416,6 +416,32 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 .method-card .mc-title { font-size: 0.98rem; font-weight: 700; margin-bottom: 7px; }
 .method-card .mc-desc  { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.7; }
 
+/* ── カード全体をクリック可能にする（stretched-link パターン） ── */
+.method-card--link {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+}
+.method-card--link .mc-stretch {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    text-decoration: none;
+}
+.method-card--link .mc-cta {
+    margin-top: auto;
+    padding-top: 12px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--brand);
+    letter-spacing: 0.02em;
+    transition: transform .15s;
+}
+.method-card--link:hover .mc-cta { transform: translateX(3px); }
+.method-card--link:hover .mc-icon svg { stroke: var(--brand-deep); }
+
 /* ── ランディングのグループ見出し（絵文字 → ブランド緑のドット） ── */
 .landing-group-title { font-size: 1.08rem; font-weight: 700; color: var(--ink); margin: 0 0 4px; }
 .landing-group-title::before {
@@ -1077,6 +1103,19 @@ if _qp_hosp:
     st.query_params.clear()
     st.rerun()
 
+# ?go=MODE クエリパラメータ経由の画面遷移（ホーム画面のカードリンク）
+_qp_go = st.query_params.get("go")
+if _qp_go:
+    _GO_MODES = {
+        "region", "map", "distance", "search",
+        "dpc_search", "clinic_search", "region_vision",
+    }
+    if _qp_go in _GO_MODES:
+        st.session_state["_view_mode"] = _qp_go
+        st.session_state["_scroll_to_top"] = True
+    st.query_params.clear()
+    st.rerun()
+
 _nav = st.session_state.pop("_nav_jump", None)
 if _nav:
     st.session_state["_sel_year"]        = int(_nav["year"])
@@ -1137,12 +1176,24 @@ if st.session_state.get("_view_mode") == "home":
     )
 
     # ── 検索メソッドカード（「何がしたいか」で3グループに分類）──
-    def _method_card(icon, title, desc):
+    # go を渡すとカード全体がクリック可能になる。Streamlitのmarkdownは
+    # <a>（インライン）の中にブロック<div>を入れると構造が壊れるため、
+    # カードは<div>のままにして、透明な<a>を absolute で全面に重ねる
+    # （stretched-link パターン）。
+    def _method_card(icon, title, desc, go=None):
+        _link = (
+            f"<a class='mc-stretch' href='?go={go}' target='_self' "
+            f"aria-label='{title}'></a>" if go else ""
+        )
+        _cta = "<div class='mc-cta'>ひらく →</div>" if go else ""
+        _cls = "method-card method-card--link" if go else "method-card"
         return (
-            f"<div class='method-card'>"
+            f"<div class='{_cls}'>"
+            f"{_link}"
             f"<div class='mc-icon'>{icon}</div>"
             f"<div class='mc-title'>{title}</div>"
             f"<div class='mc-desc'>{desc}</div>"
+            f"{_cta}"
             f"</div>"
         )
 
@@ -1202,16 +1253,12 @@ if st.session_state.get("_view_mode") == "home":
                     st.caption(f"… 他 {len(_lnd_hits)-8:,}件")
     with _mc2:
         st.markdown(_method_card(_ICON_REGION, "地域から選ぶ",
-            "都道府県・二次医療圏・病院名を<br>選択して詳細を確認します"), unsafe_allow_html=True)
-        if st.button("地域から選ぶ →", use_container_width=True, key="_lnd_region_go"):
-            st.session_state["_view_mode"] = "region"
-            st.rerun()
+            "都道府県・二次医療圏・病院名を<br>選択して詳細を確認します",
+            go="region"), unsafe_allow_html=True)
     with _mc3:
         st.markdown(_method_card(_ICON_MAP, "地図で探す",
-            "都道府県・二次医療圏を選択し<br>病院の分布を地図で確認します"), unsafe_allow_html=True)
-        if st.button("地図で探す →", use_container_width=True, key="_lnd_map_go"):
-            st.session_state["_view_mode"] = "map"
-            st.rerun()
+            "都道府県・二次医療圏を選択し<br>病院の分布を地図で確認します",
+            go="map"), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1220,33 +1267,25 @@ if st.session_state.get("_view_mode") == "home":
     _mc4, _mc5, _mc6 = st.columns(3, gap="medium")
     with _mc4:
         st.markdown(_method_card(_ICON_CLOCK, "距離・所要時間で探す",
-            "住所やランドマークから<br>N分以内の病院を一覧表示します"), unsafe_allow_html=True)
-        if st.button("距離で探す →", use_container_width=True, key="_lnd_dist_go"):
-            st.session_state["_view_mode"] = "distance"
-            st.rerun()
+            "住所やランドマークから<br>N分以内の病院を一覧表示します",
+            go="distance"), unsafe_allow_html=True)
     with _mc5:
         st.markdown(_method_card(_ICON_SLIDERS, "設備・手術条件で探す",
-            "CT/MRI台数・手術件数・<br>スタッフ数などで全国を絞り込み"), unsafe_allow_html=True)
-        if st.button("条件で探す →", use_container_width=True, key="_lnd_search_go"):
-            st.session_state["_view_mode"] = "search"
-            st.rerun()
+            "CT/MRI台数・手術件数・<br>スタッフ数などで全国を絞り込み",
+            go="search"), unsafe_allow_html=True)
     with _mc6:
         if DPC_PARQUET_SURG.exists():
             st.markdown(_method_card(_ICON_PULSE, "DPC疾患別 病院検索",
-                "手術件数・在院日数を疾患ごとに<br>全国・都道府県・二次医療圏で比較"), unsafe_allow_html=True)
-            if st.button("DPC疾患別で探す →", use_container_width=True, key="_lnd_dpc_go"):
-                st.session_state["_view_mode"] = "dpc_search"
-                st.rerun()
+                "手術件数・在院日数を疾患ごとに<br>全国・都道府県・二次医療圏で比較",
+                go="dpc_search"), unsafe_allow_html=True)
 
     if SHISETSU_KIJUN_PARQUET.exists():
         st.markdown("<br>", unsafe_allow_html=True)
         _mc10, _mc11, _mc12 = st.columns(3, gap="medium")
         with _mc10:
             st.markdown(_method_card(_ICON_STETHO, "診療所を探す",
-                "有床・無床診療所を含め、<br>施設基準届出データから直接検索します"), unsafe_allow_html=True)
-            if st.button("診療所を探す →", use_container_width=True, key="_lnd_clinic_go"):
-                st.session_state["_view_mode"] = "clinic_search"
-                st.rerun()
+                "有床・無床診療所を含め、<br>施設基準届出データから直接検索します",
+                go="clinic_search"), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1255,10 +1294,8 @@ if st.session_state.get("_view_mode") == "home":
     _mc7, _mc8, _mc9 = st.columns(3, gap="medium")
     with _mc7:
         st.markdown(_method_card(_ICON_CHART, "地域医療構想を分析",
-            "二次医療圏ごとの急性期拠点・<br>機能分担をスコアリングします"), unsafe_allow_html=True)
-        if st.button("地域医療構想を見る →", use_container_width=True, key="_lnd_vision_go"):
-            st.session_state["_view_mode"] = "region_vision"
-            st.rerun()
+            "二次医療圏ごとの急性期拠点・<br>機能分担をスコアリングします",
+            go="region_vision"), unsafe_allow_html=True)
 
     _render_footer()
     st.stop()
