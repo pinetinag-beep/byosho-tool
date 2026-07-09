@@ -452,6 +452,7 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 .landing-group-desc  { font-size: 0.83rem; color: var(--ink-muted); margin: 0 0 14px 18px; }
 
 /* ── 絞り込みボックス（操作パネル＝ブランド緑の淡背景・全検索ページ共通） ── */
+.st-key-ns_filter_box,
 .st-key-rg_filter_box,
 .st-key-ms_filter_box,
 .st-key-dist_filter_box,
@@ -1107,7 +1108,7 @@ if _qp_hosp:
 _qp_go = st.query_params.get("go")
 if _qp_go:
     _GO_MODES = {
-        "region", "map", "distance", "search",
+        "name_search", "region", "map", "distance", "search",
         "dpc_search", "clinic_search", "region_vision",
     }
     if _qp_go in _GO_MODES:
@@ -1152,13 +1153,6 @@ _render_header()
 # ══════════════════════════════════════════════════════════
 
 if st.session_state.get("_view_mode") == "home":
-    _lnd_df      = st.session_state.df
-    _lnd_n       = len(_lnd_df["医療機関名"].unique())
-    _lnd_pref_cnt = len(_lnd_df["都道府県名"].unique())
-    _lnd_ymin    = int(_lnd_df["報告年度"].min())
-    _lnd_ymax    = int(_lnd_df["報告年度"].max())
-    _lnd_latest  = int(_lnd_df["報告年度"].max())
-
     # ── ヒーロー ─────────────────────────────────────────────
     st.markdown(
         f"""
@@ -1227,30 +1221,8 @@ if st.session_state.get("_view_mode") == "home":
     _mc1, _mc2, _mc3 = st.columns(3, gap="medium")
     with _mc1:
         st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
-            "病院名の一部を入力して<br>候補をリストアップします"), unsafe_allow_html=True)
-        _lnd_kw = st.text_input("病院名", placeholder="例：聖路加、旭川赤十字",
-            key="_lnd_kw", label_visibility="collapsed")
-        if _lnd_kw:
-            _lnd_norm    = _normalize_name(_lnd_kw)
-            _lnd_df_year = _lnd_df[_lnd_df["報告年度"] == _lnd_latest].copy()
-            _lnd_df_year["_norm"] = _lnd_df_year["医療機関名"].apply(_normalize_name)
-            _lnd_hits    = _lnd_df_year[_lnd_df_year["_norm"].str.contains(_lnd_norm, na=False)]
-            if _lnd_hits.empty:
-                st.caption("見つかりませんでした")
-            else:
-                st.caption(f"**{len(_lnd_hits):,}件**（{_lnd_latest}年度）")
-                for _li, (_, _lr) in enumerate(_lnd_hits.head(8).iterrows()):
-                    if st.button(f"🏥 {_lr['医療機関名']}　{_lr['都道府県名']}",
-                            key=f"_lnd_btn_{_li}", use_container_width=True):
-                        st.session_state["_nav_jump"] = {
-                            "year": int(_lr["報告年度"]), "pref": str(_lr["都道府県名"]),
-                            "region": str(_lr["二次医療圏名"]), "hospital": str(_lr["医療機関名"]),
-                        }
-                        st.session_state["_hospital_chosen"] = True
-                        st.session_state["_view_mode"] = "detail"
-                        st.rerun()
-                if len(_lnd_hits) > 8:
-                    st.caption(f"… 他 {len(_lnd_hits)-8:,}件")
+            "病院名の一部を入力して<br>候補をリストアップします",
+            go="name_search"), unsafe_allow_html=True)
     with _mc2:
         st.markdown(_method_card(_ICON_REGION, "地域から選ぶ",
             "都道府県・二次医療圏・病院名を<br>選択して詳細を確認します",
@@ -1314,6 +1286,62 @@ year     = sel_year
 pref     = sel_pref
 region   = sel_region
 hospital = sel_hospital
+
+
+# ══════════════════════════════════════════════════════════
+# 病院名で探すモード
+# ══════════════════════════════════════════════════════════
+
+if st.session_state.get("_view_mode") == "name_search":
+    st.markdown("## 病院名で探す")
+
+    _ns_df   = st.session_state.df
+    _ns_year = int(_ns_df["報告年度"].max())
+
+    with st.container(border=True, key="ns_filter_box"):
+        _ns_kw = st.text_input(
+            "🔍 病院名キーワード（部分一致）",
+            placeholder="例：聖路加、旭川赤十字、大学病院",
+            key="_ns_kw",
+        )
+
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
+
+    if not _ns_kw:
+        st.info("病院名の一部を入力してください。")
+    else:
+        _ns_norm = _normalize_name(_ns_kw)
+        _ns_year_df = _ns_df[_ns_df["報告年度"] == _ns_year].copy()
+        _ns_year_df["_norm"] = _ns_year_df["医療機関名"].apply(_normalize_name)
+        _ns_hits = _ns_year_df[_ns_year_df["_norm"].str.contains(_ns_norm, na=False)]
+
+        if _ns_hits.empty:
+            st.warning("見つかりませんでした。別のキーワードをお試しください。")
+        else:
+            _ns_hits = _ns_hits.sort_values("合計_許可病床数", ascending=False)
+            st.caption(f"**{len(_ns_hits):,}件**（{_ns_year}年度）")
+            _NS_PAGE = 60
+            _ns_cols = st.columns(3)
+            for _ni, (_, _nr) in enumerate(_ns_hits.head(_NS_PAGE).iterrows()):
+                with _ns_cols[_ni % 3]:
+                    _nbeds = _nr.get("合計_許可病床数")
+                    _stat = f"🛏 {int(_nbeds):,}床" if pd.notna(_nbeds) else "🛏 -床"
+                    st.caption(f"{_stat}　{_nr['都道府県名']}　{_nr['二次医療圏名']}")
+                    if st.button(f"🏥 {_nr['医療機関名']}", key=f"_ns_btn_{_ni}",
+                                 use_container_width=True):
+                        st.session_state["_nav_jump"] = {
+                            "year": int(_nr["報告年度"]), "pref": str(_nr["都道府県名"]),
+                            "region": str(_nr["二次医療圏名"]), "hospital": str(_nr["医療機関名"]),
+                        }
+                        st.session_state["_hospital_chosen"] = True
+                        st.session_state["_view_mode"] = "detail"
+                        st.rerun()
+            if len(_ns_hits) > _NS_PAGE:
+                st.caption(f"… 他 {len(_ns_hits)-_NS_PAGE:,}件（キーワードを絞り込んでください）")
+
+    _render_footer()
+    st.stop()
 
 
 # ══════════════════════════════════════════════════════════
