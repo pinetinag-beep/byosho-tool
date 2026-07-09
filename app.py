@@ -293,12 +293,35 @@ def _render_footer():
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap');
+
+/* ══════════════════════════════════════════════════════
+   デザイントークン（シビック・フレンドリー）
+   - 温かみのある紙色の背景 × 深緑のブランドカラー1色
+   - 見出しは丸ゴシック（Zen Maru Gothic）で親しみを、
+     本文・数値は角ゴシック（Zen Kaku Gothic New）で明瞭さを出す
+   - 色は「ブランド緑＝操作・強調」「意味色（緑/橙/赤）＝状態」のみに限定
+══════════════════════════════════════════════════════ */
+:root {
+    --ink:        #26251F;   /* 本文 */
+    --ink-muted:  #6E6A5E;   /* 補足テキスト */
+    --paper:      #FAF9F6;   /* ページ背景（温かみのある紙色） */
+    --card:       #FFFFFF;   /* カード背景 */
+    --line:       #E8E4DB;   /* 罫線（ウォームグレー） */
+    --brand:      #12886D;   /* ブランド（深緑） */
+    --brand-deep: #0B6653;
+    --brand-tint: #EAF4F0;   /* ブランドの淡背景 */
+    --brand-line: #BFDFD4;
+    --ok:     #1A7F4B;
+    --warn:   #A8630A;
+    --danger: #B3362B;
+    --shadow-card: 0 1px 2px rgba(70,60,35,.05), 0 6px 20px rgba(70,60,35,.06);
+    --radius-card: 14px;
+}
 
 /* ── 全体フォント（Material Icons を上書きしないよう text要素のみ対象）── */
 body, .main .block-container,
 p, li, label, input, select, textarea, caption,
-h1, h2, h3, h4, h5, h6,
 [data-testid="stMarkdownContainer"],
 [data-testid="stCaptionContainer"],
 [data-testid="stText"],
@@ -307,8 +330,21 @@ h1, h2, h3, h4, h5, h6,
 div[data-testid="stSidebar"] label,
 div[data-testid="stSidebar"] p,
 div[data-testid="stSidebar"] span:not([class*="material"]) {
-    font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif !important;
+    font-family: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif !important;
+    color: var(--ink);
 }
+
+/* ── 見出しは丸ゴシックで親しみを出す ── */
+h1, h2, h3, h4, h5, h6,
+.section-header, .landing-group-title,
+.method-card .mc-title {
+    font-family: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', 'Zen Kaku Gothic New', sans-serif !important;
+    color: var(--ink);
+}
+
+/* ── ヘッダーバー・背景を紙色に統一 ── */
+.stApp { background: var(--paper); }
+header[data-testid="stHeader"] { background: var(--paper) !important; }
 
 /* ── KPI数値は等幅フィーチャーを有効化 ── */
 .metric-value {
@@ -316,71 +352,96 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
     letter-spacing: -0.02em;
 }
 
-/* ── KPIカード ── */
+/* ── KPIカード（色付きボーダーを廃止し、静かな白カードに統一）
+     ※各カードにはインラインの border-top-color 指定が残っているため
+       !important で無効化する（色は意味を運ぶ時だけ使う方針） ── */
 .metric-card {
-    background: #ffffff;
-    border-radius: 12px;
+    background: var(--card);
+    border: 1px solid var(--line) !important;
+    border-radius: var(--radius-card);
     padding: 18px 12px 14px;
     text-align: center;
-    border-top: 3px solid #3b82f6;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 14px rgba(0,0,0,0.05);
+    box-shadow: var(--shadow-card);
 }
 .metric-label {
-    font-size: 0.82rem; color: #6b7280; margin-bottom: 6px;
-    text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700;
+    font-size: 0.78rem; color: var(--ink-muted); margin-bottom: 6px;
+    letter-spacing: 0.05em; font-weight: 700;
 }
-.metric-value { font-size: 1.9rem; font-weight: 800; color: #111827; line-height: 1.1; }
-.metric-sub   { font-size: 0.85rem; color: #9ca3af; margin-top: 5px; }
+.metric-value { font-size: 2.0rem; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.metric-sub   { font-size: 0.82rem; color: var(--ink-muted); margin-top: 5px; }
+
+/* ── セクション見出し（青下線 → ブランド緑の左バー） ── */
 .section-header {
-    font-size: 1.05rem; font-weight: 700; color: #111827;
-    border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin: 24px 0 14px;
+    font-size: 1.05rem; font-weight: 700; color: var(--ink);
+    border-left: 4px solid var(--brand);
+    border-bottom: none;
+    border-radius: 2px;
+    padding: 2px 0 2px 10px;
+    margin: 30px 0 14px;
+    line-height: 1.35;
 }
+
 /* ── 印刷ボタン（画面表示用） ── */
 .print-btn {
     display: inline-block;
     padding: 6px 16px;
-    background: #f0f2f6;
-    border: 1px solid #d0d3db;
-    border-radius: 6px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
     font-size: 0.85rem;
-    color: #444;
+    color: var(--ink-muted);
     cursor: pointer;
     text-decoration: none;
 }
-.print-btn:hover { background: #e0e3ea; }
+.print-btn:hover { background: var(--brand-tint); border-color: var(--brand-line); }
 
 /* ── 検索メソッドカード ── */
 .method-card {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
     padding: 22px 18px 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.03);
-    min-height: 160px;
-    transition: box-shadow .15s, transform .15s;
+    box-shadow: var(--shadow-card);
+    min-height: 158px;
+    transition: box-shadow .15s, transform .15s, border-color .15s;
     margin-bottom: 4px;
 }
 .method-card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,.10);
+    box-shadow: 0 4px 18px rgba(70,60,35,.12);
+    border-color: var(--brand-line);
     transform: translateY(-1px);
 }
-.method-card .mc-icon { font-size: 1.9rem; line-height: 1; margin-bottom: 11px; }
-.method-card .mc-title { font-size: 0.95rem; font-weight: 700; color: #111827; margin-bottom: 7px; }
-.method-card .mc-desc  { font-size: 0.79rem; color: #6b7280; line-height: 1.65; }
+.method-card .mc-icon { line-height: 1; margin-bottom: 12px; }
+.method-card .mc-icon svg { stroke: var(--brand); width: 30px; height: 30px; }
+.method-card .mc-title { font-size: 0.98rem; font-weight: 700; margin-bottom: 7px; }
+.method-card .mc-desc  { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.7; }
 
-/* ── ランディングのグループ見出し（目的別） ── */
-.landing-group-title { font-size: 1.05rem; font-weight: 800; color: #111827; margin: 0 0 4px; }
-.landing-group-desc  { font-size: 0.82rem; color: #6b7280; margin: 0 0 14px; }
+/* ── ランディングのグループ見出し（絵文字 → ブランド緑のドット） ── */
+.landing-group-title { font-size: 1.08rem; font-weight: 700; color: var(--ink); margin: 0 0 4px; }
+.landing-group-title::before {
+    content: ""; display: inline-block; width: 9px; height: 9px;
+    border-radius: 3px; background: var(--brand);
+    margin-right: 9px; vertical-align: 1px;
+}
+.landing-group-desc  { font-size: 0.83rem; color: var(--ink-muted); margin: 0 0 14px 18px; }
 
-/* ── 絞り込みボックス（青系で操作パネルを強調・全検索ページ共通） ── */
+/* ── 絞り込みボックス（操作パネル＝ブランド緑の淡背景・全検索ページ共通） ── */
 .st-key-rg_filter_box,
 .st-key-ms_filter_box,
 .st-key-dist_filter_box,
 .st-key-rv_filter_box,
 .st-key-cs_filter_box {
-    border-color: #93c5fd !important;
-    background: #eff6ff !important;
+    border-color: var(--brand-line) !important;
+    background: var(--brand-tint) !important;
+    border-radius: var(--radius-card) !important;
 }
+
+/* ── ボタン・入力の角丸を統一 ── */
+.stButton button, .stDownloadButton button { border-radius: 10px !important; }
+div[data-baseweb="select"] > div, .stTextInput input, .stNumberInput input {
+    border-radius: 10px !important;
+}
+div[data-testid="stExpander"] { border-radius: 12px !important; }
 
 /* ── 検索バー（ホーム画面） ── */
 .home-search-wrap input {
@@ -948,7 +1009,7 @@ def _si(val):
 
 if st.session_state.df is None:
     _render_header()
-    st.markdown("## 🏥 全国の病院の情報を調べる")
+    st.markdown("## 全国の病院の情報を調べる")
     _d1, _d2 = st.columns(2)
     with _d1:
         st.info("""
@@ -1062,12 +1123,15 @@ if st.session_state.get("_view_mode") == "home":
     # ── ヒーロー ─────────────────────────────────────────────
     st.markdown(
         f"""
-<div style="text-align:center;padding:48px 0 32px;">
-  <h1 style="font-size:2.3rem;font-weight:900;color:#111827;margin:0 0 14px;line-height:1.2;
-             letter-spacing:-0.02em;">
+<div style="text-align:center;padding:46px 0 34px;">
+  <p style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.18em;margin:0 0 10px;">
+    地域の医療をひらく、公的データのまど
+  </p>
+  <h1 style="font-size:2.3rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.25;
+             letter-spacing:0.01em;">
     全国の病院の情報を調べる
   </h1>
-  <p style="font-size:1rem;font-weight:600;color:#374151;margin:0;">どうやって探しますか？</p>
+  <p style="font-size:0.98rem;font-weight:500;color:#6E6A5E;margin:0;">どうやって探しますか？</p>
 </div>""",
         unsafe_allow_html=True,
     )
@@ -1082,6 +1146,24 @@ if st.session_state.get("_view_mode") == "home":
             f"</div>"
         )
 
+    # 線画SVGアイコン（feather/lucide系・24x24 stroke）。絵文字は環境依存で
+    # 見た目が変わり品位も落ちるため、カードのアイコンはSVGに統一する。
+    def _svg(paths: str) -> str:
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+            'fill="none" stroke-width="2" stroke-linecap="round" '
+            f'stroke-linejoin="round">{paths}</svg>'
+        )
+
+    _ICON_SEARCH  = _svg('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>')
+    _ICON_REGION  = _svg('<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="16" x2="13" y2="16"/>')
+    _ICON_MAP     = _svg('<polygon points="1 6 8 2 16 6 23 2 23 18 16 22 8 18 1 22"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>')
+    _ICON_CLOCK   = _svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')
+    _ICON_SLIDERS = _svg('<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>')
+    _ICON_PULSE   = _svg('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>')
+    _ICON_STETHO  = _svg('<path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/>')
+    _ICON_CHART   = _svg('<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>')
+
     def _landing_group_header(title, desc):
         st.markdown(
             f"<div class='landing-group-title'>{title}</div>"
@@ -1090,10 +1172,10 @@ if st.session_state.get("_view_mode") == "home":
         )
 
     # グループ1: 特定の病院を調べる ──────────────────────────
-    _landing_group_header("🔍 特定の病院を調べる", "病院名・地域・地図から、個別の病院ページを開きます")
+    _landing_group_header("特定の病院を調べる", "病院名・地域・地図から、個別の病院ページを開きます")
     _mc1, _mc2, _mc3 = st.columns(3, gap="medium")
     with _mc1:
-        st.markdown(_method_card("🔍", "病院名で探す",
+        st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
             "病院名の一部を入力して<br>候補をリストアップします"), unsafe_allow_html=True)
         _lnd_kw = st.text_input("病院名", placeholder="例：聖路加、旭川赤十字",
             key="_lnd_kw", label_visibility="collapsed")
@@ -1119,13 +1201,13 @@ if st.session_state.get("_view_mode") == "home":
                 if len(_lnd_hits) > 8:
                     st.caption(f"… 他 {len(_lnd_hits)-8:,}件")
     with _mc2:
-        st.markdown(_method_card("📋", "地域から選ぶ",
+        st.markdown(_method_card(_ICON_REGION, "地域から選ぶ",
             "都道府県・二次医療圏・病院名を<br>選択して詳細を確認します"), unsafe_allow_html=True)
         if st.button("地域から選ぶ →", use_container_width=True, key="_lnd_region_go"):
             st.session_state["_view_mode"] = "region"
             st.rerun()
     with _mc3:
-        st.markdown(_method_card("🗺️", "地図で探す",
+        st.markdown(_method_card(_ICON_MAP, "地図で探す",
             "都道府県・二次医療圏を選択し<br>病院の分布を地図で確認します"), unsafe_allow_html=True)
         if st.button("地図で探す →", use_container_width=True, key="_lnd_map_go"):
             st.session_state["_view_mode"] = "map"
@@ -1134,23 +1216,23 @@ if st.session_state.get("_view_mode") == "home":
     st.markdown("<br>", unsafe_allow_html=True)
 
     # グループ2: 条件で絞り込む ──────────────────────────────
-    _landing_group_header("🎯 条件で絞り込む", "距離・設備・疾患などの条件で、全国の病院を横断的に絞り込みます")
+    _landing_group_header("条件で絞り込む", "距離・設備・疾患などの条件で、全国の病院を横断的に絞り込みます")
     _mc4, _mc5, _mc6 = st.columns(3, gap="medium")
     with _mc4:
-        st.markdown(_method_card("📍", "距離・所要時間で探す",
+        st.markdown(_method_card(_ICON_CLOCK, "距離・所要時間で探す",
             "住所やランドマークから<br>N分以内の病院を一覧表示します"), unsafe_allow_html=True)
         if st.button("距離で探す →", use_container_width=True, key="_lnd_dist_go"):
             st.session_state["_view_mode"] = "distance"
             st.rerun()
     with _mc5:
-        st.markdown(_method_card("🔧", "設備・手術条件で探す",
+        st.markdown(_method_card(_ICON_SLIDERS, "設備・手術条件で探す",
             "CT/MRI台数・手術件数・<br>スタッフ数などで全国を絞り込み"), unsafe_allow_html=True)
         if st.button("条件で探す →", use_container_width=True, key="_lnd_search_go"):
             st.session_state["_view_mode"] = "search"
             st.rerun()
     with _mc6:
         if DPC_PARQUET_SURG.exists():
-            st.markdown(_method_card("🏥", "DPC疾患別 病院検索",
+            st.markdown(_method_card(_ICON_PULSE, "DPC疾患別 病院検索",
                 "手術件数・在院日数を疾患ごとに<br>全国・都道府県・二次医療圏で比較"), unsafe_allow_html=True)
             if st.button("DPC疾患別で探す →", use_container_width=True, key="_lnd_dpc_go"):
                 st.session_state["_view_mode"] = "dpc_search"
@@ -1160,7 +1242,7 @@ if st.session_state.get("_view_mode") == "home":
         st.markdown("<br>", unsafe_allow_html=True)
         _mc10, _mc11, _mc12 = st.columns(3, gap="medium")
         with _mc10:
-            st.markdown(_method_card("🩺", "診療所を探す",
+            st.markdown(_method_card(_ICON_STETHO, "診療所を探す",
                 "有床・無床診療所を含め、<br>施設基準届出データから直接検索します"), unsafe_allow_html=True)
             if st.button("診療所を探す →", use_container_width=True, key="_lnd_clinic_go"):
                 st.session_state["_view_mode"] = "clinic_search"
@@ -1169,10 +1251,10 @@ if st.session_state.get("_view_mode") == "home":
     st.markdown("<br>", unsafe_allow_html=True)
 
     # グループ3: 地域全体を分析する ────────────────────────────
-    _landing_group_header("📊 地域全体を分析する", "二次医療圏単位で、地域医療構想の視点から俯瞰します")
+    _landing_group_header("地域全体を分析する", "二次医療圏単位で、地域医療構想の視点から俯瞰します")
     _mc7, _mc8, _mc9 = st.columns(3, gap="medium")
     with _mc7:
-        st.markdown(_method_card("🏛️", "地域医療構想を分析",
+        st.markdown(_method_card(_ICON_CHART, "地域医療構想を分析",
             "二次医療圏ごとの急性期拠点・<br>機能分担をスコアリングします"), unsafe_allow_html=True)
         if st.button("地域医療構想を見る →", use_container_width=True, key="_lnd_vision_go"):
             st.session_state["_view_mode"] = "region_vision"
@@ -1203,11 +1285,11 @@ hospital = sel_hospital
 
 if st.session_state.get("_view_mode") == "region":
 
-    st.markdown("## 📋 地域から病院を選ぶ")
+    st.markdown("## 地域から病院を選ぶ")
 
     with st.container(border=True, key="rg_filter_box"):
         st.markdown(
-            "<div style='font-size:0.78rem;font-weight:700;color:#1d4ed8;"
+            "<div style='font-size:0.78rem;font-weight:700;color:#0B6653;"
             "letter-spacing:.03em;margin-bottom:10px;'>"
             "①年度 → ②都道府県 → ③二次医療圏 の順に絞り込んでください</div>",
             unsafe_allow_html=True,
@@ -1296,7 +1378,7 @@ if st.session_state.get("_view_mode") == "region":
 
 if st.session_state.get("_view_mode") == "map":
 
-    st.markdown("## 🗺️ 地図で病院を探す")
+    st.markdown("## 地図で病院を探す")
     st.caption("都道府県・二次医療圏を選択して病院の分布を地図上で確認できます。マーカーをクリックして「詳細を見る」で病院詳細に移動します。")
 
     try:
@@ -1410,7 +1492,7 @@ if st.session_state.get("_view_mode") == "map":
                                 f'<br><a href="#"'
                                 f' onclick="window.open(window.top.location.origin+\'/?hospital=\'+encodeURIComponent(\'{_n}\'),\'_blank\');return false;"'
                                 f' style="display:block;margin-top:10px;padding:7px 12px;'
-                                f'background:#2563eb;color:#fff;border-radius:6px;'
+                                f'background:#12886D;color:#fff;border-radius:8px;'
                                 f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
                                 f'詳細を見る →</a>'
                                 f'</div>'
@@ -1437,10 +1519,10 @@ if st.session_state.get("_view_mode") == "map":
                     _ms_occ  = f'{_ms_cr["合計稼働率"]:.0f}%' if "合計稼働率" in _ms_cr and pd.notna(_ms_cr["合計稼働率"]) else "—"
                     st.markdown(
                         f'<div style="margin-top:12px;padding:16px 20px;'
-                        f'background:#eff6ff;border:2px solid #2563eb;border-radius:10px;'
+                        f'background:#EAF4F0;border:2px solid #12886D;border-radius:12px;'
                         f'display:flex;align-items:center;gap:16px;">'
                         f'<div style="flex:1;">'
-                        f'<div style="font-size:0.75rem;color:#2563eb;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
+                        f'<div style="font-size:0.75rem;color:#0B6653;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
                         f'<div style="font-size:1rem;font-weight:800;color:#111827;">{_ms_last}</div>'
                         f'<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">'
                         f'{_ms_cr["都道府県名"]} {_ms_cr["二次医療圏名"]}　🛏 {_ms_beds:,}床　稼働率 {_ms_occ}</div>'
@@ -1468,7 +1550,7 @@ if st.session_state.get("_view_mode") == "map":
 if st.session_state.get("_view_mode") == "distance":
     from geocoder import geocode_address as _dist_gc, haversine_km as _dist_hkm, osrm_durations as _dist_osrm
 
-    st.markdown("## 📍 距離・所要時間で病院を探す")
+    st.markdown("## 距離・所要時間で病院を探す")
 
     with st.container(border=True, key="dist_filter_box"):
         _dist_addr = st.text_input(
@@ -1765,7 +1847,7 @@ if st.session_state.get("_view_mode") == "distance":
 # を直接ベースにした、この専用の検索フローが必要。
 
 if st.session_state.get("_view_mode") == "clinic_search":
-    st.markdown("## 🩺 診療所を探す")
+    st.markdown("## 診療所を探す")
     st.caption(
         "病床機能報告（病院が中心）ではカバーされない有床診療所・無床診療所を含め、"
         "施設基準届出データから直接検索します。"
@@ -1868,13 +1950,13 @@ if st.session_state.get("_view_mode") == "clinic_search":
 # ══════════════════════════════════════════════════════════
 
 if st.session_state.get("_view_mode") == "search":
-    st.markdown("## 🔍 条件で病院を検索")
+    st.markdown("## 条件で病院を検索")
 
     # ════════════════════════════════════════════════
     # STEP 1: エリアを絞り込む
     # ════════════════════════════════════════════════
     st.markdown(
-        "<div style='border-left:4px solid #3b82f6;padding:8px 14px;background:#eff6ff;"
+        "<div style='border-left:4px solid #12886D;padding:8px 14px;background:#EAF4F0;"
         "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
         "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
         "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
@@ -3529,7 +3611,7 @@ if st.session_state.get("_view_mode") == "region_vision":
 if st.session_state.get("_view_mode") == "dpc_search":
     _dsc1, _dsc2 = st.columns([8, 2])
     with _dsc1:
-        st.markdown("## 🏥 DPC疾患別 病院検索")
+        st.markdown("## DPC疾患別 病院検索")
         st.caption("疾患（DPC6桁）ごとに全国・都道府県・二次医療圏の病院を件数順に比較します")
     with _dsc2:
         if st.button("← ホームに戻る", use_container_width=True, key="_dsc_back"):
@@ -3833,7 +3915,7 @@ _h_address = "" if str(_h_address) in ("nan", "None", "") else str(_h_address)
 _h_url = hosp_row.get("url", "") if isinstance(hosp_row, pd.Series) else ""
 _h_url = "" if str(_h_url) in ("nan", "None", "") else str(_h_url).strip()
 _addr_part = f"<span>📍 {_h_address}</span>" if _h_address else ""
-_url_part  = f'<a href="{_h_url}" target="_blank" style="color:#3b82f6;text-decoration:none;">🔗 公式サイト</a>' if _h_url else ""
+_url_part  = f'<a href="{_h_url}" target="_blank" style="color:#12886D;text-decoration:none;">公式サイト ↗</a>' if _h_url else ""
 _meta_parts = " &nbsp;·&nbsp; ".join(p for p in [_addr_part, _url_part] if p)
 
 _hdr_col, _btn_col = st.columns([8, 1])
@@ -3842,7 +3924,7 @@ with _hdr_col:
         f"""
 <div style="margin-bottom:4px;">
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
-    <span style="background:#eff6ff;color:#1d4ed8;border-radius:20px;
+    <span style="background:#EAF4F0;color:#0B6653;border-radius:20px;
                  padding:2px 10px;font-size:0.75rem;font-weight:700;">{year}年度</span>
     <span style="color:#d1d5db;font-size:0.8rem;">›</span>
     <span style="background:#f0fdf4;color:#15803d;border-radius:20px;
@@ -3952,31 +4034,33 @@ if _dpc_match_all is not None:
 
 # ── タブ ──────────────────────────────────────────────────
 
+# タブラベルは絵文字を使わずテキストのみ（デザイントークン方針：
+# 絵文字は環境依存で描画が変わり、色が意味を運ぶ体系も崩すため）
 _tab_labels = [
-    "📊 病院概要",
-    "🗺️ 地図",
-    "🏆 地域比較",
-    "🏅 ランキング",
-    "📈 経年トレンド",
-    "👨‍⚕️ スタッフ分析",
-    "🛏️ 病床・手術分析",
+    "病院概要",
+    "地図",
+    "地域比較",
+    "ランキング",
+    "経年トレンド",
+    "スタッフ分析",
+    "病床・手術分析",
 ]
 if _is_dpc:
-    _tab_labels.append("🏥 DPC分析")
+    _tab_labels.append("DPC分析")
 
 # 各タブに何が入っているか一目でわかるよう、タブを描画する直前に簡潔な案内を表示する
 # （st.tabs自体はラベルしか見えず中身は開くまで分からない上、タブ内部で出力すると
 #  そのタブの一番下＝スクロールした先にしか表示されず発見の助けにならないため、
 #  タブバーより上に置く）
 st.caption(
-    "💡 **タブの中身**　"
-    "📊病院概要: 基本情報・DPC上位疾患・医療設備・施設基準届出（区分含む）　"
-    "🗺️地図: 所在地・移動時間　"
-    "🏆地域比較: 医療圏内での位置づけ　"
-    "🏅ランキング: 指標別の順位　"
-    "📈経年トレンド: 年度ごとの推移　"
-    "👨‍⚕️スタッフ分析: 職種別の配置状況　"
-    "🛏️病床・手術分析: 入院基本料別病床数・在宅復帰率・手術実績"
+    "**タブの中身**　"
+    "病院概要: 基本情報・DPC上位疾患・医療設備・施設基準届出（区分含む）／ "
+    "地図: 所在地・移動時間／ "
+    "地域比較: 医療圏内での位置づけ／ "
+    "ランキング: 指標別の順位／ "
+    "経年トレンド: 年度ごとの推移／ "
+    "スタッフ分析: 職種別の配置状況／ "
+    "病床・手術分析: 入院基本料別病床数・在宅復帰率・手術実績"
 )
 
 _all_tabs = st.tabs(_tab_labels)
@@ -4106,34 +4190,35 @@ with tab1:
             def _modality_card(title: str, accent: str, total: int, breakdown: dict) -> str:
                 items_html = "".join(
                     f'<div style="flex:1;text-align:center;padding:0 6px;'
-                    f'border-right:1px solid rgba(255,255,255,0.07);">'
-                    f'<div style="color:#8899aa;font-size:0.68rem;margin-bottom:3px;">{lbl}</div>'
-                    f'<div style="color:white;font-size:1.05rem;font-weight:600;">{val}台</div>'
+                    f'border-right:1px solid #F0EDE6;">'
+                    f'<div style="color:#6E6A5E;font-size:0.68rem;margin-bottom:3px;">{lbl}</div>'
+                    f'<div style="color:#26251F;font-size:1.05rem;font-weight:600;">{val}台</div>'
                     f'</div>'
                     for lbl, val in breakdown.items()
                 )
                 return (
-                    f'<div style="background:linear-gradient(135deg,#1a2133,#1e2840);'
-                    f'border-left:5px solid {accent};border-radius:10px;'
+                    f'<div style="background:#fff;border:1px solid #E8E4DB;'
+                    f'border-left:5px solid {accent};border-radius:12px;'
+                    f'box-shadow:0 1px 2px rgba(70,60,35,.05);'
                     f'padding:14px 18px;margin-bottom:10px;">'
                     f'<div style="color:{accent};font-size:0.78rem;font-weight:700;'
                     f'letter-spacing:.4px;margin-bottom:6px;">{title}</div>'
                     f'<div style="display:flex;align-items:baseline;gap:3px;margin-bottom:10px;">'
-                    f'<span style="color:white;font-size:2.2rem;font-weight:700;">{total}</span>'
-                    f'<span style="color:#8899aa;font-size:0.9rem;margin-left:2px;">台</span>'
+                    f'<span style="color:#26251F;font-size:2.2rem;font-weight:700;">{total}</span>'
+                    f'<span style="color:#6E6A5E;font-size:0.9rem;margin-left:2px;">台</span>'
                     f'</div>'
-                    f'<div style="display:flex;border-top:1px solid rgba(255,255,255,0.07);padding-top:8px;">'
+                    f'<div style="display:flex;border-top:1px solid #F0EDE6;padding-top:8px;">'
                     f'{items_html}'
                     f'</div></div>'
                 )
 
             def _equip_badge(label: str, val: int) -> str:
                 return (
-                    f'<div style="background:#1a2133;border:1px solid rgba(255,255,255,0.1);'
-                    f'border-radius:8px;padding:10px 14px;text-align:center;">'
-                    f'<div style="color:#8899aa;font-size:0.72rem;margin-bottom:4px;">{label}</div>'
-                    f'<div style="color:white;font-size:1.4rem;font-weight:700;">{val}'
-                    f'<span style="font-size:0.75rem;color:#8899aa;margin-left:2px;">台</span></div>'
+                    f'<div style="background:#fff;border:1px solid #E8E4DB;'
+                    f'border-radius:10px;padding:10px 14px;text-align:center;">'
+                    f'<div style="color:#6E6A5E;font-size:0.72rem;margin-bottom:4px;">{label}</div>'
+                    f'<div style="color:#26251F;font-size:1.4rem;font-weight:700;">{val}'
+                    f'<span style="font-size:0.75rem;color:#6E6A5E;margin-left:2px;">台</span></div>'
                     f'</div>'
                 )
 
@@ -4142,7 +4227,7 @@ with tab1:
             if has_ct:
                 breakdown_ct = {lbl: _ev(col) or 0 for col, lbl in CT_BREAKDOWN.items()}
                 st.markdown(
-                    _modality_card("🔵 CT（コンピューター断層撮影装置）", "#3498db", ct_total, breakdown_ct),
+                    _modality_card("CT（コンピューター断層撮影装置）", "#33739E", ct_total, breakdown_ct),
                     unsafe_allow_html=True,
                 )
 
@@ -4151,7 +4236,7 @@ with tab1:
             if has_mri:
                 breakdown_mri = {lbl: _ev(col) or 0 for col, lbl in MRI_BREAKDOWN.items()}
                 st.markdown(
-                    _modality_card("🔴 MRI（磁気共鳴画像診断装置）", "#e74c3c", mri_total, breakdown_mri),
+                    _modality_card("MRI（磁気共鳴画像診断装置）", "#B3574B", mri_total, breakdown_mri),
                     unsafe_allow_html=True,
                 )
 
@@ -4383,12 +4468,13 @@ with tab1:
                         _extra = len(_chips) - MAX_CHIPS
                         if _extra > 0:
                             _chips_html += (
-                                f'<span style="color:#8899aa;font-size:0.72rem;margin-left:4px;">'
+                                f'<span style="color:#6E6A5E;font-size:0.72rem;margin-left:4px;">'
                                 f'+{_extra}件</span>'
                             )
                         st.markdown(
-                            f'<div style="background:#1a2133;border-left:3px solid {_grp_color};'
-                            f'border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
+                            f'<div style="background:#fff;border:1px solid #E8E4DB;'
+                            f'border-left:3px solid {_grp_color};'
+                            f'border-radius:10px;padding:10px 12px;margin-bottom:8px;">'
                             f'<div style="color:{_grp_color};font-size:0.72rem;font-weight:700;'
                             f'letter-spacing:.3px;margin-bottom:6px;">{_grp_name}</div>'
                             f'<div style="line-height:1.8;">{_chips_html}</div>'
@@ -4405,11 +4491,11 @@ with tab1:
                 })
                 if _sk_kubun_values:
                     st.markdown(
-                        '<div style="background:#134e2e33;border:1px solid #22c55e55;'
-                        'border-radius:8px;padding:8px 12px;margin:4px 0 10px 0;">'
-                        '<span style="color:#22c55e;font-weight:700;font-size:0.72rem;">'
-                        '🛏️ 入院基本料の区分：</span> '
-                        f'<span style="font-size:0.85rem;">{"・".join(_sk_kubun_values)}</span>'
+                        '<div style="background:#EAF4F0;border:1px solid #BFDFD4;'
+                        'border-radius:10px;padding:8px 12px;margin:4px 0 10px 0;">'
+                        '<span style="color:#0B6653;font-weight:700;font-size:0.72rem;">'
+                        '入院基本料の区分：</span> '
+                        f'<span style="font-size:0.85rem;color:#26251F;">{"・".join(_sk_kubun_values)}</span>'
                         '</div>',
                         unsafe_allow_html=True,
                     )
@@ -5086,7 +5172,7 @@ with tab7:
                         f'<br><a href="#"'
                         f' onclick="window.open(window.top.location.origin+\'/?hospital=\'+encodeURIComponent(\'{_r["医療機関名"]}\'),\'_blank\');return false;"'
                         f' style="display:block;margin-top:10px;padding:7px 12px;'
-                        f'background:#2563eb;color:#fff;border-radius:6px;'
+                        f'background:#12886D;color:#fff;border-radius:8px;'
                         f'text-align:center;text-decoration:none;font-size:12px;font-weight:700;">'
                         f'詳細を見る →</a>'
                         f'</div>'
@@ -5140,8 +5226,8 @@ with tab7:
                     _cr_occ  = f'{_cr["合計稼働率"]:.0f}%' if "合計稼働率" in _cr and pd.notna(_cr.get("合計稼働率")) else "—"
                     st.markdown(
                         f'<div style="margin-top:12px;padding:16px 20px;'
-                        f'background:#eff6ff;border:2px solid #2563eb;border-radius:10px;">'
-                        f'<div style="font-size:0.75rem;color:#2563eb;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
+                        f'background:#EAF4F0;border:2px solid #12886D;border-radius:12px;">'
+                        f'<div style="font-size:0.75rem;color:#0B6653;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
                         f'<div style="font-size:1rem;font-weight:800;color:#111827;">{_last_clicked}</div>'
                         f'<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">'
                         f'{_cr["都道府県名"]} {_cr["二次医療圏名"]}　🛏 {_cr_beds:,}床　稼働率 {_cr_occ}</div>'
