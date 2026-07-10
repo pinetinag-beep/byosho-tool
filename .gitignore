@@ -32,3 +32,4 @@ _yshiki2.xlsx
 # Streamlit secrets
 .streamlit/secrets.toml
 dpc_byosho_match.csv
+byosho_file_R7/
