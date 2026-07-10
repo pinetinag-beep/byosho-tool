@@ -58,10 +58,25 @@ streamlit run app.py
 
 DuckDB を新規構築する場合：
 ```bash
-python build_db.py              # 2021〜2023年 全年度
+python build_db.py              # 2021〜2023年 全年度（旧形式・MHLW URLからDL）
 python build_db.py --years 2023 # 特定年度のみ
 python build_master.py          # 医療情報ネット座標データ取り込み（初回のみ）
 ```
+
+令和6年度以降の**新オープンデータ形式**を取り込む場合（`build_byosho_r7.py`）：
+```bash
+# 病棟票7地域（機能区分・許可病床・入院基本料）＋病院票1（医師/看護師/CT/MRI/救急）
+# を医療機関コードで結合し、既存parquetに年度を追記する
+python build_byosho_r7.py --dir byosho_file_R7 --year 2025 \
+    --ward-glob '00171780[0-6].xlsx' --hosp 001717798.xlsx \
+    --append data_cache.parquet ward_cache.parquet
+```
+**新形式の注意点**（2026年に令和7年度データで対応）:
+- 令和6年度以降、病床機能報告のオープンデータは**ファイル分割が変わった**。病棟票（機能区分・許可病床・入院基本料・患者フロー）が7地域ファイル、病院票（医師/看護師等の人員・CT/MRI等の設備・救急車受入件数）が全国1ファイルに分かれる。旧 `build_db.py`（1ファイルに全部入り前提）は使えない。
+- ただし**病棟票のセル構造（5行目ヘッダー・6行目必須任意区分・7行目からデータ）は2023年までと互換**で、既存の `load_mhlw_byosho_extended` がそのまま流用できた。`build_byosho_r7.py` は病棟票をこの関数で読み、病院票だけ列名キーワード一致で人員・設備をマッピングして医療機関コードで結合する。
+- 病院票の列対応は `build_byosho_r7.py` の `_STAFF_MAP` / `_EQUIP_MAP` に定義。`救急搬送件数` は「救急車の受入件数」（年間）を採用（月別列が別にあるので完全一致で取る）。`PET`/`PETCT`/`PETMRI` は部分一致だと誤爆するので完全一致必須。
+- **MHLWサーバー（www.mhlw.go.jp）は本番サーバーから403**になるため、生ExcelはユーザーがブラウザでDLして `byosho_file_R7/` に置き、gitでpushしてClaudeが処理する運用。
+- `--append` は同一 `報告年度` が既にあれば置換してから追記する。列は両者の和集合で揃える。現状 data_cache は令和5年度(2023)＋令和7年度(2025)の2年分。
 
 ## Git・デプロイ
 
@@ -98,7 +113,8 @@ app.py          ← Streamlit UI（全タブ・サイドバー）
   ├── geocoder.py        ← 座標取得（locations → geocache → Nominatim の優先順）
   ├── sample_data.py     ← デモ用サンプルデータ生成
   ├── build_dpc.py       ← DPC調査データの取り込み（dpc_*.parquet を生成）
-  └── build_shisetsu_kijun.py ← 施設基準届出Excelの取り込み（下記セクション参照）
+  ├── build_shisetsu_kijun.py ← 施設基準届出Excelの取り込み（下記セクション参照）
+  └── build_byosho_r7.py ← 令和6年度以降の新形式 病床機能報告の取り込み（上記「アプリ起動」参照）
 
 shisetsu_search.py        ← 施設基準届出「検索専用」の独立アプリ（本体と別デプロイ可能）
 parse_chubu_shisetsu_pdf.py ← 施設基準届出「届出受理医療機関名簿」PDF形式の専用パーサー
