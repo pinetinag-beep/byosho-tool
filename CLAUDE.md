@@ -116,7 +116,8 @@ app.py          ← Streamlit UI（全タブ・サイドバー）
   ├── charts.py          ← Plotly グラフ定義
   ├── geocoder.py        ← 座標取得（locations → geocache → Nominatim の優先順）
   ├── sample_data.py     ← デモ用サンプルデータ生成
-  ├── build_dpc.py       ← DPC調査データの取り込み（dpc_*.parquet を生成）
+  ├── build_dpc.py       ← DPC調査データの取り込み（DuckDB経由・dpc_*.parquet を生成）
+  ├── build_dpc_append.py ← DPC追加年度をparquetに直接追記（本番はDuckDB無しのため）
   ├── build_shisetsu_kijun.py ← 施設基準届出Excelの取り込み（下記セクション参照）
   └── build_byosho_r7.py ← 令和6年度以降の新形式 病床機能報告の取り込み（上記「アプリ起動」参照）
 
@@ -329,6 +330,7 @@ PDF解析で得た教訓（同種のPDFを今後解析する際に必ず踏ま�
 
 ## 開発上の教訓・注意点（トラブルシューティング用）
 
+- **DPCと病床機能報告は必ず同年度で表示する**: 病院詳細ページのDPCセクション（DPC患者件数・DPC分析タブ）は、選択中の病床機能報告の年度（`year`）と同じ年度のDPCのみを表示する（`_dpc_h_all[年度==year]` で判定し、無ければ `_is_dpc=False` で非表示にし他年度がある旨を案内）。2つのデータが違う年度だと誤解を招くため。現状DPCは**令和4〜6年度（2022〜2024）の3年分**（`build_dpc_append.py` で追記）。DPC公開データは各ファイルの `R0x全体`/`令和x年度` シートで年度を検証すること（病床機能報告と同様、ファイルIDやフォルダ名を信用しない）。DPC公開データは1年分で80〜90ファイルあり、`build_dpc.py` の `detect_file_type()` がシート名で6種別（施設概要表/施設別MDC別比率/高度医療/件数/MDC01-18/再入院）を判別する。「高度医療」（手術・化学療法・放射線・全身麻酔の施設別実施件数）だけ取りこぼしやすいので要確認。
 - **`*`（全角＊含む）のマスク値**: 病床機能報告・様式2（手術）・DPCデータで年間10件以下の値は `*` として報告される。`pd.to_numeric(errors="coerce").fillna(0)` で単純変換すると `*` が `0` に化けて「実績なし」と誤表示される。`-1` をセンチネル値として保持し、表示時のみ `"*"` に変換すること（`data_processor.py` の手術データ、`build_dpc.py` のDPCデータで対応済み）。集計（`.sum()`）する際も `-1` 同士を単純加算すると意味不明な負の値になるため、専用の集計関数（正の値のみ合計、無ければ`-1`を維持）が必要。
 - **Streamlitで `st.markdown()` 内の `<script>` は実行されない**（innerHTML経由のため）。カスタムJSを動かす場合は `st.components.v1.html()` を使い、親ページのDOMを触るなら `window.parent.document` 経由でアクセスする（ブラウザ自動翻訳の抑止用notranslateタグ設定で対応）。
 - **ブラウザの自動翻訳が日本語ページを誤って再翻訳する**ことがある（「地域包括ケア」→「地域含むケア」等）。`<meta name="google" content="notranslate">` と `<html lang="ja">` を設定して防止する。
