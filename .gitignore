@@ -33,3 +33,6 @@ _yshiki2.xlsx
 .streamlit/secrets.toml
 dpc_byosho_match.csv
 byosho_file_R7/
+byosho_file_R4/
+byosho_file_R5/
+byosho_file_R6/
