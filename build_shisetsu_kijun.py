@@ -176,12 +176,51 @@ def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
     header_rows["医療機関名_正規化"] = header_rows["医療機関名称"].apply(_normalize)
     header_rows["年月"] = year_month
 
+    # 「市町村名」列はどの厚生局のフォーマットでも常に空のため保持しない
+    # （住所の先頭に市区町村名が含まれているため、住所列だけで十分）。
     keep = [
         "都道府県コード", "都道府県名", "医療機関番号", "医療機関名称",
-        "医療機関名_正規化", "受理届出名称", "受理記号", "受理番号", "算定開始年月日",
+        "医療機関名_正規化", "住所", "受理届出名称", "受理記号", "受理番号", "算定開始年月日",
         "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "年月",
     ]
     return header_rows[keep].reset_index(drop=True), year_month
+
+
+# 病院系の入院基本料（医療法上、病院（20床以上）でなければ届出できない）。
+# 有床診療所は「有床診療所入院基本料」等の専用の届出名称を持つため、
+# それとの重複が無いことを確認済み（本番データで矛盾ケース0件）。
+_HOSPITAL_NYUIN_TYPES = {
+    "一般病棟入院基本料", "療養病棟入院基本料", "精神病棟入院基本料",
+    "障害者施設等入院基本料", "結核病棟入院基本料",
+    "特定機能病院入院基本料", "専門病院入院基本料",
+}
+_CLINIC_BED_NYUIN_TYPES = {
+    "有床診療所入院基本料", "有床診療所療養病床入院基本料",
+}
+
+
+def _classify_facility_types(df: pd.DataFrame) -> "pd.Series":
+    """
+    医療機関番号ごとに「病院／有床診療所／無床診療所」を判定する。
+
+    入院基本料は入院を算定するための必須の届出（届出なしに入院料は
+    算定できない）なので、これらの届出が一切無い医療機関は無床診療所と
+    判定できる。届出をしていない無床診療所は元々このデータに載らない
+    （届出自体が無い）ため、ここでの「無床診療所」は
+    「何らかの施設基準は届出ているが入院基本料は届出ていない」医療機関を指す。
+    """
+    key = df["都道府県コード"].astype(str) + "_" + df["医療機関番号"].astype(str)
+    has_hospital = set(key[df["受理届出名称"].isin(_HOSPITAL_NYUIN_TYPES)])
+    has_clinic_bed = set(key[df["受理届出名称"].isin(_CLINIC_BED_NYUIN_TYPES)])
+
+    def _classify(k: str) -> str:
+        if k in has_hospital:
+            return "病院"
+        if k in has_clinic_bed:
+            return "有床診療所"
+        return "無床診療所"
+
+    return key.map(_classify)
 
 
 def parse_file(path: str) -> tuple[pd.DataFrame, str]:
@@ -251,6 +290,7 @@ def main() -> None:
         sys.exit(1)
 
     out = pd.concat(dfs, ignore_index=True)
+    out["施設種別"] = _classify_facility_types(out)
     out_path = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
     out.to_parquet(out_path, index=False)
 
@@ -266,6 +306,11 @@ def main() -> None:
     )
     summary.columns = ["コード", "都道府県名", "医療機関数"]
     print(summary.to_string(index=False))
+
+    # 施設種別サマリー
+    print("\n=== 施設種別 ===")
+    fac_summary = out.drop_duplicates(subset=["都道府県コード", "医療機関番号"])["施設種別"].value_counts()
+    print(fac_summary.to_string())
 
     # 届出名称件数 Top20
     print("\n=== 届出名称 件数 Top20 ===")
