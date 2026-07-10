@@ -4126,20 +4126,25 @@ _dpc_ban: int | None = None
 _dpc_hosp_row = None
 _is_dpc = False
 _dpc_matched_name = None
+_dpc_avail_years: list[int] = []   # この病院にDPCがある年度（案内用）
 _dpc_match_all = _load_dpc_match(_DPC_MATCH_MTIME)
 _dpc_hospitals_all = _load_dpc_hospitals()
 if _dpc_match_all is not None:
     _m = _dpc_match_all[_dpc_match_all["病床報告施設名"] == hospital]
     if not _m.empty and "未結合" not in str(_m.iloc[0]["マッチ状態"]):
-        _is_dpc = True
         _dpc_matched_name = str(_m.iloc[0]["DPC施設名"])
         if _dpc_hospitals_all is not None:
-            _dpc_h = _dpc_hospitals_all[_dpc_hospitals_all["施設名"] == _dpc_matched_name]
-            if not _dpc_h.empty:
-                # 最新年度のレコードを使用
-                _dpc_h = _dpc_h.sort_values("年度", ascending=False)
-                _dpc_ban = int(_dpc_h.iloc[0]["告示番号"])
-                _dpc_hosp_row = _dpc_h.iloc[0]
+            _dpc_h_all = _dpc_hospitals_all[_dpc_hospitals_all["施設名"] == _dpc_matched_name]
+            if not _dpc_h_all.empty:
+                if "年度" in _dpc_h_all.columns:
+                    _dpc_avail_years = sorted(int(y) for y in _dpc_h_all["年度"].dropna().unique())
+                # 病床機能報告と年度がズレて誤解を招かないよう、選択中の年度と
+                # 同じ年度のDPCのみを使う（同年度のDPCが無ければDPC表示は出さない）。
+                _dpc_h_year = _dpc_h_all[_dpc_h_all["年度"] == year] if "年度" in _dpc_h_all.columns else _dpc_h_all
+                if not _dpc_h_year.empty:
+                    _is_dpc = True
+                    _dpc_ban = int(_dpc_h_year.iloc[0]["告示番号"])
+                    _dpc_hosp_row = _dpc_h_year.iloc[0]
 
 
 # ── タブ ──────────────────────────────────────────────────
@@ -4185,10 +4190,20 @@ with tab1:
         st.warning("選択した年度のデータが見つかりません")
     else:
         # ── DPC MDC別患者件数 上位3 ──────────────────────────
+        # DPCは選択中の病床機能報告と同じ年度のみ表示（_is_dpc が年度連動済み）。
+        # 同年度のDPCが無いが他年度にはある場合は、切替を促す案内を出す。
+        if not _is_dpc and _dpc_avail_years:
+            _dpc_yrs_txt = "・".join(_reiwa_nendo(y) for y in _dpc_avail_years)
+            st.info(
+                f"この病院のDPCデータは {_dpc_yrs_txt}（{'／'.join(str(y) for y in _dpc_avail_years)}）があります。"
+                f"病床機能報告と同じ年度で見るため、上の年度セレクトを切り替えるとDPCが表示されます。"
+            )
         if _is_dpc and _dpc_ban is not None:
             _ov_cases_all = _load_dpc_mdc_cases()
             if _ov_cases_all is not None:
                 _ov_cases = _ov_cases_all[_ov_cases_all["告示番号"] == _dpc_ban]
+                if "年度" in _ov_cases.columns:
+                    _ov_cases = _ov_cases[_ov_cases["年度"] == year]
                 if not _ov_cases.empty:
                     _ov_mdc_keys = [k for k in MDC_LABELS if k in _ov_cases.columns]
                     if _ov_mdc_keys:
@@ -4198,9 +4213,7 @@ with tab1:
                             _ov_noop_row = _ov_cases[_ov_cases["手術有無"] == "無し"]
                             _ov_surg_row = _ov_cases[_ov_cases["手術有無"] == "有り"]
                             st.markdown('<div class="section-header">DPC 患者件数 上位3領域</div>', unsafe_allow_html=True)
-                            _ov_dpc_year = int(_ov_cases_all["年度"].max()) if "年度" in _ov_cases_all.columns else None
-                            if _ov_dpc_year:
-                                st.markdown(_source_tag(_dpc_source(_ov_dpc_year)), unsafe_allow_html=True)
+                            st.markdown(_source_tag(_dpc_source(year)), unsafe_allow_html=True)
                             _ov_accent = ["#3b82f6", "#8b5cf6", "#06b6d4"]
                             _ov_cols = st.columns(3)
                             for _oi, ((_ov_key, _ov_val), _ov_col, _ov_ac) in enumerate(
@@ -5462,13 +5475,12 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         _dp_surg_all  = _load_dpc_surgery_detail(_DPC_SURG_MTIME)
 
         def _dpc_latest(df, ban):
+            # 選択中の病床機能報告年度と同じ年度のDPCのみ返す（年度ズレ防止）。
             if df is None:
                 return pd.DataFrame()
             sub = df[df["告示番号"] == ban]
-            if sub.empty:
-                return pd.DataFrame()
             if "年度" in sub.columns:
-                sub = sub.sort_values("年度", ascending=False)
+                sub = sub[sub["年度"] == year]
             return sub
 
         _dp_proc  = _dpc_latest(_dp_proc_all, _dpc_ban)
