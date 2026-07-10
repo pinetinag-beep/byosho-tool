@@ -4102,11 +4102,19 @@ _occ_color = (
     "#3b82f6" if _occ_pct >= 60 else
     "#f59e0b" if _occ_pct >= 40 else "#ef4444"
 )
+# 病床機能報告では医師・看護師の人員欄が未記入（0）の病院がある（特に古い
+# 年度）。病床があるのに0人は実態でなく未報告なので「—」で示す。
+_nurse_txt = f"看護師 {nurses:,}人" if nurses > 0 else "看護師 —（未報告）"
+if doctors > 0:
+    _doc_val, _doc_sub = f"{doctors:,}人", _nurse_txt
+else:
+    _doc_val, _doc_sub = "—", f"未報告 · {_nurse_txt}"
+
 kpi_card(m1, "許可病床数",  f"{total_kyoka:,}床",         kado_sub,                color="#6366f1")
 kpi_card(m2, "総稼働率",    f"{_occ_pct:.1f}%",           "",                      color=_occ_color)
 kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_df)}院中", color="#8b5cf6")
 kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース",       color="#0ea5e9")
-kpi_card(m5, "常勤医師数",  f"{doctors:,}人",               f"看護師 {nurses:,}人",     color="#14b8a6")
+kpi_card(m5, "常勤医師数",  _doc_val,                     _doc_sub,                color="#14b8a6")
 
 st.markdown(_source_tag(_byosho_source(year)), unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
