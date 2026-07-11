@@ -41,6 +41,22 @@ TABLES = [
 JOBS = [(2022, "DPC_file_R4"), (2023, "DPC_file_R5")]
 
 
+def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """繰り返し文字列をcategory・数値をdowncastしてメモリを削減する。
+    surgery_detail は630万行あり、素のobject/float64だと1GB超でStreamlit
+    Cloudのメモリ制限を単体で超えるため必須（category化で約1/5になる）。"""
+    for c in ["施設名", "疾患名", "MDC", "dpc6", "受理届出名称", "受理記号"]:
+        if c in df.columns and str(df[c].dtype) == "object":
+            df[c] = df[c].astype("category")
+    for c in ["年度", "告示番号"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("int32")
+    for c in df.columns:
+        if str(df[c].dtype) == "float64":
+            df[c] = df[c].astype("float32")
+    return df
+
+
 def _union_append(parquet_path: Path, new_df: pd.DataFrame, year: int):
     """既存parquetから同年度を除き、列の和集合で new_df を追記して書き戻す。"""
     if parquet_path.exists():
@@ -60,6 +76,7 @@ def _union_append(parquet_path: Path, new_df: pd.DataFrame, year: int):
         ([old[cols]] if len(old) else []) + [new_df[cols]],
         ignore_index=True,
     )
+    combined = _optimize_dtypes(combined)
     combined.to_parquet(parquet_path, index=False)
     return combined
 
