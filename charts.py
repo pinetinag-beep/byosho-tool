@@ -291,6 +291,36 @@ def trend_occupancy(trend_df: pd.DataFrame, hospital_name: str) -> go.Figure:
     return _fig_layout(fig, f"総稼働率推移 — {hospital_name}")
 
 
+def trend_los(los_df: pd.DataFrame, hospital_name: str) -> go.Figure:
+    """平均在院日数推移"""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=los_df["報告年度"], y=los_df["平均在院日数"],
+        mode="lines+markers+text",
+        name="平均在院日数",
+        line=dict(color="#f39c12", width=3),
+        marker=dict(size=9),
+        text=los_df["平均在院日数"].map(lambda v: f"{v:.1f}日" if pd.notna(v) else ""),
+        textposition="top center",
+        hovertemplate="%{y:.1f}日<extra></extra>",
+    ))
+    fig.update_yaxes(ticksuffix="日")
+    return _fig_layout(fig, f"平均在院日数推移 — {hospital_name}")
+
+
+def trend_dpc_cases(dpc_trend_df: pd.DataFrame, hospital_name: str) -> go.Figure:
+    """DPC症例数（MDC別患者件数合計）推移"""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=dpc_trend_df["年度"], y=dpc_trend_df["DPC症例数"],
+        name="DPC症例数", marker_color="#8b5cf6", opacity=0.85,
+        text=dpc_trend_df["DPC症例数"].map(lambda v: f"{v:,.0f}例"),
+        textposition="outside",
+        hovertemplate="%{y:,.0f}例<extra></extra>",
+    ))
+    return _fig_layout(fig, f"DPC症例数推移 — {hospital_name}")
+
+
 def trend_staff(trend_df: pd.DataFrame, hospital_name: str) -> go.Figure:
     """スタッフ数推移"""
     fig = go.Figure()

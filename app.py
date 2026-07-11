@@ -17,7 +17,7 @@ from data_processor import (
     load_data, load_multiple_mhlw, load_mhlw_byosho_extended, load_multiple_mhlw_extended,
     load_mhlw_yoshiki2, load_mhlw_shisetsu, merge_shisetsu,
     normalize, add_derived_columns,
-    region_share, hospital_trend, bed_composition,
+    region_share, hospital_trend, hospital_los_trend, bed_composition,
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
@@ -88,7 +88,7 @@ def _normalize_hospital_for_match(name: str) -> str:
 from charts import (
     bed_donut, occupancy_gauge, bed_type_occupancy_bar,
     regional_bed_comparison, occupancy_scatter, share_bar, ranking_table_fig,
-    trend_beds, trend_occupancy, trend_staff,
+    trend_beds, trend_occupancy, trend_staff, trend_los, trend_dpc_cases,
     staff_scatter, staff_bar_region,
     detail_bed_type_table, admission_route_pie, discharge_route_pie, home_return_rate_bar,
 )
@@ -4146,6 +4146,18 @@ if _dpc_match_all is not None:
                     _dpc_ban = int(_dpc_h_year.iloc[0]["告示番号"])
                     _dpc_hosp_row = _dpc_h_year.iloc[0]
 
+# 経年トレンド用：選択中の年度に関わらず、この病院のDPC症例数を全年度分集計
+_dpc_case_trend_df = pd.DataFrame()
+if _dpc_matched_name is not None:
+    _dpc_cases_all = _load_dpc_mdc_cases()
+    if _dpc_cases_all is not None:
+        _dct_sub = _dpc_cases_all[_dpc_cases_all["施設名"] == _dpc_matched_name]
+        if not _dct_sub.empty:
+            _dct_mdc_cols = [c for c in _dct_sub.columns if c.startswith("MDC")]
+            _dct_agg = _dct_sub.groupby("年度", as_index=False)[_dct_mdc_cols].sum(numeric_only=True)
+            _dct_agg["DPC症例数"] = _dct_agg[_dct_mdc_cols].sum(axis=1)
+            _dpc_case_trend_df = _dct_agg[["年度", "DPC症例数"]].sort_values("年度")
+
 
 # ── タブ ──────────────────────────────────────────────────
 
@@ -4717,16 +4729,35 @@ with tab4:
         with c2:
             st.plotly_chart(trend_occupancy(trend_df, hospital), use_container_width=True)
 
+        _los_trend_df = hospital_los_trend(st.session_state.ward_df, hospital)
+        _has_los_trend = len(_los_trend_df.dropna(subset=["平均在院日数"])) >= 2
+        _has_dpc_trend = len(_dpc_case_trend_df) >= 2
+
+        if _has_los_trend or _has_dpc_trend:
+            c3, c4 = st.columns(2)
+            if _has_los_trend:
+                with c3:
+                    st.plotly_chart(trend_los(_los_trend_df, hospital), use_container_width=True)
+                    st.markdown(_source_tag("病床機能報告（在棟延べ数・新規入棟患者数・退棟患者数）"), unsafe_allow_html=True)
+            if _has_dpc_trend:
+                with c4:
+                    st.plotly_chart(trend_dpc_cases(_dpc_case_trend_df, hospital), use_container_width=True)
+                    st.markdown(_source_tag("DPC導入の影響評価に係る調査"), unsafe_allow_html=True)
+
         st.plotly_chart(trend_staff(trend_df, hospital), use_container_width=True)
 
         st.markdown('<div class="section-header">年度別データ一覧</div>', unsafe_allow_html=True)
+        _disp_df = trend_df
         disp_cols = ["報告年度", "合計_許可病床数", "合計_稼働病床数"]
         for t in BED_TYPES:
             if f"{t}_許可病床数" in trend_df.columns:
                 disp_cols.append(f"{t}_許可病床数")
+        if _has_los_trend:
+            _disp_df = _disp_df.merge(_los_trend_df[["報告年度", "平均在院日数"]], on="報告年度", how="left")
+            disp_cols.append("平均在院日数")
         if "常勤医師数" in trend_df.columns:
             disp_cols += ["常勤医師数", "常勤看護師数"]
-        st.dataframe(trend_df[disp_cols].reset_index(drop=True), hide_index=True, use_container_width=True)
+        st.dataframe(_disp_df[disp_cols].reset_index(drop=True), hide_index=True, use_container_width=True)
 
         if len(trend_df) >= 2:
             first_y = trend_df.iloc[0]
