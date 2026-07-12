@@ -4434,13 +4434,32 @@ with tab1:
                 "病床稼働率(%)":     occ_rate,
                 "構成比（%）":       f"{comp:.1f}%",
             })
-        st.dataframe(
-            pd.DataFrame(detail_rows),
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "許可病床数（床）": st.column_config.NumberColumn(format="%,d 床"),
-            },
+        _detail_cols = ["病床種別", "許可病床数（床）", "平均在棟患者数/日", "病床稼働率(%)", "構成比（%）"]
+
+        def _detail_cell(row, col):
+            if col == "許可病床数（床）":
+                return f'{row[col]:,}床'
+            return str(row[col])
+
+        _detail_header = "".join(
+            f'<th style="background:#f0f2f6;padding:8px 10px;text-align:center;'
+            f'border-bottom:2px solid #d0d3db;font-size:0.88rem;color:#444;">{c}</th>'
+            for c in _detail_cols
+        )
+        _detail_body = "".join(
+            '<tr>' + "".join(
+                f'<td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8e8e8;">'
+                f'{_detail_cell(row, c)}</td>'
+                for c in _detail_cols
+            ) + '</tr>'
+            for row in detail_rows
+        )
+        st.markdown(
+            '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;">'
+            f'<thead><tr>{_detail_header}</tr></thead>'
+            f'<tbody>{_detail_body}</tbody>'
+            '</table>',
+            unsafe_allow_html=True,
         )
 
         if "救急搬送件数" in hosp_row and hosp_row["救急搬送件数"] > 0:
