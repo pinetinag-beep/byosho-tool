@@ -2072,376 +2072,382 @@ if st.session_state.get("_view_mode") == "clinic_search":
 if st.session_state.get("_view_mode") == "search":
     st.markdown("## 条件で病院を検索")
 
-    # ════════════════════════════════════════════════
-    # STEP 1: エリアを絞り込む
-    # ════════════════════════════════════════════════
-    st.markdown(
-        "<div style='border-left:4px solid #12886D;padding:8px 14px;background:#EAF4F0;"
-        "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
-        "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
-        "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
-        "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-    _sa, _sb, _sc = st.columns([1, 2, 2])
-    with _sa:
-        s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-        if st.session_state.get("_sel_year") not in s_years_list:
-            st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
-        s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
-    with _sb:
-        s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-        s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
-    with _sc:
-        if s_pref != "全都道府県":
-            s_all_regions = ["全二次医療圏"] + sorted(
-                r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
-                if r != "不明"
-            )
-        else:
-            s_all_regions = ["全二次医療圏"]
-        if st.session_state.get("s_region") not in s_all_regions:
-            st.session_state["s_region"] = "全二次医療圏"
-        s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
-    s_kw = st.text_input(
-        "病院名キーワード",
-        placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
-        key="s_kw",
-    )
-
-    # 所要時間（折りたたみ）
-    _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
-    _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
-    with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
-        if not _tt_db_ok:
-            st.caption("座標データ（locations_cache.parquet）が必要です")
-        s_tt_addr = st.text_input(
-            "出発地（住所・ランドマーク）",
-            placeholder="例: 東京都新宿区西新宿2丁目8",
-            key="s_tt_addr",
-            disabled=not _tt_db_ok,
+    with st.form("search_form"):
+        # ════════════════════════════════════════════════
+        # STEP 1: エリアを絞り込む
+        # ════════════════════════════════════════════════
+        st.markdown(
+            "<div style='border-left:4px solid #12886D;padding:8px 14px;background:#EAF4F0;"
+            "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
+            "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
+            "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+            "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
+            "</div>",
+            unsafe_allow_html=True,
         )
-        if s_tt_addr and _tt_db_ok:
-            _tt1, _tt2 = st.columns(2)
-            with _tt1:
-                s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
-            with _tt2:
-                s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
-        else:
-            s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
-            s_tt_max  = st.session_state.get("s_tt_max",  30)
+        _sa, _sb, _sc = st.columns([1, 2, 2])
+        with _sa:
+            s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+            if st.session_state.get("_sel_year") not in s_years_list:
+                st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+            s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
+        with _sb:
+            s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
+            s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
+        with _sc:
+            if s_pref != "全都道府県":
+                s_all_regions = ["全二次医療圏"] + sorted(
+                    r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
+                    if r != "不明"
+                )
+            else:
+                s_all_regions = ["全二次医療圏"]
+            if st.session_state.get("s_region") not in s_all_regions:
+                st.session_state["s_region"] = "全二次医療圏"
+            s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
+        s_kw = st.text_input(
+            "病院名キーワード",
+            placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
+            key="s_kw",
+        )
 
-    # ════════════════════════════════════════════════
-    # STEP 2: 絞り込み条件を選ぶ
-    # ════════════════════════════════════════════════
-    st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
-    st.divider()
-    st.markdown(
-        "<div style='border-left:4px solid #f59e0b;padding:8px 14px;background:#fffbeb;"
-        "border-radius:0 6px 6px 0;margin-bottom:16px;'>"
-        "<span style='font-weight:700;font-size:1rem;color:#78350f;'>② 絞り込み条件を選ぶ</span>"
-        "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
-        "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown("""
-<style>
-/* 検索条件タブをフォルダ型に */
-div[data-testid="stTabs"] > div:first-child {
-    gap: 4px;
-}
-div[data-testid="stTabs"] button[data-baseweb="tab"] {
-    font-size: 0.9rem !important;
-    font-weight: 600 !important;
-    padding: 8px 20px !important;
-    border-radius: 8px 8px 0 0 !important;
-    border: 1.5px solid #e5e7eb !important;
-    border-bottom: none !important;
-    background: #f9fafb !important;
-    color: #6b7280 !important;
-    margin-bottom: -1px;
-}
-div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
-    background: #ffffff !important;
-    color: #1f2937 !important;
-    border-color: #d1d5db !important;
-    border-bottom: 2px solid #ffffff !important;
-}
-div[data-testid="stTabPanel"] {
-    border: 1.5px solid #e5e7eb;
-    border-radius: 0 8px 8px 8px;
-    padding: 16px !important;
-    background: #ffffff;
-}
-</style>
-""", unsafe_allow_html=True)
-    _tab_equip, _tab_surg, _tab_kijun = st.tabs(["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"])
-
-    with _tab_equip:
-        _eq1, _eq2, _eq3 = st.columns(3)
-        with _eq1:
-            st.markdown("**CT**")
-            ct_filter = st.radio(
-                "CT", ["指定なし", "CTあり（合計）", "CTなし（合計）", "スペック別"],
-                key="ct_filter", label_visibility="collapsed",
+        # 所要時間（折りたたみ）
+        _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
+        _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
+        with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
+            if not _tt_db_ok:
+                st.caption("座標データ（locations_cache.parquet）が必要です")
+            s_tt_addr = st.text_input(
+                "出発地（住所・ランドマーク）",
+                placeholder="例: 東京都新宿区西新宿2丁目8",
+                key="s_tt_addr",
+                disabled=not _tt_db_ok,
             )
-            s_ck_ct64 = s_ck_ct16p = s_ck_ct16m = False
-            if ct_filter == "スペック別":
-                s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
-                s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
-                s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
-            st.markdown("**MRI**")
-            mri_filter = st.radio(
-                "MRI", ["指定なし", "MRIあり（合計）", "MRIなし（合計）", "スペック別"],
-                key="mri_filter", label_visibility="collapsed",
-            )
-            s_ck_mri3t = s_ck_mri15p = s_ck_mri15m = False
-            if mri_filter == "スペック別":
-                s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
-                s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
-                s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
-        with _eq2:
-            st.markdown("**放射線治療**")
-            s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
-            s_has_cyberknife = st.checkbox("サイバーナイフあり",             key="s_has_cyberknife")
-            s_has_gamma      = st.checkbox("ガンマナイフあり",               key="s_has_gamma")
-            st.markdown("**核医学**")
-            s_has_pet  = st.checkbox("PET / PET-CTあり", key="s_has_pet")
-            s_has_spect = st.checkbox("SPECTあり",       key="s_has_spect")
-        with _eq3:
-            st.markdown("**手術・カテーテル**")
-            s_has_robot_eq = st.checkbox("手術支援ロボットあり",          key="s_has_robot_eq")
-            s_has_angio    = st.checkbox("アンギオ（血管連続撮影）あり",  key="s_has_angio")
-            st.markdown("**その他**")
-            s_has_mammo = st.checkbox("マンモグラフィあり", key="s_has_mammo")
+            if s_tt_addr and _tt_db_ok:
+                _tt1, _tt2 = st.columns(2)
+                with _tt1:
+                    s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
+                with _tt2:
+                    s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
+            else:
+                s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
+                s_tt_max  = st.session_state.get("s_tt_max",  30)
 
-    with _tab_surg:
-        _sg1, _sg2 = st.columns([1, 1])
-        with _sg1:
-            s_surg_mode = st.radio(
-                "集計対象", ["手術（全数）", "全身麻酔の手術"], key="s_surg_mode",
-                help="・手術（全数）→ データ列: 手術_[臓器名]\n・全身麻酔の手術 → データ列: 全麻_[臓器名]",
-            )
-            s_surg_logic = st.radio(
-                "複数選択の扱い", ["AND（すべて該当）", "OR（いずれか該当）"], key="s_surg_logic",
-            )
-            st.caption("術式（1件以上）")
-            s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
-            s_ck_fuku    = st.checkbox("腹腔鏡下手術",     key="s_ck_fuku")
-            s_ck_kyou    = st.checkbox("胸腔鏡下手術",     key="s_ck_kyou")
-        with _sg2:
-            st.caption("臓器別（1件以上）")
-            _oa, _ob = st.columns(2)
-            with _oa:
-                s_ck_hifuka  = st.checkbox("皮膚・皮下組織",   key="s_ck_hifuka")
-                s_ck_kinkot  = st.checkbox("筋骨格系・四肢",   key="s_ck_kinkot")
-                s_ck_shinkei = st.checkbox("神経系・頭蓋",     key="s_ck_shinkei")
-                s_ck_me      = st.checkbox("眼",               key="s_ck_me")
-                s_ck_jibika  = st.checkbox("耳鼻咽喉",         key="s_ck_jibika")
-                s_ck_ganmen  = st.checkbox("顔面・口腔・頸部", key="s_ck_ganmen")
-            with _ob:
-                s_ck_kyobu   = st.checkbox("胸部",             key="s_ck_kyobu")
-                s_ck_shin    = st.checkbox("心・脈管",          key="s_ck_shin")
-                s_ck_fukubu  = st.checkbox("腹部",             key="s_ck_fukubu")
-                s_ck_nyo     = st.checkbox("尿路系・副腎",     key="s_ck_nyo")
-                s_ck_seiki   = st.checkbox("性器",             key="s_ck_seiki")
-                s_ck_shika   = st.checkbox("歯科",             key="s_ck_shika")
+        # ════════════════════════════════════════════════
+        # STEP 2: 絞り込み条件を選ぶ
+        # ════════════════════════════════════════════════
+        st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
+        st.divider()
+        st.markdown(
+            "<div style='border-left:4px solid #f59e0b;padding:8px 14px;background:#fffbeb;"
+            "border-radius:0 6px 6px 0;margin-bottom:16px;'>"
+            "<span style='font-weight:700;font-size:1rem;color:#78350f;'>② 絞り込み条件を選ぶ</span>"
+            "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+            "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("""
+    <style>
+    /* 検索条件タブをフォルダ型に */
+    div[data-testid="stTabs"] > div:first-child {
+        gap: 4px;
+    }
+    div[data-testid="stTabs"] button[data-baseweb="tab"] {
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
+        padding: 8px 20px !important;
+        border-radius: 8px 8px 0 0 !important;
+        border: 1.5px solid #e5e7eb !important;
+        border-bottom: none !important;
+        background: #f9fafb !important;
+        color: #6b7280 !important;
+        margin-bottom: -1px;
+    }
+    div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+        background: #ffffff !important;
+        color: #1f2937 !important;
+        border-color: #d1d5db !important;
+        border-bottom: 2px solid #ffffff !important;
+    }
+    div[data-testid="stTabPanel"] {
+        border: 1.5px solid #e5e7eb;
+        border-radius: 0 8px 8px 8px;
+        padding: 16px !important;
+        background: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+        _tab_equip, _tab_surg, _tab_kijun = st.tabs(["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"])
 
-    with _tab_kijun:
-        _sk_df_filt = _load_shisetsu_kijun()
-        if _sk_df_filt is not None:
-            # カテゴリ別届出グループ定義
-            _SK_SEARCH_GROUPS = [
-                ("入院体制・病棟", [
-                    ("一般病棟入院基本料",          "一般病棟入院基本料"),
-                    ("特定機能病院",                "特定機能病院入院基本料"),
-                    ("地域包括ケア病棟",            "地域包括ケア病棟入院料"),
-                    ("地域包括医療病棟",            "地域包括医療病棟入院料"),
-                    ("回復期リハビリ病棟",          "回復期リハビリテーション病棟入院料"),
-                    ("緩和ケア病棟",                "緩和ケア病棟入院料"),
-                    ("療養病棟",                    "療養病棟入院基本料"),
-                    ("障害者施設等病棟",            "障害者施設等入院基本料"),
-                    ("急性期充実体制加算",          "急性期充実体制加算"),
-                    ("総合入院体制加算",            "総合入院体制加算"),
-                    ("精神病棟",                    "精神病棟入院基本料"),
-                ]),
-                ("看護体制・人員", [
-                    ("医師事務作業補助体制加算",    "医師事務作業補助体制加算"),
-                    ("看護補助加算",                "看護補助加算"),
-                    ("急性期看護補助体制加算",      "急性期看護補助体制加算"),
-                    ("夜間急性期看護補助体制加算",  "夜間急性期看護補助体制加算"),
-                    ("地域医療体制確保加算",        "地域医療体制確保加算"),
-                    ("夜間看護体制加算",            "夜間看護体制加算"),
-                ]),
-                ("救急・集中治療", [
-                    ("救急医療管理加算",            "救急医療管理加算"),
-                    ("救命救急入院料",              "救命救急入院料"),
-                    ("超急性期脳卒中加算(tPA)",     "超急性期脳卒中加算"),
-                    ("ICU",                         "集中治療室管理料"),
-                    ("HCU",                         "ハイケアユニット入院医療管理料"),
-                    ("NICU",                        "新生児集中治療室管理料"),
-                    ("脳卒中ケアユニット",          "脳卒中ケアユニット入院医療管理料"),
-                ]),
-                ("手術・麻酔・カテーテル", [
-                    ("麻酔管理料(Ⅰ)",              "麻酔管理料（Ⅰ）"),
-                    ("ロボット手術",                "ロボット支援下内視鏡手術用支援機器加算"),
-                    ("心臓カテーテル",              "心臓カテーテル法による諸検査"),
-                    ("経皮的冠動脈形成術",          "経皮的冠動脈形成術"),
-                    ("人工心肺",                    "人工心肺"),
-                    ("大動脈バルーンパンピング法",  "大動脈バルーンパンピング法"),
-                    ("体外衝撃波腎・尿管結石破砕術", "体外衝撃波腎・尿管結石破砕術"),
-                    ("周術期薬学管理料",            "周術期薬学管理料"),
-                    ("輸血管理料",                  "輸血管理料"),
-                ]),
-                ("放射線治療・画像診断", [
-                    ("放射線治療（体外照射）",      "放射線治療（体外照射）"),
-                    ("粒子線治療",                  "粒子線治療"),
-                    ("外来放射線照射診療料",        "外来放射線照射診療料"),
-                    ("放射線治療専任加算",          "放射線治療専任加算"),
-                    ("画像診断管理加算",            "画像診断管理加算"),
-                ]),
-                ("リハビリ", [
-                    ("脳血管疾患等リハビリ(Ⅰ)",    "脳血管疾患等リハビリテーション料（Ⅰ）"),
-                    ("脳血管疾患等リハビリ(Ⅱ)",    "脳血管疾患等リハビリテーション料（Ⅱ）"),
-                    ("運動器リハビリ(Ⅰ)",          "運動器リハビリテーション料（Ⅰ）"),
-                    ("呼吸器リハビリ(Ⅰ)",          "呼吸器リハビリテーション料（Ⅰ）"),
-                    ("心大血管リハビリ(Ⅰ)",        "心大血管疾患リハビリテーション料（Ⅰ）"),
-                    ("がん患者リハビリ",            "がん患者リハビリテーション料"),
-                    ("廃用症候群リハビリ(Ⅰ)",      "廃用症候群リハビリテーション料（Ⅰ）"),
-                ]),
-                ("がん", [
-                    ("がん患者指導管理料",          "がん患者指導管理料"),
-                    ("外来化学療法加算",            "外来化学療法加算"),
-                    ("外来腫瘍化学療法診療料",      "外来腫瘍化学療法診療料"),
-                    ("がん治療連携指導料",          "がん治療連携指導料"),
-                    ("がんゲノムプロファイリング",  "がんゲノムプロファイリング評価提供料"),
-                    ("がん拠点病院加算",            "がん拠点病院加算"),
-                ]),
-                ("産科・周産期・小児", [
-                    ("ハイリスク分娩管理加算",      "ハイリスク分娩管理加算"),
-                    ("ハイリスク妊娠管理加算",      "ハイリスク妊娠管理加算"),
-                    ("総合周産期母子医療センター",  "総合周産期母子医療センター"),
-                    ("周産期母子医療センター",      "周産期母子医療センター"),
-                    ("小児入院医療管理料",          "小児入院医療管理料"),
-                    ("新生児入院医療管理加算",      "新生児入院医療管理加算"),
-                ]),
-                ("精神・認知症", [
-                    ("精神科救急入院料",            "精神科救急入院料"),
-                    ("精神科急性期治療病棟",        "精神科急性期治療病棟入院料"),
-                    ("精神科リエゾン",              "精神科リエゾンチーム加算"),
-                    ("認知症ケア加算",              "認知症ケア加算"),
-                    ("精神科訪問看護",              "精神科訪問看護・指導料"),
-                    ("依存症集団療法",              "依存症集団療法"),
-                    ("通院・在宅精神療法",          "通院・在宅精神療法"),
-                ]),
-                ("感染症・透析・内視鏡", [
-                    ("感染対策向上加算",            "感染対策向上加算"),
-                    ("抗菌薬適正使用支援加算",      "抗菌薬適正使用支援加算"),
-                    ("人工腎臓（透析）",            "人工腎臓"),
-                    ("腹膜透析",                    "腹膜透析"),
-                    ("内視鏡的粘膜下層剥離術",      "内視鏡的粘膜下層剥離術"),
-                    ("消化器内視鏡",                "消化器内視鏡"),
-                ]),
-                ("栄養・褥瘡・糖尿病", [
-                    ("栄養サポートチーム加算",      "栄養サポートチーム加算"),
-                    ("褥瘡ハイリスク患者ケア加算",  "褥瘡ハイリスク患者ケア加算"),
-                    ("糖尿病合併症管理料",          "糖尿病合併症管理料"),
-                    ("糖尿病透析予防指導管理料",    "糖尿病透析予防指導管理料"),
-                    ("後発医薬品使用体制加算",      "後発医薬品使用体制加算"),
-                ]),
-                ("在宅・外来・地域連携", [
-                    ("在宅療養後方支援病院",        "在宅療養後方支援病院"),
-                    ("地域包括診療料",              "地域包括診療料"),
-                    ("在宅患者訪問診療料",          "在宅患者訪問診療料"),
-                    ("地域連携診療計画加算",        "地域連携診療計画加算"),
-                    ("在宅医療DX情報活用加算",      "在宅医療ＤＸ情報活用加算"),
-                    ("外来・在宅ベースアップ評価料", "外来・在宅ベースアップ評価料"),
-                ]),
-                ("入院管理・安全・データ", [
-                    ("データ提出加算",              "データ提出加算"),
-                    ("薬剤管理指導料",              "薬剤管理指導料"),
-                    ("医療安全対策加算",            "医療安全対策加算"),
-                    ("入退院支援加算",              "入退院支援加算"),
-                    ("院内トリアージ実施料",        "院内トリアージ実施料"),
-                    ("患者サポート体制充実加算",    "患者サポート体制充実加算"),
-                    ("術後疼痛管理チーム加算",      "術後疼痛管理チーム加算"),
-                    ("医療ＤＸ推進体制整備加算",    "医療ＤＸ推進体制整備加算"),
-                ]),
-            ]
-            _sk_label_to_kw = {lb: kw for _, items in _SK_SEARCH_GROUPS for lb, kw in items}
+        with _tab_equip:
+            _eq1, _eq2, _eq3 = st.columns(3)
+            with _eq1:
+                st.markdown("**CT**")
+                ct_filter = st.radio(
+                    "CT", ["指定なし", "CTあり（合計）", "CTなし（合計）", "スペック別"],
+                    key="ct_filter", label_visibility="collapsed",
+                )
+                s_ck_ct64 = s_ck_ct16p = s_ck_ct16m = False
+                if ct_filter == "スペック別":
+                    s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
+                    s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
+                    s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
+                st.markdown("**MRI**")
+                mri_filter = st.radio(
+                    "MRI", ["指定なし", "MRIあり（合計）", "MRIなし（合計）", "スペック別"],
+                    key="mri_filter", label_visibility="collapsed",
+                )
+                s_ck_mri3t = s_ck_mri15p = s_ck_mri15m = False
+                if mri_filter == "スペック別":
+                    s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
+                    s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
+                    s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+            with _eq2:
+                st.markdown("**放射線治療**")
+                s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
+                s_has_cyberknife = st.checkbox("サイバーナイフあり",             key="s_has_cyberknife")
+                s_has_gamma      = st.checkbox("ガンマナイフあり",               key="s_has_gamma")
+                st.markdown("**核医学**")
+                s_has_pet  = st.checkbox("PET / PET-CTあり", key="s_has_pet")
+                s_has_spect = st.checkbox("SPECTあり",       key="s_has_spect")
+            with _eq3:
+                st.markdown("**手術・カテーテル**")
+                s_has_robot_eq = st.checkbox("手術支援ロボットあり",          key="s_has_robot_eq")
+                s_has_angio    = st.checkbox("アンギオ（血管連続撮影）あり",  key="s_has_angio")
+                st.markdown("**その他**")
+                s_has_mammo = st.checkbox("マンモグラフィあり", key="s_has_mammo")
 
-            # 「一般病棟入院基本料」等を選んだ直後に区分（急性期一般入院料１〜等）を
-            # 追加で絞り込めるようにする。地方厚生局によっては届出名称のみで区分を
-            # 公表していないため、選択時は病床機能報告データを直接参照して絞り込む。
-            _NYUIN_KUBUN_OPTIONS = {
-                "一般病棟入院基本料": [
-                    "急性期病院Ａ一般入院料", "急性期病院Ｂ一般入院料",
-                    "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
-                    "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
-                    "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
-                    "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
-                ],
-                "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
-                "障害者施設等病棟": [
-                    "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
-                    "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
-                    "障害者施設等特定入院基本料",
-                ],
-            }
+        with _tab_surg:
+            _sg1, _sg2 = st.columns([1, 1])
+            with _sg1:
+                s_surg_mode = st.radio(
+                    "集計対象", ["手術（全数）", "全身麻酔の手術"], key="s_surg_mode",
+                    help="・手術（全数）→ データ列: 手術_[臓器名]\n・全身麻酔の手術 → データ列: 全麻_[臓器名]",
+                )
+                s_surg_logic = st.radio(
+                    "複数選択の扱い", ["AND（すべて該当）", "OR（いずれか該当）"], key="s_surg_logic",
+                )
+                st.caption("術式（1件以上）")
+                s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
+                s_ck_fuku    = st.checkbox("腹腔鏡下手術",     key="s_ck_fuku")
+                s_ck_kyou    = st.checkbox("胸腔鏡下手術",     key="s_ck_kyou")
+            with _sg2:
+                st.caption("臓器別（1件以上）")
+                _oa, _ob = st.columns(2)
+                with _oa:
+                    s_ck_hifuka  = st.checkbox("皮膚・皮下組織",   key="s_ck_hifuka")
+                    s_ck_kinkot  = st.checkbox("筋骨格系・四肢",   key="s_ck_kinkot")
+                    s_ck_shinkei = st.checkbox("神経系・頭蓋",     key="s_ck_shinkei")
+                    s_ck_me      = st.checkbox("眼",               key="s_ck_me")
+                    s_ck_jibika  = st.checkbox("耳鼻咽喉",         key="s_ck_jibika")
+                    s_ck_ganmen  = st.checkbox("顔面・口腔・頸部", key="s_ck_ganmen")
+                with _ob:
+                    s_ck_kyobu   = st.checkbox("胸部",             key="s_ck_kyobu")
+                    s_ck_shin    = st.checkbox("心・脈管",          key="s_ck_shin")
+                    s_ck_fukubu  = st.checkbox("腹部",             key="s_ck_fukubu")
+                    s_ck_nyo     = st.checkbox("尿路系・副腎",     key="s_ck_nyo")
+                    s_ck_seiki   = st.checkbox("性器",             key="s_ck_seiki")
+                    s_ck_shika   = st.checkbox("歯科",             key="s_ck_shika")
 
-            # 2列でグループ表示
-            _kg1, _kg2 = st.columns(2)
-            _s_kijun_sel: list[str] = []
-            _s_kubun_sel: list[str] = []
-            for _gi, (_grp_name, _grp_items) in enumerate(_SK_SEARCH_GROUPS):
-                _col = _kg1 if _gi % 2 == 0 else _kg2
-                with _col:
-                    _sel = st.multiselect(
-                        _grp_name,
-                        options=[lb for lb, _ in _grp_items],
-                        key=f"s_kijun_g{_gi}",
-                        placeholder="選択…",
-                        label_visibility="visible",
-                    )
-                    _s_kijun_sel.extend(_sel)
-                    # 選んだ届出名称に区分の選択肢があれば、その場ですぐ下に「派生条件」
-                    # として視覚的に分かるボックス（枠線＋アイコン＋補足文）で表示する。
-                    # 周囲の選択肢グループと同じ見た目だと出現に気づかれないため、
-                    # st.container(border=True) で明確に区別する。
-                    for _sel_label in _sel:
-                        _kopts = _NYUIN_KUBUN_OPTIONS.get(_sel_label)
-                        if _kopts:
-                            with st.container(border=True):
-                                st.markdown(
-                                    f"<div style='font-size:0.82rem;font-weight:600;"
-                                    f"color:#b45309;margin-bottom:4px;'>"
-                                    f"🔎 「{_sel_label}」を選択中 → さらに区分で絞り込めます</div>",
-                                    unsafe_allow_html=True,
-                                )
-                                _ksel = st.multiselect(
-                                    "区分（任意）",
-                                    options=_kopts,
-                                    key=f"s_kubun_{_sel_label}",
-                                    placeholder="指定なし（すべて含む）",
-                                    help="病床機能報告データから直接絞り込みます",
-                                    label_visibility="collapsed",
-                                )
-                                _s_kubun_sel.extend(_ksel)
+        with _tab_kijun:
+            _sk_df_filt = _load_shisetsu_kijun()
+            if _sk_df_filt is not None:
+                # カテゴリ別届出グループ定義
+                _SK_SEARCH_GROUPS = [
+                    ("入院体制・病棟", [
+                        ("一般病棟入院基本料",          "一般病棟入院基本料"),
+                        ("特定機能病院",                "特定機能病院入院基本料"),
+                        ("地域包括ケア病棟",            "地域包括ケア病棟入院料"),
+                        ("地域包括医療病棟",            "地域包括医療病棟入院料"),
+                        ("回復期リハビリ病棟",          "回復期リハビリテーション病棟入院料"),
+                        ("緩和ケア病棟",                "緩和ケア病棟入院料"),
+                        ("療養病棟",                    "療養病棟入院基本料"),
+                        ("障害者施設等病棟",            "障害者施設等入院基本料"),
+                        ("急性期充実体制加算",          "急性期充実体制加算"),
+                        ("総合入院体制加算",            "総合入院体制加算"),
+                        ("精神病棟",                    "精神病棟入院基本料"),
+                    ]),
+                    ("看護体制・人員", [
+                        ("医師事務作業補助体制加算",    "医師事務作業補助体制加算"),
+                        ("看護補助加算",                "看護補助加算"),
+                        ("急性期看護補助体制加算",      "急性期看護補助体制加算"),
+                        ("夜間急性期看護補助体制加算",  "夜間急性期看護補助体制加算"),
+                        ("地域医療体制確保加算",        "地域医療体制確保加算"),
+                        ("夜間看護体制加算",            "夜間看護体制加算"),
+                    ]),
+                    ("救急・集中治療", [
+                        ("救急医療管理加算",            "救急医療管理加算"),
+                        ("救命救急入院料",              "救命救急入院料"),
+                        ("超急性期脳卒中加算(tPA)",     "超急性期脳卒中加算"),
+                        ("ICU",                         "集中治療室管理料"),
+                        ("HCU",                         "ハイケアユニット入院医療管理料"),
+                        ("NICU",                        "新生児集中治療室管理料"),
+                        ("脳卒中ケアユニット",          "脳卒中ケアユニット入院医療管理料"),
+                    ]),
+                    ("手術・麻酔・カテーテル", [
+                        ("麻酔管理料(Ⅰ)",              "麻酔管理料（Ⅰ）"),
+                        ("ロボット手術",                "ロボット支援下内視鏡手術用支援機器加算"),
+                        ("心臓カテーテル",              "心臓カテーテル法による諸検査"),
+                        ("経皮的冠動脈形成術",          "経皮的冠動脈形成術"),
+                        ("人工心肺",                    "人工心肺"),
+                        ("大動脈バルーンパンピング法",  "大動脈バルーンパンピング法"),
+                        ("体外衝撃波腎・尿管結石破砕術", "体外衝撃波腎・尿管結石破砕術"),
+                        ("周術期薬学管理料",            "周術期薬学管理料"),
+                        ("輸血管理料",                  "輸血管理料"),
+                    ]),
+                    ("放射線治療・画像診断", [
+                        ("放射線治療（体外照射）",      "放射線治療（体外照射）"),
+                        ("粒子線治療",                  "粒子線治療"),
+                        ("外来放射線照射診療料",        "外来放射線照射診療料"),
+                        ("放射線治療専任加算",          "放射線治療専任加算"),
+                        ("画像診断管理加算",            "画像診断管理加算"),
+                    ]),
+                    ("リハビリ", [
+                        ("脳血管疾患等リハビリ(Ⅰ)",    "脳血管疾患等リハビリテーション料（Ⅰ）"),
+                        ("脳血管疾患等リハビリ(Ⅱ)",    "脳血管疾患等リハビリテーション料（Ⅱ）"),
+                        ("運動器リハビリ(Ⅰ)",          "運動器リハビリテーション料（Ⅰ）"),
+                        ("呼吸器リハビリ(Ⅰ)",          "呼吸器リハビリテーション料（Ⅰ）"),
+                        ("心大血管リハビリ(Ⅰ)",        "心大血管疾患リハビリテーション料（Ⅰ）"),
+                        ("がん患者リハビリ",            "がん患者リハビリテーション料"),
+                        ("廃用症候群リハビリ(Ⅰ)",      "廃用症候群リハビリテーション料（Ⅰ）"),
+                    ]),
+                    ("がん", [
+                        ("がん患者指導管理料",          "がん患者指導管理料"),
+                        ("外来化学療法加算",            "外来化学療法加算"),
+                        ("外来腫瘍化学療法診療料",      "外来腫瘍化学療法診療料"),
+                        ("がん治療連携指導料",          "がん治療連携指導料"),
+                        ("がんゲノムプロファイリング",  "がんゲノムプロファイリング評価提供料"),
+                        ("がん拠点病院加算",            "がん拠点病院加算"),
+                    ]),
+                    ("産科・周産期・小児", [
+                        ("ハイリスク分娩管理加算",      "ハイリスク分娩管理加算"),
+                        ("ハイリスク妊娠管理加算",      "ハイリスク妊娠管理加算"),
+                        ("総合周産期母子医療センター",  "総合周産期母子医療センター"),
+                        ("周産期母子医療センター",      "周産期母子医療センター"),
+                        ("小児入院医療管理料",          "小児入院医療管理料"),
+                        ("新生児入院医療管理加算",      "新生児入院医療管理加算"),
+                    ]),
+                    ("精神・認知症", [
+                        ("精神科救急入院料",            "精神科救急入院料"),
+                        ("精神科急性期治療病棟",        "精神科急性期治療病棟入院料"),
+                        ("精神科リエゾン",              "精神科リエゾンチーム加算"),
+                        ("認知症ケア加算",              "認知症ケア加算"),
+                        ("精神科訪問看護",              "精神科訪問看護・指導料"),
+                        ("依存症集団療法",              "依存症集団療法"),
+                        ("通院・在宅精神療法",          "通院・在宅精神療法"),
+                    ]),
+                    ("感染症・透析・内視鏡", [
+                        ("感染対策向上加算",            "感染対策向上加算"),
+                        ("抗菌薬適正使用支援加算",      "抗菌薬適正使用支援加算"),
+                        ("人工腎臓（透析）",            "人工腎臓"),
+                        ("腹膜透析",                    "腹膜透析"),
+                        ("内視鏡的粘膜下層剥離術",      "内視鏡的粘膜下層剥離術"),
+                        ("消化器内視鏡",                "消化器内視鏡"),
+                    ]),
+                    ("栄養・褥瘡・糖尿病", [
+                        ("栄養サポートチーム加算",      "栄養サポートチーム加算"),
+                        ("褥瘡ハイリスク患者ケア加算",  "褥瘡ハイリスク患者ケア加算"),
+                        ("糖尿病合併症管理料",          "糖尿病合併症管理料"),
+                        ("糖尿病透析予防指導管理料",    "糖尿病透析予防指導管理料"),
+                        ("後発医薬品使用体制加算",      "後発医薬品使用体制加算"),
+                    ]),
+                    ("在宅・外来・地域連携", [
+                        ("在宅療養後方支援病院",        "在宅療養後方支援病院"),
+                        ("地域包括診療料",              "地域包括診療料"),
+                        ("在宅患者訪問診療料",          "在宅患者訪問診療料"),
+                        ("地域連携診療計画加算",        "地域連携診療計画加算"),
+                        ("在宅医療DX情報活用加算",      "在宅医療ＤＸ情報活用加算"),
+                        ("外来・在宅ベースアップ評価料", "外来・在宅ベースアップ評価料"),
+                    ]),
+                    ("入院管理・安全・データ", [
+                        ("データ提出加算",              "データ提出加算"),
+                        ("薬剤管理指導料",              "薬剤管理指導料"),
+                        ("医療安全対策加算",            "医療安全対策加算"),
+                        ("入退院支援加算",              "入退院支援加算"),
+                        ("院内トリアージ実施料",        "院内トリアージ実施料"),
+                        ("患者サポート体制充実加算",    "患者サポート体制充実加算"),
+                        ("術後疼痛管理チーム加算",      "術後疼痛管理チーム加算"),
+                        ("医療ＤＸ推進体制整備加算",    "医療ＤＸ推進体制整備加算"),
+                    ]),
+                ]
+                _sk_label_to_kw = {lb: kw for _, items in _SK_SEARCH_GROUPS for lb, kw in items}
 
-            st.markdown("---")
-            _s_kijun_kw_text = st.text_input(
-                "届出名称キーワード（部分一致・1語）",
-                placeholder="例: ロボット支援下　または　ハイケアユニット",
-                key="s_kijun_kw_text",
-                help="受理届出名称に含まれる語句で検索（1フィールド・完全部分一致）",
-            )
-        else:
-            _sk_label_to_kw   = {}
-            _s_kijun_sel      = []
-            _s_kijun_kw_text  = ""
-            _s_kubun_sel      = []
+                # 「一般病棟入院基本料」等を選んだ直後に区分（急性期一般入院料１〜等）を
+                # 追加で絞り込めるようにする。地方厚生局によっては届出名称のみで区分を
+                # 公表していないため、選択時は病床機能報告データを直接参照して絞り込む。
+                _NYUIN_KUBUN_OPTIONS = {
+                    "一般病棟入院基本料": [
+                        "急性期病院Ａ一般入院料", "急性期病院Ｂ一般入院料",
+                        "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
+                        "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
+                        "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
+                        "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
+                    ],
+                    "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
+                    "障害者施設等病棟": [
+                        "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
+                        "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
+                        "障害者施設等特定入院基本料",
+                    ],
+                }
+
+                # 2列でグループ表示
+                _kg1, _kg2 = st.columns(2)
+                _s_kijun_sel: list[str] = []
+                _s_kubun_sel: list[str] = []
+                for _gi, (_grp_name, _grp_items) in enumerate(_SK_SEARCH_GROUPS):
+                    _col = _kg1 if _gi % 2 == 0 else _kg2
+                    with _col:
+                        _sel = st.multiselect(
+                            _grp_name,
+                            options=[lb for lb, _ in _grp_items],
+                            key=f"s_kijun_g{_gi}",
+                            placeholder="選択…",
+                            label_visibility="visible",
+                        )
+                        _s_kijun_sel.extend(_sel)
+                        # 選んだ届出名称に区分の選択肢があれば、その場ですぐ下に「派生条件」
+                        # として視覚的に分かるボックス（枠線＋アイコン＋補足文）で表示する。
+                        # 周囲の選択肢グループと同じ見た目だと出現に気づかれないため、
+                        # st.container(border=True) で明確に区別する。
+                        for _sel_label in _sel:
+                            _kopts = _NYUIN_KUBUN_OPTIONS.get(_sel_label)
+                            if _kopts:
+                                with st.container(border=True):
+                                    st.markdown(
+                                        f"<div style='font-size:0.82rem;font-weight:600;"
+                                        f"color:#b45309;margin-bottom:4px;'>"
+                                        f"🔎 「{_sel_label}」を選択中 → さらに区分で絞り込めます</div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    _ksel = st.multiselect(
+                                        "区分（任意）",
+                                        options=_kopts,
+                                        key=f"s_kubun_{_sel_label}",
+                                        placeholder="指定なし（すべて含む）",
+                                        help="病床機能報告データから直接絞り込みます",
+                                        label_visibility="collapsed",
+                                    )
+                                    _s_kubun_sel.extend(_ksel)
+
+                st.markdown("---")
+                _s_kijun_kw_text = st.text_input(
+                    "届出名称キーワード（部分一致・1語）",
+                    placeholder="例: ロボット支援下　または　ハイケアユニット",
+                    key="s_kijun_kw_text",
+                    help="受理届出名称に含まれる語句で検索（1フィールド・完全部分一致）",
+                )
+            else:
+                _sk_label_to_kw   = {}
+                _s_kijun_sel      = []
+                _s_kijun_kw_text  = ""
+                _s_kubun_sel      = []
+
+        st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+        _search_submitted = st.form_submit_button(
+            "🔍 この条件で検索する", type="primary", use_container_width=True,
+        )
 
     # ── フィルタリング処理 ──
     s_df = df[df["報告年度"] == s_year].copy()
