@@ -3801,70 +3801,76 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
     _ds_hosp_info = _build_dpc_hosp_info()
 
-    # ── フィルター行1: MDC + 疾患名 + ランキング指標 + 手術有無 ──
-    _dsf1, _dsf2, _dsf3, _dsf3b = st.columns([2, 4, 2, 2])
-    with _dsf1:
-        _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
-        _ds_mdc_opts = ["すべて"] + [
-            f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
-        ]
-        if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
-            st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
-        _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
+    with st.form("dpc_search_form"):
+        # ── フィルター行1: MDC + 疾患名 + ランキング指標 + 手術有無 ──
+        _dsf1, _dsf2, _dsf3, _dsf3b = st.columns([2, 4, 2, 2])
+        with _dsf1:
+            _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
+            _ds_mdc_opts = ["すべて"] + [
+                f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
+            ]
+            if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
+                st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
+            _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
 
-    with _dsf2:
-        _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
-        _ds_disease_src = (
-            _ds_surg_all if _ds_mdc_key is None
-            else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
+        with _dsf2:
+            _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
+            _ds_disease_src = (
+                _ds_surg_all if _ds_mdc_key is None
+                else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
+            )
+            _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) != 0
+            if "件数_手術有" in _ds_disease_src.columns:
+                _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) != 0)
+            _ds_disease_src = _ds_disease_src[_ds_disease_mask]
+            _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
+            # セッションステート検証（MDC変更時に古い疾患名が残らないように）
+            if st.session_state.get("_dsc_disease") not in _ds_diseases:
+                st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
+            _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
+
+        with _dsf3:
+            _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数", "医療圏シェア"], key="_dsc_metric")
+
+        with _dsf3b:
+            _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
+
+        # ── フィルター行2: 都道府県 + 病院区分 ──
+        _dsf4, _dsf5 = st.columns([3, 5])
+        with _dsf4:
+            _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
+            _ds_pref_sel = None
+            _ds_region_sel = None
+            if _ds_geo_scope in ("都道府県", "二次医療圏"):
+                _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
+                _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
+                if _ds_geo_scope == "二次医療圏":
+                    _ds_all_regions = sorted(
+                        r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
+                        if r
+                    )
+                    if _ds_all_regions:
+                        _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
+                    else:
+                        st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
+
+        with _dsf5:
+            _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
+            # 旧デフォルト（出来高除外）のセッションを更新
+            if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
+                st.session_state["_dsc_kubun"] = _ds_all_kubun
+            _ds_kubun_sel = st.multiselect(
+                "病院区分",
+                _ds_all_kubun,
+                default=_ds_all_kubun,
+                key="_dsc_kubun",
+            )
+            _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
+
+        st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
+        _ds_search_submitted = st.form_submit_button(
+            "🔍 この条件で検索する", type="primary", use_container_width=True,
         )
-        _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) != 0
-        if "件数_手術有" in _ds_disease_src.columns:
-            _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) != 0)
-        _ds_disease_src = _ds_disease_src[_ds_disease_mask]
-        _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
-        # セッションステート検証（MDC変更時に古い疾患名が残らないように）
-        if st.session_state.get("_dsc_disease") not in _ds_diseases:
-            st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
-        _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
-
-    with _dsf3:
-        _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数", "医療圏シェア"], key="_dsc_metric")
-
-    with _dsf3b:
-        _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
-
-    # ── フィルター行2: 都道府県 + 病院区分 ──
-    _dsf4, _dsf5 = st.columns([3, 5])
-    with _dsf4:
-        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
-        _ds_pref_sel = None
-        _ds_region_sel = None
-        if _ds_geo_scope in ("都道府県", "二次医療圏"):
-            _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
-            _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
-            if _ds_geo_scope == "二次医療圏":
-                _ds_all_regions = sorted(
-                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
-                    if r
-                )
-                if _ds_all_regions:
-                    _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
-                else:
-                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
-
-    with _dsf5:
-        _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
-        # 旧デフォルト（出来高除外）のセッションを更新
-        if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
-            st.session_state["_dsc_kubun"] = _ds_all_kubun
-        _ds_kubun_sel = st.multiselect(
-            "病院区分",
-            _ds_all_kubun,
-            default=_ds_all_kubun,
-            key="_dsc_kubun",
-        )
-        _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
 
     st.markdown("---")
 
