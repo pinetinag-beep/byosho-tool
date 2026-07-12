@@ -1408,7 +1408,9 @@ if st.session_state.get("_view_mode") == "region":
         _rg_c1, _rg_c2, _rg_c3 = st.columns(3)
         with _rg_c1:
             _rg_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-            _rg_year  = st.selectbox("📅 年度", _rg_years, key="_rg_year")
+            if st.session_state.get("_sel_year") not in _rg_years:
+                st.session_state["_sel_year"] = _rg_years[0] if _rg_years else None
+            _rg_year  = st.selectbox("📅 年度", _rg_years, key="_sel_year")
         with _rg_c2:
             _rg_prefs = _sort_prefs(_df_all["都道府県名"].unique())
             if st.session_state.get("_rg_pref") not in _rg_prefs:
@@ -1522,7 +1524,9 @@ if st.session_state.get("_view_mode") == "map":
                     _ms_pref = st.selectbox("🗾 都道府県", _ms_all_prefs, key="_ms_pref")
                 with _ms_c2:
                     _ms_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-                    _ms_year = st.selectbox("📅 年度", _ms_years, key="_ms_year")
+                    if st.session_state.get("_sel_year") not in _ms_years:
+                        st.session_state["_sel_year"] = _ms_years[0] if _ms_years else None
+                    _ms_year = st.selectbox("📅 年度", _ms_years, key="_sel_year")
                 with _ms_c3:
                     _ms_scope = st.radio("表示範囲", ["都道府県全体", "二次医療圏を絞る"], horizontal=True, key="_ms_scope")
 
@@ -1706,7 +1710,9 @@ if st.session_state.get("_view_mode") == "distance":
         with st.expander("＋ 詳細条件を追加", expanded=False):
             _fcy1, _fcy2 = st.columns([1, 5])
             with _fcy1:
-                _dist_year = st.selectbox("年度", _dist_years, key="_dist_year",
+                if st.session_state.get("_sel_year") not in _dist_years:
+                    st.session_state["_sel_year"] = _dist_years[0] if _dist_years else None
+                _dist_year = st.selectbox("年度", _dist_years, key="_sel_year",
                     help="使用するデータの報告年度（デフォルト: 最新年度）")
             st.divider()
             _fca, _fcb, _fcc = st.columns(3)
@@ -2081,7 +2087,9 @@ if st.session_state.get("_view_mode") == "search":
     _sa, _sb, _sc = st.columns([1, 2, 2])
     with _sa:
         s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-        s_year = st.selectbox("📅 年度", s_years_list, key="s_year")
+        if st.session_state.get("_sel_year") not in s_years_list:
+            st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+        s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
     with _sb:
         s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
         s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
@@ -2840,9 +2848,9 @@ if st.session_state.get("_view_mode") == "region_vision":
         _rv_sel_c1, _rv_sel_c2, _rv_sel_c3, _rv_sel_c4 = st.columns([2, 2, 3, 2])
         with _rv_sel_c1:
             _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-            if st.session_state.get("_rv_sel_year") not in _rv_years_list:
-                st.session_state["_rv_sel_year"] = _rv_years_list[0] if _rv_years_list else 2023
-            _rv_year = st.selectbox("📅 分析年度", _rv_years_list, key="_rv_sel_year")
+            if st.session_state.get("_sel_year") not in _rv_years_list:
+                st.session_state["_sel_year"] = _rv_years_list[0] if _rv_years_list else 2023
+            _rv_year = st.selectbox("📅 分析年度", _rv_years_list, key="_sel_year")
         with _rv_sel_c2:
             _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
             if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
@@ -4056,11 +4064,12 @@ with _sw1:
     )
 with _sw2:
     _sw_years = [int(y) for y in sorted(df["報告年度"].unique(), reverse=True)]
-    _sw_year_idx = _sw_years.index(year) if year in _sw_years else 0
-    _sw_new_year = st.selectbox("年度", _sw_years, index=_sw_year_idx, key="_detail_year_sw", label_visibility="collapsed")
-    if _sw_new_year != year:
-        st.session_state["_sel_year"] = _sw_new_year
-        st.rerun()
+    if st.session_state.get("_sel_year") not in _sw_years:
+        st.session_state["_sel_year"] = _sw_years[0] if _sw_years else None
+    # トップの検索画面と同じ "_sel_year" キーを共有することで、検索側で
+    # 選んだ年度がそのまま病院詳細にも引き継がれ、逆に詳細側で年度を
+    # 変えれば検索側に戻った時もその年度が保持される（統一コントロール）。
+    st.selectbox("年度", _sw_years, key="_sel_year", label_visibility="collapsed")
 with _sw3:
     if st.button("← 検索に戻る", key="_detail_back_btn", use_container_width=True):
         st.session_state["_view_mode"] = "home"
