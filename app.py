@@ -4808,15 +4808,30 @@ with tab4:
         st.markdown('<div class="section-header">年度別データ一覧</div>', unsafe_allow_html=True)
         _disp_df = trend_df
         disp_cols = ["報告年度", "合計_許可病床数", "合計_稼働病床数"]
+        _disp_col_cfg: dict = {
+            "報告年度":       st.column_config.NumberColumn("報告年度",       format="%d"),
+            "合計_許可病床数": st.column_config.NumberColumn("合計許可病床数", format="%,d 床"),
+            "合計_稼働病床数": st.column_config.NumberColumn("合計稼働病床数", format="%,d 床"),
+        }
         for t in BED_TYPES:
-            if f"{t}_許可病床数" in trend_df.columns:
-                disp_cols.append(f"{t}_許可病床数")
+            _col = f"{t}_許可病床数"
+            if _col in trend_df.columns:
+                disp_cols.append(_col)
+                _disp_col_cfg[_col] = st.column_config.NumberColumn(t, format="%,d 床")
         if _has_los_trend:
             _disp_df = _disp_df.merge(_los_trend_df[["報告年度", "平均在院日数"]], on="報告年度", how="left")
             disp_cols.append("平均在院日数")
+            _disp_col_cfg["平均在院日数"] = st.column_config.NumberColumn("平均在院日数", format="%.1f 日")
         if "常勤医師数" in trend_df.columns:
             disp_cols += ["常勤医師数", "常勤看護師数"]
-        st.dataframe(_disp_df[disp_cols].reset_index(drop=True), hide_index=True, use_container_width=True)
+            _disp_col_cfg["常勤医師数"]   = st.column_config.NumberColumn("常勤医師数",   format="%,d 人")
+            _disp_col_cfg["常勤看護師数"] = st.column_config.NumberColumn("常勤看護師数", format="%,d 人")
+        st.dataframe(
+            _disp_df[disp_cols].reset_index(drop=True),
+            hide_index=True,
+            use_container_width=True,
+            column_config=_disp_col_cfg,
+        )
 
         if len(trend_df) >= 2:
             first_y = trend_df.iloc[0]
