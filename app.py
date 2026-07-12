@@ -130,6 +130,32 @@ window.parent.document.documentElement.classList.add("notranslate");
 </script>
 """, height=0)
 
+# ── 検索フォーム内でのEnterキー送信を無効化 ───────────────────
+# st.form() はHTMLの<form>と同様、テキスト入力欄でEnterを押すとボタン
+# クリックと同じく送信されてしまう（標準のブラウザ挙動）。「検索ボタンを
+# 押した時だけ結果を更新したい」という要望のため、Streamlitの入力欄への
+# 到達前（capture phase）でEnterキーのデフォルト動作を止める。
+# window.parent.__enterGuardInstalled で多重登録を防止（毎rerunでこの
+# components.htmlが再実行されるため）。
+components.html("""
+<script>
+if (!window.parent.__enterGuardInstalled) {
+    window.parent.__enterGuardInstalled = true;
+    window.parent.document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        const target = e.target;
+        if (!target || target.tagName !== 'INPUT') return;
+        if (target.type !== 'text' && target.type !== '') return;
+        const form = target.closest('[data-testid="stForm"]');
+        if (form) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
+}
+</script>
+""", height=0)
+
 # ── Google Analytics ───────────────────────────────────────
 st.markdown("""
 <!-- Google tag (gtag.js) -->
