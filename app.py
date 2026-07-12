@@ -17,7 +17,7 @@ from data_processor import (
     load_data, load_multiple_mhlw, load_mhlw_byosho_extended, load_multiple_mhlw_extended,
     load_mhlw_yoshiki2, load_mhlw_shisetsu, merge_shisetsu,
     normalize, add_derived_columns,
-    region_share, hospital_trend, bed_composition,
+    region_share, hospital_trend, hospital_los_trend, bed_composition,
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
@@ -88,7 +88,7 @@ def _normalize_hospital_for_match(name: str) -> str:
 from charts import (
     bed_donut, occupancy_gauge, bed_type_occupancy_bar,
     regional_bed_comparison, occupancy_scatter, share_bar, ranking_table_fig,
-    trend_beds, trend_occupancy, trend_staff,
+    trend_beds, trend_occupancy, trend_staff, trend_los, trend_dpc_cases,
     staff_scatter, staff_bar_region,
     detail_bed_type_table, admission_route_pie, discharge_route_pie, home_return_rate_bar,
 )
@@ -957,8 +957,10 @@ _PREF_CODE_TO_NAME = {
 
 @st.cache_data(show_spinner=False)
 def _build_dpc_hosp_info() -> pd.DataFrame:
-    """告示番号 → 施設名・病院区分・都道府県名 のマッピングテーブルを構築。
-    市町村番号（JIS都道府県コード）から都道府県名を導出するため geo_map 誤突合の影響を受けない。"""
+    """告示番号 → 施設名・病院区分・都道府県名・二次医療圏名 のマッピングテーブルを構築。
+    市町村番号（JIS都道府県コード）から都道府県名を導出するため geo_map 誤突合の影響を受けない。
+    二次医療圏名は DPC調査データ自体には無いため、dpc_match（DPC施設名⇔病床報告施設名の
+    対応表）経由で病床機能報告データと突合して取得する。"""
     if not DPC_PARQUET_HOSP.exists():
         return pd.DataFrame()
     hosp_df  = pd.read_parquet(DPC_PARQUET_HOSP)
@@ -979,7 +981,22 @@ def _build_dpc_hosp_info() -> pd.DataFrame:
 
     hosp_uniq["都道府県名"] = hosp_uniq["市町村番号"].apply(_pref)
     hosp_uniq["病院区分"]   = hosp_uniq["病院類型"].apply(_classify)
-    return hosp_uniq[["告示番号", "病院区分", "都道府県名"]].reset_index(drop=True)
+
+    dpc_match = _load_dpc_match(_DPC_MATCH_MTIME)
+    if dpc_match is not None and CACHE_FILE.exists():
+        _matched = dpc_match[~dpc_match["マッチ状態"].astype(str).str.contains("未結合", na=False)]
+        _byosho = pd.read_parquet(CACHE_FILE, columns=["医療機関名", "二次医療圏名", "報告年度"])
+        _byosho_latest = _byosho.sort_values("報告年度", ascending=False).drop_duplicates("医療機関名")
+        _region_map = _matched.merge(
+            _byosho_latest[["医療機関名", "二次医療圏名"]],
+            left_on="病床報告施設名", right_on="医療機関名", how="left",
+        )[["DPC施設名", "二次医療圏名"]]
+        hosp_uniq = hosp_uniq.merge(_region_map, left_on="施設名", right_on="DPC施設名", how="left")
+    if "二次医療圏名" not in hosp_uniq.columns:
+        hosp_uniq["二次医療圏名"] = ""
+    hosp_uniq["二次医療圏名"] = hosp_uniq["二次医療圏名"].fillna("")
+
+    return hosp_uniq[["告示番号", "病院区分", "都道府県名", "二次医療圏名"]].reset_index(drop=True)
 
 
 @st.cache_data(ttl=3600 * 24 * 7, show_spinner=False)
@@ -1391,7 +1408,9 @@ if st.session_state.get("_view_mode") == "region":
         _rg_c1, _rg_c2, _rg_c3 = st.columns(3)
         with _rg_c1:
             _rg_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-            _rg_year  = st.selectbox("📅 年度", _rg_years, key="_rg_year")
+            if st.session_state.get("_sel_year") not in _rg_years:
+                st.session_state["_sel_year"] = _rg_years[0] if _rg_years else None
+            _rg_year  = st.selectbox("📅 年度", _rg_years, key="_sel_year")
         with _rg_c2:
             _rg_prefs = _sort_prefs(_df_all["都道府県名"].unique())
             if st.session_state.get("_rg_pref") not in _rg_prefs:
@@ -1505,7 +1524,9 @@ if st.session_state.get("_view_mode") == "map":
                     _ms_pref = st.selectbox("🗾 都道府県", _ms_all_prefs, key="_ms_pref")
                 with _ms_c2:
                     _ms_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-                    _ms_year = st.selectbox("📅 年度", _ms_years, key="_ms_year")
+                    if st.session_state.get("_sel_year") not in _ms_years:
+                        st.session_state["_sel_year"] = _ms_years[0] if _ms_years else None
+                    _ms_year = st.selectbox("📅 年度", _ms_years, key="_sel_year")
                 with _ms_c3:
                     _ms_scope = st.radio("表示範囲", ["都道府県全体", "二次医療圏を絞る"], horizontal=True, key="_ms_scope")
 
@@ -1689,7 +1710,9 @@ if st.session_state.get("_view_mode") == "distance":
         with st.expander("＋ 詳細条件を追加", expanded=False):
             _fcy1, _fcy2 = st.columns([1, 5])
             with _fcy1:
-                _dist_year = st.selectbox("年度", _dist_years, key="_dist_year",
+                if st.session_state.get("_sel_year") not in _dist_years:
+                    st.session_state["_sel_year"] = _dist_years[0] if _dist_years else None
+                _dist_year = st.selectbox("年度", _dist_years, key="_sel_year",
                     help="使用するデータの報告年度（デフォルト: 最新年度）")
             st.divider()
             _fca, _fcb, _fcc = st.columns(3)
@@ -2064,7 +2087,9 @@ if st.session_state.get("_view_mode") == "search":
     _sa, _sb, _sc = st.columns([1, 2, 2])
     with _sa:
         s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-        s_year = st.selectbox("📅 年度", s_years_list, key="s_year")
+        if st.session_state.get("_sel_year") not in s_years_list:
+            st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+        s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
     with _sb:
         s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
         s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
@@ -2823,9 +2848,9 @@ if st.session_state.get("_view_mode") == "region_vision":
         _rv_sel_c1, _rv_sel_c2, _rv_sel_c3, _rv_sel_c4 = st.columns([2, 2, 3, 2])
         with _rv_sel_c1:
             _rv_years_list = [int(y) for y in sorted(_df_all["報告年度"].dropna().unique(), reverse=True)]
-            if st.session_state.get("_rv_sel_year") not in _rv_years_list:
-                st.session_state["_rv_sel_year"] = _rv_years_list[0] if _rv_years_list else 2023
-            _rv_year = st.selectbox("📅 分析年度", _rv_years_list, key="_rv_sel_year")
+            if st.session_state.get("_sel_year") not in _rv_years_list:
+                st.session_state["_sel_year"] = _rv_years_list[0] if _rv_years_list else 2023
+            _rv_year = st.selectbox("📅 分析年度", _rv_years_list, key="_sel_year")
         with _rv_sel_c2:
             _rv_all_prefs = _sort_prefs(_df_all["都道府県名"].unique())
             if st.session_state.get("_rv_sel_pref") not in _rv_all_prefs:
@@ -3184,8 +3209,11 @@ if st.session_state.get("_view_mode") == "region_vision":
     )
 
     # ── AI短評生成（ANTHROPIC_API_KEY が設定されている場合） ──────
-    _ant_key = (st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else "") \
-               or os.environ.get("ANTHROPIC_API_KEY", "")
+    try:
+        _ant_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+    except Exception:
+        _ant_key = ""
+    _ant_key = _ant_key or os.environ.get("ANTHROPIC_API_KEY", "")
     _rv_ai_results: dict = {}
     if _ant_key:
         _rv_total_beds = int(rv_df["合計_許可病床数"].fillna(0).sum())
@@ -3364,6 +3392,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             legend=dict(orientation="h", y=1.10),
+            dragmode=False,
             xaxis_title="病床数（床）",
         )
         st.plotly_chart(fig_rv_stack, use_container_width=True)
@@ -3506,7 +3535,7 @@ if st.session_state.get("_view_mode") == "region_vision":
 <tbody>
 <tr>
   <td><span class="role-badge" style="background:#fde8e8;color:#c0392b;">🏆 急性期拠点候補</span></td>
-  <td>地域の高度・急性期医療を集約的に担う<b>中核病院の候補</b>。新地域医療構想の「急性期拠点病院」に相当。</td>
+  <td>地域の高度・急性期医療を集約的に担う<b>中核病院の候補</b>。新地域医療構想策定ガイドライン（令和8年7月公表）が定める「急性期拠点機能」の考え方に相当。</td>
   <td>①スコアが地域内上位（病院数÷4程度の枠）、かつ②合計スコア<b>38点以上</b></td>
   <td>急性期・高度急性期機能を集約。地域内で1〜3病院程度に絞り込まれる想定。救命救急・専門医療の維持が使命。</td>
 </tr>
@@ -3514,7 +3543,7 @@ if st.session_state.get("_view_mode") == "region_vision":
   <td><span class="role-badge" style="background:#fdf0e6;color:#c0392b;">🔴 地域急性期</span></td>
   <td>急性期医療を提供できる規模を持つが、<b>拠点集約の対象外</b>となる急性期病院。</td>
   <td>急性期系病床（高度急性期＋急性期）の<b>比率50%以上</b>かつ<b>150床以上</b></td>
-  <td>急性期拠点病院と連携・機能分担しながら、地域の入院急性期需要を補完。選択と集中が今後の課題。</td>
+  <td>急性期拠点機能を担う病院と連携・機能分担しながら、地域の入院急性期需要を補完。選択と集中が今後の課題。</td>
 </tr>
 <tr>
   <td><span class="role-badge" style="background:#fef9e7;color:#d35400;">🚑 高齢者救急</span></td>
@@ -3523,10 +3552,16 @@ if st.session_state.get("_view_mode") == "region_vision":
   <td>2040年に向けて最も需要増が見込まれる機能。高齢者の生活機能維持・在宅復帰支援を軸に整備。</td>
 </tr>
 <tr>
+  <td colspan="4" style="font-size:0.78rem;color:#888;padding:2px 10px;border-bottom:none;">
+    ※ 上記「地域急性期」「高齢者救急」は、新ガイドラインでは「高齢者救急・地域急性期機能」という<b>1つの機能</b>として定義されています。
+    このツールでは病床構成の違いが見えるよう便宜的に2区分で表示しています。
+  </td>
+</tr>
+<tr>
   <td><span class="role-badge" style="background:#eaf4fb;color:#1a6fa8;">🔄 回復期強化</span></td>
   <td>リハビリテーション・<b>回復期機能を主軸</b>とする病院。地域包括ケア病棟を含む。</td>
   <td>回復期病床比率<b>40%以上</b></td>
-  <td>術後・脳卒中・骨折後のリハビリ需要は2040年に向けて大幅増。地域包括ケア病棟の充実と急性期後連携が鍵。</td>
+  <td>術後・脳卒中・骨折後のリハビリ需要は2040年に向けて大幅増。地域包括ケア病棟の充実と急性期後連携が鍵。（病床機能報告の「回復期」区分は令和9年度以降「包括期」に呼称変更予定）</td>
 </tr>
 <tr>
   <td><span class="role-badge" style="background:#e8f8f0;color:#1a7a4a;">💊 慢性期・在宅支援</span></td>
@@ -3595,37 +3630,47 @@ if st.session_state.get("_view_mode") == "region_vision":
     st.markdown('<div class="section-header">📅 2040年に向けた病床需要の方向性（試算）</div>', unsafe_allow_html=True)
 
     st.info(
-        "⚠️ **試算の前提**: 国の地域医療構想（2024年）の方向性と全国トレンドをもとに、"
-        "**全国平均的な係数**を機械的に乗じた参考値です。"
+        "⚠️ **試算の前提**: 新地域医療構想策定ガイドライン（厚生労働省、令和8年7月公表）が示す"
+        "目標病床稼働率（高度急性期79%・急性期84%・回復期89%・慢性期92.5%）で、"
+        "現状の医療需要（在棟延べ数ベース）を割り戻して2040年の病床数を試算しています。"
+        "需要そのものの2040年に向けた増減方向は**全国的なトレンドを一律に当てはめた仮定値**であり、"
+        "地域の年齢構成・人口動態・患者流出入は反映していません。"
         "実際の数値は都道府県が公表する**地域医療構想調整会議の推計**を参照してください。"
     )
 
-    _rv_proj_cfg = {
-        "高度急性期": (
-            _rv_beds_koudo,
-            int(_rv_beds_koudo * 0.95),
-            "集約化・効率化により微減（▲5%）",
-            "#e74c3c",
-        ),
-        "急性期": (
-            _rv_beds_kyusei,
-            int(_rv_beds_kyusei * 0.80),
-            "在院日数短縮・集約化で大幅減（▲20%）",
-            "#e67e22",
-        ),
-        "回復期": (
-            _rv_beds_kaifuku,
-            int(_rv_beds_kaifuku * 1.35),
-            "高齢者需要大幅増（＋35%）",
-            "#3498db",
-        ),
-        "慢性期": (
-            _rv_beds_mansei,
-            int(_rv_beds_mansei * 1.15),
-            "高齢者需要増（＋15%）",
-            "#27ae60",
-        ),
+    # 目標病床稼働率: 新地域医療構想策定ガイドライン（厚生労働省 令和8年7月公表）の公表値
+    _RV_TARGET_OCC = {"高度急性期": 0.79, "急性期": 0.84, "回復期": 0.89, "慢性期": 0.925}
+    # 医療需要の2040年に向けた変化方向（全国的な仮定値・地域差は未反映の参考値）
+    _RV_DEMAND_TREND = {"高度急性期": -0.05, "急性期": -0.15, "回復期": +0.20, "慢性期": +0.10}
+    _RV_TREND_NOTE = {
+        "高度急性期": "集約化・重症患者への重点化により需要は微減（▲5%）と仮定",
+        "急性期":     "在院日数短縮・外来移行により需要は減少（▲15%）と仮定",
+        "回復期":     "高齢者のリハビリ・在宅復帰支援需要が増加（＋20%）と仮定",
+        "慢性期":     "高齢者の長期療養需要が増加（＋10%）と仮定",
     }
+    _rv_beds_by_type = {
+        "高度急性期": _rv_beds_koudo, "急性期": _rv_beds_kyusei,
+        "回復期": _rv_beds_kaifuku, "慢性期": _rv_beds_mansei,
+    }
+
+    def _rv_demand(bed_type):
+        """1日あたり医療需要（患者数）＝当該機能の在棟延べ数の地域合計 ÷ 365"""
+        col = f"{bed_type}_在棟延べ数"
+        return _rv_tot(col) / 365 if col in rv_df.columns else 0.0
+
+    _rv_proj_cfg = {}
+    for _bt, _clr in zip(
+        ["高度急性期", "急性期", "回復期", "慢性期"],
+        ["#e74c3c", "#e67e22", "#3498db", "#27ae60"],
+    ):
+        _cur_beds   = _rv_beds_by_type[_bt]
+        _cur_demand = _rv_demand(_bt)
+        if _cur_demand <= 0 and _cur_beds > 0:
+            # 在棟延べ数が取得できない場合は、現状病床数×目標稼働率で需要を概算（フォールバック）
+            _cur_demand = _cur_beds * _RV_TARGET_OCC[_bt]
+        _fut_demand = _cur_demand * (1 + _RV_DEMAND_TREND[_bt])
+        _fut_beds   = int(round(_fut_demand / _RV_TARGET_OCC[_bt]))
+        _rv_proj_cfg[_bt] = (_cur_beds, _fut_beds, _RV_TREND_NOTE[_bt], _clr)
 
     _rv_proj_rows = []
     for _bt, (_cur, _fut, _note, _clr) in _rv_proj_cfg.items():
@@ -3682,6 +3727,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             plot_bgcolor="rgba(0,0,0,0)",
             yaxis_title="病床数（床）",
             legend=dict(orientation="v", x=1.01, font=dict(size=10)),
+            dragmode=False,
         )
         st.plotly_chart(fig_rv_proj, use_container_width=True)
 
@@ -3691,8 +3737,9 @@ if st.session_state.get("_view_mode") == "region_vision":
                 background:#f0f0f0; border-radius:6px; line-height:1.7;">
     📌 <b>本分析の注意点</b><br>
     ・スコアリングは病床機能報告データのみを用いた参考値です。救急搬送実績・地域連携体制・財務状況等は含まれていません。<br>
-    ・「急性期拠点候補」はスコアと地域内順位から算出したものであり、行政・調整会議の公式認定ではありません。<br>
-    ・2040年試算は全国トレンド係数を一律適用したものです。地域の年齢構成・人口動態・患者流出入は反映されていません。<br>
+    ・「急性期拠点候補」等の分類はスコアと地域内順位から算出したものであり、行政・調整会議の公式認定ではありません。名称は新地域医療構想策定ガイドライン（厚生労働省、令和8年7月公表）が示す「急性期拠点機能」等の考え方を参考にしていますが、実際の医療機関機能の指定は令和8年10月開始予定の医療機関機能報告・地域の協議を経て決まります。<br>
+    ・2040年試算の目標病床稼働率は同ガイドライン公表値を使用していますが、需要の増減方向（トレンド）は全国的な仮定値を一律に当てはめたもので、地域の年齢構成・人口動態・患者流出入は反映されていません。<br>
+    ・病床機能報告の「回復期」区分は、同ガイドラインにより令和9年度以降「包括期」に呼称変更が予定されています（本ツールは現行の報告区分名で表示しています）。<br>
     ・実際の地域医療構想の策定・協議は、都道府県・医療機関・地域住民が参加する調整会議で行われます。
     </div>
     """, unsafe_allow_html=True)
@@ -3752,7 +3799,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
         _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
 
     with _dsf3:
-        _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数"], key="_dsc_metric")
+        _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数", "医療圏シェア"], key="_dsc_metric")
 
     with _dsf3b:
         _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
@@ -3760,11 +3807,21 @@ if st.session_state.get("_view_mode") == "dpc_search":
     # ── フィルター行2: 都道府県 + 病院区分 ──
     _dsf4, _dsf5 = st.columns([3, 5])
     with _dsf4:
-        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県"], horizontal=True, key="_dsc_scope")
+        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
         _ds_pref_sel = None
-        if _ds_geo_scope == "都道府県":
+        _ds_region_sel = None
+        if _ds_geo_scope in ("都道府県", "二次医療圏"):
             _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
             _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
+            if _ds_geo_scope == "二次医療圏":
+                _ds_all_regions = sorted(
+                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
+                    if r
+                )
+                if _ds_all_regions:
+                    _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
+                else:
+                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
 
     with _dsf5:
         _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
@@ -3835,9 +3892,31 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if _ds_kubun_sel:
             _ds_result = _ds_result[_ds_result["病院区分"].isin(_ds_kubun_sel)]
 
+        # 医療圏シェア: 同一二次医療圏内でこの病院の件数が占める割合
+        # （地域絞り込みの前、病院区分フィルター後の母集団で計算する）
+        if "二次医療圏名" in _ds_result.columns:
+            _share_base = _ds_result[
+                (_ds_result["二次医療圏名"] != "") & (_ds_result[_ds_cnt_col] >= 0)
+            ]
+            _region_totals = _share_base.groupby("二次医療圏名")[_ds_cnt_col].sum()
+
+            def _calc_share(row, _totals=_region_totals):
+                reg = row.get("二次医療圏名", "")
+                cnt = row.get(_ds_cnt_col)
+                if not reg or pd.isna(cnt) or cnt < 0:
+                    return np.nan
+                tot = _totals.get(reg, 0)
+                return round(cnt / tot * 100, 1) if tot > 0 else np.nan
+
+            _ds_result["医療圏シェア"] = _ds_result.apply(_calc_share, axis=1)
+
         # 都道府県フィルター
-        if _ds_geo_scope == "都道府県" and _ds_pref_sel:
+        if _ds_geo_scope in ("都道府県", "二次医療圏") and _ds_pref_sel:
             _ds_result = _ds_result[_ds_result["都道府県名"] == _ds_pref_sel]
+
+        # 二次医療圏フィルター
+        if _ds_geo_scope == "二次医療圏" and _ds_region_sel:
+            _ds_result = _ds_result[_ds_result["二次医療圏名"] == _ds_region_sel]
 
         # 非公表除外（0件を除く。-1はマスク値なので残す）
         if _ds_hide_nan:
@@ -3848,7 +3927,8 @@ if st.session_state.get("_view_mode") == "dpc_search":
             _ds_result = _ds_result.rename(columns={_ds_los_col: "平均在院日数"})
 
         # ソート
-        _sort_col = _ds_cnt_col if _ds_metric == "患者総数" else "平均在院日数"
+        _sort_col_map = {"患者総数": _ds_cnt_col, "平均在院日数": "平均在院日数", "医療圏シェア": "医療圏シェア"}
+        _sort_col = _sort_col_map.get(_ds_metric, _ds_cnt_col)
         _asc      = _ds_metric == "平均在院日数"
         if _sort_col in _ds_result.columns:
             _ds_result = _ds_result.sort_values(_sort_col, ascending=_asc, na_position="last")
@@ -3868,16 +3948,20 @@ if st.session_state.get("_view_mode") == "dpc_search":
             + (f" / 合計 {_total_patients:,}例（＊除く）" if not _ds_hide_nan else "")
         )
 
-        _ds_show_cols = ["施設名", "病院区分", "都道府県名", _ds_cnt_col]
+        _ds_show_cols = ["施設名", "病院区分", "都道府県名", "二次医療圏名", _ds_cnt_col]
         _ds_col_cfg: dict = {
-            "施設名":    st.column_config.TextColumn("病院名"),
-            "病院区分":  st.column_config.TextColumn("区分"),
-            "都道府県名": st.column_config.TextColumn("都道府県"),
-            _ds_cnt_col: st.column_config.TextColumn("患者数"),
+            "施設名":      st.column_config.TextColumn("病院名"),
+            "病院区分":    st.column_config.TextColumn("区分"),
+            "都道府県名":   st.column_config.TextColumn("都道府県"),
+            "二次医療圏名": st.column_config.TextColumn("二次医療圏"),
+            _ds_cnt_col:  st.column_config.TextColumn("患者数"),
         }
         if "平均在院日数" in _ds_result.columns:
             _ds_show_cols.append("平均在院日数")
             _ds_col_cfg["平均在院日数"] = st.column_config.TextColumn("平均在院日数")
+        if "医療圏シェア" in _ds_result.columns:
+            _ds_show_cols.append("医療圏シェア")
+            _ds_col_cfg["医療圏シェア"] = st.column_config.TextColumn("医療圏シェア")
 
         # -1（マスク値）を "*" に変換した表示用コピー
         _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
@@ -3887,6 +3971,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
                 _ds_disp[_c] = _v.apply(
                     lambda x: "*" if x == -1 else ("" if pd.isna(x) else (f"{int(x):,}例" if _c == _ds_cnt_col else f"{x:.1f}日"))
                 )
+        if "医療圏シェア" in _ds_disp.columns:
+            _ds_disp["医療圏シェア"] = _ds_result["医療圏シェア"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+            st.caption("※医療圏シェアは同一二次医療圏内（非公表・*病院を除く）での件数比率の参考値です")
 
         # 前回選択した病院のバナーをテーブルの上に表示（地図モードと同じパターン）
         _dsc_last = st.session_state.get("_dsc_last_selected")
@@ -3997,11 +4084,12 @@ with _sw1:
     )
 with _sw2:
     _sw_years = [int(y) for y in sorted(df["報告年度"].unique(), reverse=True)]
-    _sw_year_idx = _sw_years.index(year) if year in _sw_years else 0
-    _sw_new_year = st.selectbox("年度", _sw_years, index=_sw_year_idx, key="_detail_year_sw", label_visibility="collapsed")
-    if _sw_new_year != year:
-        st.session_state["_sel_year"] = _sw_new_year
-        st.rerun()
+    if st.session_state.get("_sel_year") not in _sw_years:
+        st.session_state["_sel_year"] = _sw_years[0] if _sw_years else None
+    # トップの検索画面と同じ "_sel_year" キーを共有することで、検索側で
+    # 選んだ年度がそのまま病院詳細にも引き継がれ、逆に詳細側で年度を
+    # 変えれば検索側に戻った時もその年度が保持される（統一コントロール）。
+    st.selectbox("年度", _sw_years, key="_sel_year", label_visibility="collapsed")
 with _sw3:
     if st.button("← 検索に戻る", key="_detail_back_btn", use_container_width=True):
         st.session_state["_view_mode"] = "home"
@@ -4145,6 +4233,18 @@ if _dpc_match_all is not None:
                     _is_dpc = True
                     _dpc_ban = int(_dpc_h_year.iloc[0]["告示番号"])
                     _dpc_hosp_row = _dpc_h_year.iloc[0]
+
+# 経年トレンド用：選択中の年度に関わらず、この病院のDPC症例数を全年度分集計
+_dpc_case_trend_df = pd.DataFrame()
+if _dpc_matched_name is not None:
+    _dpc_cases_all = _load_dpc_mdc_cases()
+    if _dpc_cases_all is not None:
+        _dct_sub = _dpc_cases_all[_dpc_cases_all["施設名"] == _dpc_matched_name]
+        if not _dct_sub.empty:
+            _dct_mdc_cols = [c for c in _dct_sub.columns if c.startswith("MDC")]
+            _dct_agg = _dct_sub.groupby("年度", as_index=False)[_dct_mdc_cols].sum(numeric_only=True)
+            _dct_agg["DPC症例数"] = _dct_agg[_dct_mdc_cols].sum(axis=1)
+            _dpc_case_trend_df = _dct_agg[["年度", "DPC症例数"]].sort_values("年度")
 
 
 # ── タブ ──────────────────────────────────────────────────
@@ -4717,16 +4817,50 @@ with tab4:
         with c2:
             st.plotly_chart(trend_occupancy(trend_df, hospital), use_container_width=True)
 
+        _los_trend_df = hospital_los_trend(st.session_state.ward_df, hospital)
+        _has_los_trend = len(_los_trend_df.dropna(subset=["平均在院日数"])) >= 2
+        _has_dpc_trend = len(_dpc_case_trend_df) >= 2
+
+        if _has_los_trend or _has_dpc_trend:
+            c3, c4 = st.columns(2)
+            if _has_los_trend:
+                with c3:
+                    st.plotly_chart(trend_los(_los_trend_df, hospital), use_container_width=True)
+                    st.markdown(_source_tag("病床機能報告（在棟延べ数・新規入棟患者数・退棟患者数）"), unsafe_allow_html=True)
+            if _has_dpc_trend:
+                with c4:
+                    st.plotly_chart(trend_dpc_cases(_dpc_case_trend_df, hospital), use_container_width=True)
+                    st.markdown(_source_tag("DPC導入の影響評価に係る調査"), unsafe_allow_html=True)
+
         st.plotly_chart(trend_staff(trend_df, hospital), use_container_width=True)
 
         st.markdown('<div class="section-header">年度別データ一覧</div>', unsafe_allow_html=True)
+        _disp_df = trend_df
         disp_cols = ["報告年度", "合計_許可病床数", "合計_稼働病床数"]
+        _disp_col_cfg: dict = {
+            "報告年度":       st.column_config.NumberColumn("報告年度",       format="%d"),
+            "合計_許可病床数": st.column_config.NumberColumn("合計許可病床数", format="%,d 床"),
+            "合計_稼働病床数": st.column_config.NumberColumn("合計稼働病床数", format="%,d 床"),
+        }
         for t in BED_TYPES:
-            if f"{t}_許可病床数" in trend_df.columns:
-                disp_cols.append(f"{t}_許可病床数")
+            _col = f"{t}_許可病床数"
+            if _col in trend_df.columns:
+                disp_cols.append(_col)
+                _disp_col_cfg[_col] = st.column_config.NumberColumn(t, format="%,d 床")
+        if _has_los_trend:
+            _disp_df = _disp_df.merge(_los_trend_df[["報告年度", "平均在院日数"]], on="報告年度", how="left")
+            disp_cols.append("平均在院日数")
+            _disp_col_cfg["平均在院日数"] = st.column_config.NumberColumn("平均在院日数", format="%.1f 日")
         if "常勤医師数" in trend_df.columns:
             disp_cols += ["常勤医師数", "常勤看護師数"]
-        st.dataframe(trend_df[disp_cols].reset_index(drop=True), hide_index=True, use_container_width=True)
+            _disp_col_cfg["常勤医師数"]   = st.column_config.NumberColumn("常勤医師数",   format="%,d 人")
+            _disp_col_cfg["常勤看護師数"] = st.column_config.NumberColumn("常勤看護師数", format="%,d 人")
+        st.dataframe(
+            _disp_df[disp_cols].reset_index(drop=True),
+            hide_index=True,
+            use_container_width=True,
+            column_config=_disp_col_cfg,
+        )
 
         if len(trend_df) >= 2:
             first_y = trend_df.iloc[0]
@@ -4818,6 +4952,7 @@ with tab5:
                         margin=dict(t=50, b=30, l=50, r=20),
                         yaxis=dict(title="人数", rangemode="tozero"),
                         xaxis=dict(type="category"),
+                        dragmode=False,
                     ))
                     _sfig.add_trace(_go_staff.Bar(
                         name="常勤",
@@ -5080,6 +5215,7 @@ with tab6:
                     height=320, margin=dict(l=10, r=10, t=50, b=10),
                     font=dict(family="Meiryo, sans-serif"),
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    dragmode=False,
                 )
                 st.plotly_chart(fig_surg, use_container_width=True)
 
@@ -5120,6 +5256,7 @@ with tab6:
                     margin=dict(l=10, r=10, t=50, b=10),
                     font=dict(family="Meiryo, sans-serif"),
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    dragmode=False,
                 )
                 st.plotly_chart(fig_share, use_container_width=True)
 
@@ -5612,49 +5749,60 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     xaxis_title="件数",
                     legend=dict(orientation="h", y=1.06),
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
+                    dragmode=False,
                 )
                 st.plotly_chart(_fig_mdc, use_container_width=True)
 
-        # ── 再入院・再転棟率（非表示中） ──
-        # if not _dp_readm.empty:
-        #     st.markdown('<div class="section-header">再入院・再転棟</div>', unsafe_allow_html=True)
-        #     _readm_row    = _dp_readm.iloc[0]
-        #     _readm_rate   = float(_readm_row.get("再入院率", 0) or 0)
-        #     _retrans_rate = float(_readm_row.get("再転棟率", 0) or 0)
-        #     _readm_med    = float(_dp_readm_all["再入院率"].median()) if _dp_readm_all is not None and "再入院率" in _dp_readm_all.columns else 0
-        #     _retrans_med  = float(_dp_readm_all["再転棟率"].median()) if _dp_readm_all is not None and "再転棟率" in _dp_readm_all.columns else 0
-        #     _ra1, _ra2 = st.columns(2)
-        #     _ra1.markdown(
-        #         f'<div class="metric-card" style="border-top-color:#ef4444;">'
-        #         f'<div class="metric-label">再入院率</div>'
-        #         f'<div class="metric-value">{_readm_rate*100:.2f}%</div>'
-        #         f'<div class="metric-sub">全施設中央値 {_readm_med*100:.2f}%</div></div>',
-        #         unsafe_allow_html=True,
-        #     )
-        #     _ra2.markdown(
-        #         f'<div class="metric-card" style="border-top-color:#f97316;">'
-        #         f'<div class="metric-label">再転棟率</div>'
-        #         f'<div class="metric-value">{_retrans_rate*100:.3f}%</div>'
-        #         f'<div class="metric-sub">全施設中央値 {_retrans_med*100:.3f}%</div></div>',
-        #         unsafe_allow_html=True,
-        #     )
-        #     _period_cols = ["再入院_3日以内","再入院_4-7日","再入院_8-14日","再入院_15-28日"]
-        #     _period_labels = ["3日以内","4〜7日","8〜14日","15〜28日"]
-        #     _period_vals = [float(_readm_row.get(c, 0) or 0) * 100 for c in _period_cols if c in _readm_row.index]
-        #     if len(_period_vals) == 4 and any(v > 0 for v in _period_vals):
-        #         import plotly.graph_objects as _go_readm
-        #         _fig_r = _go_readm.Figure(_go_readm.Bar(
-        #             x=_period_labels, y=_period_vals,
-        #             marker_color=["#fca5a5","#fb923c","#fbbf24","#a3e635"],
-        #             text=[f"{v:.1f}%" for v in _period_vals], textposition="outside",
-        #         ))
-        #         _fig_r.update_layout(
-        #             title="再入院 期間別内訳（再入院例中の割合）",
-        #             yaxis_title="%", height=280,
-        #             margin=dict(l=10, r=10, t=40, b=20),
-        #             font=dict(family="Noto Sans JP, sans-serif", size=12),
-        #         )
-        #         st.plotly_chart(_fig_r, use_container_width=True)
+        # ── 再入院・再転棟率 ──
+        # 2026年7月に発覚: detect_file_type()の「再入院」文字列部分一致による
+        # 誤判定で、無関係な表（予定救急医療入院のMDC別内訳など）が再入院率・
+        # 再転棟率として取り込まれ、人数がそのまま率になっていた
+        # （最大2640%等の物理的にありえない値）。ヘッダー列名の完全一致判定に
+        # 修正し、2022・2023年度は生データから再構築、2024年度は値域[0,1]の
+        # 妥当性フィルタで復旧した上で再表示する。
+        if not _dp_readm.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown('<div class="section-header">再入院・再転棟</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag(_dpc_source(year)), unsafe_allow_html=True)
+            _readm_row    = _dp_readm.iloc[0]
+            _readm_rate   = float(_readm_row.get("再入院率", 0) or 0)
+            _retrans_rate = float(_readm_row.get("再転棟率", 0) or 0)
+            _readm_med    = float(_dp_readm_all["再入院率"].median()) if _dp_readm_all is not None and "再入院率" in _dp_readm_all.columns else 0
+            _retrans_med  = float(_dp_readm_all["再転棟率"].median()) if _dp_readm_all is not None and "再転棟率" in _dp_readm_all.columns else 0
+            _ra1, _ra2 = st.columns(2)
+            _ra1.markdown(
+                f'<div class="metric-card" style="border-top-color:#ef4444;">'
+                f'<div class="metric-label">再入院率</div>'
+                f'<div class="metric-value">{_readm_rate*100:.2f}%</div>'
+                f'<div class="metric-sub">全施設中央値 {_readm_med*100:.2f}%</div></div>',
+                unsafe_allow_html=True,
+            )
+            _ra2.markdown(
+                f'<div class="metric-card" style="border-top-color:#f97316;">'
+                f'<div class="metric-label">再転棟率</div>'
+                f'<div class="metric-value">{_retrans_rate*100:.3f}%</div>'
+                f'<div class="metric-sub">全施設中央値 {_retrans_med*100:.3f}%</div></div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("症例数が少ない病院では母数が小さく、率が大きく振れやすい点にご留意ください。")
+            _period_cols = ["再入院_3日以内","再入院_4-7日","再入院_8-14日","再入院_15-28日"]
+            _period_labels = ["3日以内","4〜7日","8〜14日","15〜28日"]
+            _period_vals = [float(_readm_row.get(c, 0) or 0) * 100 for c in _period_cols if c in _readm_row.index]
+            if len(_period_vals) == 4 and any(v > 0 for v in _period_vals):
+                import plotly.graph_objects as _go_readm
+                _fig_r = _go_readm.Figure(_go_readm.Bar(
+                    x=_period_labels, y=_period_vals,
+                    marker_color=["#fca5a5","#fb923c","#fbbf24","#a3e635"],
+                    text=[f"{v:.1f}%" for v in _period_vals], textposition="outside",
+                ))
+                _fig_r.update_layout(
+                    title="再入院 期間別内訳（再入院例中の割合）",
+                    yaxis_title="%", height=280,
+                    margin=dict(l=10, r=10, t=40, b=20),
+                    font=dict(family="Noto Sans JP, sans-serif", size=12),
+                    dragmode=False,
+                )
+                st.plotly_chart(_fig_r, use_container_width=True)
 
         # ── 主要疾患・手術 TOP20 ──
         if not _dp_surg.empty:

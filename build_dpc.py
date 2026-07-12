@@ -64,12 +64,16 @@ def detect_file_type(path: str, verbose: bool = False) -> str:
         return "surgery_detail"
     if any("DPC6桁" in s for s in sheets):
         return "type_aggregate"  # 施設類型別 → スキップ
-    # 再入院：シート名が年度名で、列に「再入院」を含む
+    # 再入院：ヘッダー行（1行目）に「再入院率」「再転棟率」が列名として両方存在する
+    # （「再入院」という語を含むだけの別表 ─ 予定救急医療入院のMDC別内訳、
+    #  様式１の提出件数と転棟率、再入院の状況についての説明シート等 ─ は
+    #  誤判定しないよう、列名の完全一致で絞り込む。かつて部分一致で誤判定し、
+    #  件数（人数）をそのまま再入院率として取り込んでいたバグがあった）
     for s in sheets:
         try:
-            df_peek = pd.read_excel(path, sheet_name=s, header=None, nrows=3)
-            content = df_peek.to_string()
-            if "再入院" in content or "再転棟" in content:
+            df_peek = pd.read_excel(path, sheet_name=s, header=None, nrows=1)
+            header_vals = [str(v).strip() for v in df_peek.iloc[0].tolist()]
+            if "再入院率" in header_vals and "再転棟率" in header_vals:
                 return "readmission"
         except Exception:
             pass

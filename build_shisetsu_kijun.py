@@ -291,6 +291,12 @@ def main() -> None:
 
     out = pd.concat(dfs, ignore_index=True)
     out["施設種別"] = _classify_facility_types(out)
+    # 繰り返し文字列をcategory化してメモリを削減（91万行・約356MB→220MB）。
+    # Streamlit Cloudのメモリ制限対策。
+    for _c in ["都道府県コード", "都道府県名", "受理届出名称", "受理記号",
+               "施設種別", "病棟種別", "病床区分", "区分", "年月"]:
+        if _c in out.columns:
+            out[_c] = out[_c].astype("category")
     out_path = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
     out.to_parquet(out_path, index=False)
 
