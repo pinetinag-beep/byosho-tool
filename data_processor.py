@@ -834,6 +834,31 @@ def hospital_trend(df: pd.DataFrame, hospital_code: str) -> pd.DataFrame:
     return sub.sort_values("報告年度")
 
 
+def hospital_los_trend(ward_df: pd.DataFrame, hospital_name: str) -> pd.DataFrame:
+    """
+    病院の年度別 平均在院日数 推移を計算する。
+
+    計算式: 平均在院日数 = 在棟延べ数 ÷ {(新規入棟患者数 + 退棟患者数) ÷ 2}
+    出典: 厚生労働省「病院報告」の平均在院日数の算出方法に準拠
+          （病床機能報告 様式1 病棟票の在棟延べ数・新規入棟患者数・退棟患者数を使用）
+
+    病棟データを病院・年度単位で合算してから算出する（病院全体の値）。
+    ゼロ除算対策: 分母 = 0 の年度は NaN とする。
+    """
+    need = {"医療機関名", "報告年度", "在棟延べ数", "新規入棟患者数", "退棟患者数"}
+    if ward_df is None or not need.issubset(ward_df.columns):
+        return pd.DataFrame()
+    sub = ward_df[ward_df["医療機関名"] == hospital_name]
+    if sub.empty:
+        return pd.DataFrame()
+    agg = sub.groupby("報告年度", as_index=False)[
+        ["在棟延べ数", "新規入棟患者数", "退棟患者数"]
+    ].sum(numeric_only=True)
+    denom = (agg["新規入棟患者数"] + agg["退棟患者数"]) / 2
+    agg["平均在院日数"] = (agg["在棟延べ数"] / denom.replace(0, np.nan)).round(1)
+    return agg.sort_values("報告年度")
+
+
 def bed_composition(row: pd.Series) -> pd.Series:
     vals = {t: float(row.get(f"{t}_許可病床数", 0)) for t in BED_TYPES}
     total = sum(vals.values()) or 1
