@@ -2445,9 +2445,11 @@ if st.session_state.get("_view_mode") == "search":
                 _s_kubun_sel      = []
 
         st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-        _search_submitted = st.form_submit_button(
-            "🔍 この条件で検索する", type="primary", use_container_width=True,
-        )
+        _btn_col1, _btn_col2, _btn_col3 = st.columns([1, 1, 1])
+        with _btn_col2:
+            _search_submitted = st.form_submit_button(
+                "🔍 この条件で検索する", type="primary", use_container_width=True,
+            )
 
     # ── フィルタリング処理 ──
     s_df = df[df["報告年度"] == s_year].copy()
@@ -3868,9 +3870,11 @@ if st.session_state.get("_view_mode") == "dpc_search":
             _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
 
         st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
-        _ds_search_submitted = st.form_submit_button(
-            "🔍 この条件で検索する", type="primary", use_container_width=True,
-        )
+        _ds_btn_col1, _ds_btn_col2, _ds_btn_col3 = st.columns([1, 1, 1])
+        with _ds_btn_col2:
+            _ds_search_submitted = st.form_submit_button(
+                "🔍 この条件で検索する", type="primary", use_container_width=True,
+            )
 
     st.markdown("---")
 
