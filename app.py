@@ -3209,8 +3209,11 @@ if st.session_state.get("_view_mode") == "region_vision":
     )
 
     # ── AI短評生成（ANTHROPIC_API_KEY が設定されている場合） ──────
-    _ant_key = (st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else "") \
-               or os.environ.get("ANTHROPIC_API_KEY", "")
+    try:
+        _ant_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+    except Exception:
+        _ant_key = ""
+    _ant_key = _ant_key or os.environ.get("ANTHROPIC_API_KEY", "")
     _rv_ai_results: dict = {}
     if _ant_key:
         _rv_total_beds = int(rv_df["合計_許可病床数"].fillna(0).sum())
@@ -3532,7 +3535,7 @@ if st.session_state.get("_view_mode") == "region_vision":
 <tbody>
 <tr>
   <td><span class="role-badge" style="background:#fde8e8;color:#c0392b;">🏆 急性期拠点候補</span></td>
-  <td>地域の高度・急性期医療を集約的に担う<b>中核病院の候補</b>。新地域医療構想の「急性期拠点病院」に相当。</td>
+  <td>地域の高度・急性期医療を集約的に担う<b>中核病院の候補</b>。新地域医療構想策定ガイドライン（令和8年7月公表）が定める「急性期拠点機能」の考え方に相当。</td>
   <td>①スコアが地域内上位（病院数÷4程度の枠）、かつ②合計スコア<b>38点以上</b></td>
   <td>急性期・高度急性期機能を集約。地域内で1〜3病院程度に絞り込まれる想定。救命救急・専門医療の維持が使命。</td>
 </tr>
@@ -3540,7 +3543,7 @@ if st.session_state.get("_view_mode") == "region_vision":
   <td><span class="role-badge" style="background:#fdf0e6;color:#c0392b;">🔴 地域急性期</span></td>
   <td>急性期医療を提供できる規模を持つが、<b>拠点集約の対象外</b>となる急性期病院。</td>
   <td>急性期系病床（高度急性期＋急性期）の<b>比率50%以上</b>かつ<b>150床以上</b></td>
-  <td>急性期拠点病院と連携・機能分担しながら、地域の入院急性期需要を補完。選択と集中が今後の課題。</td>
+  <td>急性期拠点機能を担う病院と連携・機能分担しながら、地域の入院急性期需要を補完。選択と集中が今後の課題。</td>
 </tr>
 <tr>
   <td><span class="role-badge" style="background:#fef9e7;color:#d35400;">🚑 高齢者救急</span></td>
@@ -3549,10 +3552,16 @@ if st.session_state.get("_view_mode") == "region_vision":
   <td>2040年に向けて最も需要増が見込まれる機能。高齢者の生活機能維持・在宅復帰支援を軸に整備。</td>
 </tr>
 <tr>
+  <td colspan="4" style="font-size:0.78rem;color:#888;padding:2px 10px;border-bottom:none;">
+    ※ 上記「地域急性期」「高齢者救急」は、新ガイドラインでは「高齢者救急・地域急性期機能」という<b>1つの機能</b>として定義されています。
+    このツールでは病床構成の違いが見えるよう便宜的に2区分で表示しています。
+  </td>
+</tr>
+<tr>
   <td><span class="role-badge" style="background:#eaf4fb;color:#1a6fa8;">🔄 回復期強化</span></td>
   <td>リハビリテーション・<b>回復期機能を主軸</b>とする病院。地域包括ケア病棟を含む。</td>
   <td>回復期病床比率<b>40%以上</b></td>
-  <td>術後・脳卒中・骨折後のリハビリ需要は2040年に向けて大幅増。地域包括ケア病棟の充実と急性期後連携が鍵。</td>
+  <td>術後・脳卒中・骨折後のリハビリ需要は2040年に向けて大幅増。地域包括ケア病棟の充実と急性期後連携が鍵。（病床機能報告の「回復期」区分は令和9年度以降「包括期」に呼称変更予定）</td>
 </tr>
 <tr>
   <td><span class="role-badge" style="background:#e8f8f0;color:#1a7a4a;">💊 慢性期・在宅支援</span></td>
@@ -3621,37 +3630,47 @@ if st.session_state.get("_view_mode") == "region_vision":
     st.markdown('<div class="section-header">📅 2040年に向けた病床需要の方向性（試算）</div>', unsafe_allow_html=True)
 
     st.info(
-        "⚠️ **試算の前提**: 国の地域医療構想（2024年）の方向性と全国トレンドをもとに、"
-        "**全国平均的な係数**を機械的に乗じた参考値です。"
+        "⚠️ **試算の前提**: 新地域医療構想策定ガイドライン（厚生労働省、令和8年7月公表）が示す"
+        "目標病床稼働率（高度急性期79%・急性期84%・回復期89%・慢性期92.5%）で、"
+        "現状の医療需要（在棟延べ数ベース）を割り戻して2040年の病床数を試算しています。"
+        "需要そのものの2040年に向けた増減方向は**全国的なトレンドを一律に当てはめた仮定値**であり、"
+        "地域の年齢構成・人口動態・患者流出入は反映していません。"
         "実際の数値は都道府県が公表する**地域医療構想調整会議の推計**を参照してください。"
     )
 
-    _rv_proj_cfg = {
-        "高度急性期": (
-            _rv_beds_koudo,
-            int(_rv_beds_koudo * 0.95),
-            "集約化・効率化により微減（▲5%）",
-            "#e74c3c",
-        ),
-        "急性期": (
-            _rv_beds_kyusei,
-            int(_rv_beds_kyusei * 0.80),
-            "在院日数短縮・集約化で大幅減（▲20%）",
-            "#e67e22",
-        ),
-        "回復期": (
-            _rv_beds_kaifuku,
-            int(_rv_beds_kaifuku * 1.35),
-            "高齢者需要大幅増（＋35%）",
-            "#3498db",
-        ),
-        "慢性期": (
-            _rv_beds_mansei,
-            int(_rv_beds_mansei * 1.15),
-            "高齢者需要増（＋15%）",
-            "#27ae60",
-        ),
+    # 目標病床稼働率: 新地域医療構想策定ガイドライン（厚生労働省 令和8年7月公表）の公表値
+    _RV_TARGET_OCC = {"高度急性期": 0.79, "急性期": 0.84, "回復期": 0.89, "慢性期": 0.925}
+    # 医療需要の2040年に向けた変化方向（全国的な仮定値・地域差は未反映の参考値）
+    _RV_DEMAND_TREND = {"高度急性期": -0.05, "急性期": -0.15, "回復期": +0.20, "慢性期": +0.10}
+    _RV_TREND_NOTE = {
+        "高度急性期": "集約化・重症患者への重点化により需要は微減（▲5%）と仮定",
+        "急性期":     "在院日数短縮・外来移行により需要は減少（▲15%）と仮定",
+        "回復期":     "高齢者のリハビリ・在宅復帰支援需要が増加（＋20%）と仮定",
+        "慢性期":     "高齢者の長期療養需要が増加（＋10%）と仮定",
     }
+    _rv_beds_by_type = {
+        "高度急性期": _rv_beds_koudo, "急性期": _rv_beds_kyusei,
+        "回復期": _rv_beds_kaifuku, "慢性期": _rv_beds_mansei,
+    }
+
+    def _rv_demand(bed_type):
+        """1日あたり医療需要（患者数）＝当該機能の在棟延べ数の地域合計 ÷ 365"""
+        col = f"{bed_type}_在棟延べ数"
+        return _rv_tot(col) / 365 if col in rv_df.columns else 0.0
+
+    _rv_proj_cfg = {}
+    for _bt, _clr in zip(
+        ["高度急性期", "急性期", "回復期", "慢性期"],
+        ["#e74c3c", "#e67e22", "#3498db", "#27ae60"],
+    ):
+        _cur_beds   = _rv_beds_by_type[_bt]
+        _cur_demand = _rv_demand(_bt)
+        if _cur_demand <= 0 and _cur_beds > 0:
+            # 在棟延べ数が取得できない場合は、現状病床数×目標稼働率で需要を概算（フォールバック）
+            _cur_demand = _cur_beds * _RV_TARGET_OCC[_bt]
+        _fut_demand = _cur_demand * (1 + _RV_DEMAND_TREND[_bt])
+        _fut_beds   = int(round(_fut_demand / _RV_TARGET_OCC[_bt]))
+        _rv_proj_cfg[_bt] = (_cur_beds, _fut_beds, _RV_TREND_NOTE[_bt], _clr)
 
     _rv_proj_rows = []
     for _bt, (_cur, _fut, _note, _clr) in _rv_proj_cfg.items():
@@ -3718,8 +3737,9 @@ if st.session_state.get("_view_mode") == "region_vision":
                 background:#f0f0f0; border-radius:6px; line-height:1.7;">
     📌 <b>本分析の注意点</b><br>
     ・スコアリングは病床機能報告データのみを用いた参考値です。救急搬送実績・地域連携体制・財務状況等は含まれていません。<br>
-    ・「急性期拠点候補」はスコアと地域内順位から算出したものであり、行政・調整会議の公式認定ではありません。<br>
-    ・2040年試算は全国トレンド係数を一律適用したものです。地域の年齢構成・人口動態・患者流出入は反映されていません。<br>
+    ・「急性期拠点候補」等の分類はスコアと地域内順位から算出したものであり、行政・調整会議の公式認定ではありません。名称は新地域医療構想策定ガイドライン（厚生労働省、令和8年7月公表）が示す「急性期拠点機能」等の考え方を参考にしていますが、実際の医療機関機能の指定は令和8年10月開始予定の医療機関機能報告・地域の協議を経て決まります。<br>
+    ・2040年試算の目標病床稼働率は同ガイドライン公表値を使用していますが、需要の増減方向（トレンド）は全国的な仮定値を一律に当てはめたもので、地域の年齢構成・人口動態・患者流出入は反映されていません。<br>
+    ・病床機能報告の「回復期」区分は、同ガイドラインにより令和9年度以降「包括期」に呼称変更が予定されています（本ツールは現行の報告区分名で表示しています）。<br>
     ・実際の地域医療構想の策定・協議は、都道府県・医療機関・地域住民が参加する調整会議で行われます。
     </div>
     """, unsafe_allow_html=True)
