@@ -1344,11 +1344,17 @@ if st.session_state.get("_view_mode") == "name_search":
     _ns_year = int(_ns_df["報告年度"].max())
 
     with st.container(border=True, key="ns_filter_box"):
-        _ns_kw = st.text_input(
-            "🔍 病院名キーワード（部分一致）",
-            placeholder="例：聖路加、旭川赤十字、大学病院",
-            key="_ns_kw",
-        )
+        with st.form("name_search_form"):
+            _ns_kw = st.text_input(
+                "🔍 病院名キーワード（部分一致）",
+                placeholder="例：聖路加、旭川赤十字、大学病院",
+                key="_ns_kw",
+            )
+            _ns_btn_col1, _ns_btn_col2, _ns_btn_col3 = st.columns([1, 1, 1])
+            with _ns_btn_col2:
+                st.form_submit_button(
+                    "🔍 検索する", type="primary", use_container_width=True,
+                )
 
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
     st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
