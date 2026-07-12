@@ -2377,6 +2377,7 @@ div[data-testid="stTabPanel"] {
             # 公表していないため、選択時は病床機能報告データを直接参照して絞り込む。
             _NYUIN_KUBUN_OPTIONS = {
                 "一般病棟入院基本料": [
+                    "急性期病院Ａ一般入院料", "急性期病院Ｂ一般入院料",
                     "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
                     "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
                     "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
@@ -2481,14 +2482,37 @@ div[data-testid="stTabPanel"] {
     # 入院基本料の区分フィルター（病床機能報告データから絞り込み。届出名称のみで
     # 区分を公表しない地方厚生局があるため、こちらは全国データで確実に絞り込める）
     if _s_kubun_sel:
+        _kubun_hosp_names: set = set()
+
         _ward_df_kubun = st.session_state.get("ward_df")
         if _ward_df_kubun is not None and not _ward_df_kubun.empty:
             _kubun_matched = _ward_df_kubun[
                 (_ward_df_kubun["入院基本料"].isin(_s_kubun_sel))
                 & (_ward_df_kubun["報告年度"] == s_year)
             ]
-            _kubun_hosp_names = set(_kubun_matched["医療機関名"].unique())
-            s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
+            _kubun_hosp_names |= set(_kubun_matched["医療機関名"].unique())
+
+        # 診療報酬改定で新設された区分（例: 急性期病院Ａ/Ｂ一般入院料）は、
+        # 病床機能報告側にまだデータが無いため、施設基準届出の区分列からも
+        # 直接補完する（こちらは新設区分でも直近の届出があれば載っている）。
+        if _sk_df_filt is not None and "区分" in _sk_df_filt.columns:
+            _sk_kubun_matched = _sk_df_filt[_sk_df_filt["区分"].isin(_s_kubun_sel)]
+            if not _sk_kubun_matched.empty:
+                _pref_name_to_code_kb = {v: k for k, v in PREF_CODE_MAP.items()}
+                _sk_kubun_set: dict[str, set[str]] = {}
+                for _, _r in _sk_kubun_matched[["都道府県コード", "医療機関名_正規化"]].drop_duplicates().iterrows():
+                    _sk_kubun_set.setdefault(_r["都道府県コード"], set()).add(_r["医療機関名_正規化"])
+                def _in_sk_kubun(row):
+                    _c = _pref_name_to_code_kb.get(row.get("都道府県名", ""), "")
+                    _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
+                    if not _n or _c not in _sk_kubun_set:
+                        return False
+                    _names = _sk_kubun_set[_c]
+                    return _n in _names or any(sn.endswith(_n) for sn in _names)
+                _extra_matched = s_df[s_df.apply(_in_sk_kubun, axis=1)]
+                _kubun_hosp_names |= set(_extra_matched["医療機関名"].unique())
+
+        s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
 
     # 手術データをマージ
     _ORGAN_LABELS = [
