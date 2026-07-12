@@ -21,7 +21,9 @@ from pathlib import Path
 import pandas as pd
 
 from build_shisetsu_kijun import _classify_facility_types
-from parse_shisetsu_shinki_pdf import parse_pdf as parse_shinki
+from parse_shisetsu_shinki_pdf import (
+    parse_pdf as parse_shinki, _guess_pref_from_filename,
+)
 from parse_shisetsu_shikkou_pdf import parse_pdf as parse_shikkou
 
 BASE = Path(__file__).parent
@@ -64,13 +66,18 @@ def main():
     all_new = []
     all_shikkou = []
     for pref, files in pairs.items():
+        # フォルダ内ファイル名は短縮県名（例:"岡山"）だが、既存データの
+        # 都道府県名列は正式名称（例:"岡山県"）なので、そのまま短縮名を
+        # ヒントとして渡すとキー不一致でマージが全く効かなくなる。
+        # ファイル名から正式名称を解決し直す。
+        full_pref = _guess_pref_from_filename(files.get("新規") or files.get("失効", ""))
         if "新規" in files:
-            df = parse_shinki(files["新規"], pref)
+            df = parse_shinki(files["新規"], full_pref)
             print(f"  {pref} 新規: {len(df)}行")
             if not df.empty:
                 all_new.append(df)
         if "失効" in files:
-            df = parse_shikkou(files["失効"], pref)
+            df = parse_shikkou(files["失効"], full_pref)
             print(f"  {pref} 失効: {len(df)}行")
             if not df.empty:
                 all_shikkou.append(df)

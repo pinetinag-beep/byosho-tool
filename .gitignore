@@ -18,6 +18,9 @@ __pycache__/
 !dpc_match.parquet
 !shisetsu_kijun_cache.parquet
 
+# 更新スクリプトが作る一時バックアップ
+*.parquet.bak
+
 # DuckDB（バイナリ、大きいため除外）
 data/*.duckdb
 data/*.duckdb.wal
