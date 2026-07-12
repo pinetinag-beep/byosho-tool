@@ -16,6 +16,10 @@ def _fig_layout(fig, title="", height=420):
         font=dict(family="Meiryo, sans-serif", size=14),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        # ドラッグ操作でのボックスズームを無効化。年度数点だけの折れ線/棒
+        # グラフはズーム探索を想定しておらず、誤ってドラッグすると軸が
+        # 意味不明な範囲にズームされグラフが壊れたように見えるため。
+        dragmode=False,
     )
     return fig
 

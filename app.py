@@ -3381,6 +3381,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             legend=dict(orientation="h", y=1.10),
+            dragmode=False,
             xaxis_title="病床数（床）",
         )
         st.plotly_chart(fig_rv_stack, use_container_width=True)
@@ -3699,6 +3700,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             plot_bgcolor="rgba(0,0,0,0)",
             yaxis_title="病床数（床）",
             legend=dict(orientation="v", x=1.01, font=dict(size=10)),
+            dragmode=False,
         )
         st.plotly_chart(fig_rv_proj, use_container_width=True)
 
@@ -4906,6 +4908,7 @@ with tab5:
                         margin=dict(t=50, b=30, l=50, r=20),
                         yaxis=dict(title="人数", rangemode="tozero"),
                         xaxis=dict(type="category"),
+                        dragmode=False,
                     ))
                     _sfig.add_trace(_go_staff.Bar(
                         name="常勤",
@@ -5168,6 +5171,7 @@ with tab6:
                     height=320, margin=dict(l=10, r=10, t=50, b=10),
                     font=dict(family="Meiryo, sans-serif"),
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    dragmode=False,
                 )
                 st.plotly_chart(fig_surg, use_container_width=True)
 
@@ -5208,6 +5212,7 @@ with tab6:
                     margin=dict(l=10, r=10, t=50, b=10),
                     font=dict(family="Meiryo, sans-serif"),
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    dragmode=False,
                 )
                 st.plotly_chart(fig_share, use_container_width=True)
 
@@ -5700,6 +5705,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     xaxis_title="件数",
                     legend=dict(orientation="h", y=1.06),
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
+                    dragmode=False,
                 )
                 st.plotly_chart(_fig_mdc, use_container_width=True)
 
@@ -5750,6 +5756,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     yaxis_title="%", height=280,
                     margin=dict(l=10, r=10, t=40, b=20),
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
+                    dragmode=False,
                 )
                 st.plotly_chart(_fig_r, use_container_width=True)
 
