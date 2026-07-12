@@ -4425,7 +4425,7 @@ with tab1:
             k    = _safe_int(hosp_row.get(f"{t}_許可病床数", 0))
             z    = _safe_int(hosp_row.get(f"{t}_在棟延べ数", 0))
             comp = bed_composition(hosp_row)[t]
-            avg      = f"{z / 365:.1f}" if z > 0 else "—"
+            avg      = f"{z / 365:.1f}人/日" if z > 0 else "—"
             occ_rate = f"{z / 365 / k * 100:.1f}%" if (z > 0 and k > 0) else "—"
             detail_rows.append({
                 "病床種別":          t,
@@ -4489,7 +4489,7 @@ with tab1:
                 items_html = "".join(
                     f'<div style="flex:1;text-align:center;padding:0 6px;'
                     f'border-right:1px solid #F0EDE6;">'
-                    f'<div style="color:#6E6A5E;font-size:0.68rem;margin-bottom:3px;">{lbl}</div>'
+                    f'<div style="color:#6E6A5E;font-size:0.93rem;margin-bottom:3px;">{lbl}</div>'
                     f'<div style="color:#26251F;font-size:1.05rem;font-weight:600;">{val}台</div>'
                     f'</div>'
                     for lbl, val in breakdown.items()
@@ -4514,7 +4514,7 @@ with tab1:
                 return (
                     f'<div style="background:#fff;border:1px solid #E8E4DB;'
                     f'border-radius:10px;padding:10px 14px;text-align:center;">'
-                    f'<div style="color:#6E6A5E;font-size:0.72rem;margin-bottom:4px;">{label}</div>'
+                    f'<div style="color:#6E6A5E;font-size:0.97rem;margin-bottom:4px;">{label}</div>'
                     f'<div style="color:#26251F;font-size:1.4rem;font-weight:700;">{val}'
                     f'<span style="font-size:0.75rem;color:#6E6A5E;margin-left:2px;">台</span></div>'
                     f'</div>'
