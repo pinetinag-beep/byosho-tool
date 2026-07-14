@@ -868,8 +868,18 @@ def _load_shisetsu_kijun():
     if "受理番号" in df.columns:
         _dedup_cols.append("受理番号")
     df = df.drop_duplicates(subset=_dedup_cols)
-    for col in ["都道府県コード", "都道府県名", "受理届出名称"]:
-        if col in df.columns:
+    # 全国96万行規模になり、テキスト列（医療機関名称・住所等）を素の文字列の
+    # まま持つとメモリが240MB超になる（Streamlit Cloudの約1GBメモリ上限を圧迫し、
+    # 全画面の表示が遅くなる原因になっていた）。行数に対して重複が多い列は
+    # category化することで実測60MB程度まで削減できる。
+    _CAT_COLS = [
+        "都道府県コード", "都道府県名", "医療機関番号", "医療機関名称",
+        "医療機関名_正規化", "住所", "受理届出名称", "受理記号", "受理番号",
+        "算定開始年月日", "病棟種別", "病床区分", "病棟数", "病床数",
+        "区分", "内訳その他", "年月", "施設種別",
+    ]
+    for col in _CAT_COLS:
+        if col in df.columns and str(df[col].dtype) != "category":
             df[col] = df[col].astype("category")
     return df
 
