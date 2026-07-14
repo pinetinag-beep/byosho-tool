@@ -3869,6 +3869,40 @@ if st.session_state.get("_view_mode") == "dpc_search":
             st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
         _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
 
+    # ── 地域絞り込み（都道府県→二次医療圏）は選択のたびに連動させたいため、
+    #    フォームの外に置いて即座に反映されるようにする（フォーム内だと
+    #    都道府県を選んでも選択肢がすぐ現れず、検索ボタンを押すまで反映されない）。
+    _dsf4, _dsf5 = st.columns([3, 5])
+    with _dsf4:
+        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
+        _ds_pref_sel = None
+        _ds_region_sel = None
+        if _ds_geo_scope in ("都道府県", "二次医療圏"):
+            _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
+            _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
+            if _ds_geo_scope == "二次医療圏":
+                _ds_all_regions = sorted(
+                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
+                    if r
+                )
+                if _ds_all_regions:
+                    _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
+                else:
+                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
+
+    with _dsf5:
+        _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
+        # 旧デフォルト（出来高除外）のセッションを更新
+        if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
+            st.session_state["_dsc_kubun"] = _ds_all_kubun
+        _ds_kubun_sel = st.multiselect(
+            "病院区分",
+            _ds_all_kubun,
+            default=_ds_all_kubun,
+            key="_dsc_kubun",
+        )
+        _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
+
     with st.form("dpc_search_form"):
         # ── フィルター行1: ランキング指標 + 手術有無 ──
         _dsf3, _dsf3b = st.columns([2, 2])
@@ -3877,38 +3911,6 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
         with _dsf3b:
             _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
-
-        # ── フィルター行2: 都道府県 + 病院区分 ──
-        _dsf4, _dsf5 = st.columns([3, 5])
-        with _dsf4:
-            _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
-            _ds_pref_sel = None
-            _ds_region_sel = None
-            if _ds_geo_scope in ("都道府県", "二次医療圏"):
-                _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
-                _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
-                if _ds_geo_scope == "二次医療圏":
-                    _ds_all_regions = sorted(
-                        r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
-                        if r
-                    )
-                    if _ds_all_regions:
-                        _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
-                    else:
-                        st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
-
-        with _dsf5:
-            _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
-            # 旧デフォルト（出来高除外）のセッションを更新
-            if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
-                st.session_state["_dsc_kubun"] = _ds_all_kubun
-            _ds_kubun_sel = st.multiselect(
-                "病院区分",
-                _ds_all_kubun,
-                default=_ds_all_kubun,
-                key="_dsc_kubun",
-            )
-            _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
 
         st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
         _ds_btn_col1, _ds_btn_col2, _ds_btn_col3 = st.columns([1, 1, 1])
