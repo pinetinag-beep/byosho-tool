@@ -3835,34 +3835,38 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
     _ds_hosp_info = _build_dpc_hosp_info()
 
+    # ── MDC・疾患名は選択のたびに連動させたいため、フォームの外に置いて
+    #    即座に反映されるようにする（MDCを変えると疾患名の選択肢がすぐに
+    #    絞り込まれる。フォーム内だと検索ボタンを押すまで反映されない）。
+    _dsf1, _dsf2 = st.columns([2, 4])
+    with _dsf1:
+        _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
+        _ds_mdc_opts = ["すべて"] + [
+            f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
+        ]
+        if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
+            st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
+        _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
+
+    with _dsf2:
+        _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
+        _ds_disease_src = (
+            _ds_surg_all if _ds_mdc_key is None
+            else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
+        )
+        _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) != 0
+        if "件数_手術有" in _ds_disease_src.columns:
+            _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) != 0)
+        _ds_disease_src = _ds_disease_src[_ds_disease_mask]
+        _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
+        # セッションステート検証（MDC変更時に古い疾患名が残らないように）
+        if st.session_state.get("_dsc_disease") not in _ds_diseases:
+            st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
+        _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
+
     with st.form("dpc_search_form"):
-        # ── フィルター行1: MDC + 疾患名 + ランキング指標 + 手術有無 ──
-        _dsf1, _dsf2, _dsf3, _dsf3b = st.columns([2, 4, 2, 2])
-        with _dsf1:
-            _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
-            _ds_mdc_opts = ["すべて"] + [
-                f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
-            ]
-            if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
-                st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
-            _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
-
-        with _dsf2:
-            _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
-            _ds_disease_src = (
-                _ds_surg_all if _ds_mdc_key is None
-                else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
-            )
-            _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) != 0
-            if "件数_手術有" in _ds_disease_src.columns:
-                _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) != 0)
-            _ds_disease_src = _ds_disease_src[_ds_disease_mask]
-            _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
-            # セッションステート検証（MDC変更時に古い疾患名が残らないように）
-            if st.session_state.get("_dsc_disease") not in _ds_diseases:
-                st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
-            _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
-
+        # ── フィルター行1: ランキング指標 + 手術有無 ──
+        _dsf3, _dsf3b = st.columns([2, 2])
         with _dsf3:
             _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数", "医療圏シェア"], key="_dsc_metric")
 
