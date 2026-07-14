@@ -1243,7 +1243,7 @@ if st.session_state.get("_view_mode") == "home":
   </p>
   <h1 style="font-size:2.3rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.25;
              letter-spacing:0.01em;">
-    全国の病院の情報を調べる
+    全国の医療機関の情報を調べる
   </h1>
   <p style="font-size:0.98rem;font-weight:500;color:#6E6A5E;margin:0;">どうやって探しますか？</p>
 </div>""",
@@ -1334,6 +1334,7 @@ if st.session_state.get("_view_mode") == "home":
 
     if SHISETSU_KIJUN_PARQUET.exists():
         st.markdown("<br>", unsafe_allow_html=True)
+        _landing_group_header("診療所を調べる", "病院とは別の統計制度（施設基準届出）から、有床・無床診療所を直接検索します")
         _mc10, _mc11, _mc12 = st.columns(3, gap="medium")
         with _mc10:
             st.markdown(_method_card(_ICON_STETHO, "診療所を探す",
