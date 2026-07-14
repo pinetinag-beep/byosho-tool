@@ -2225,21 +2225,23 @@ if st.session_state.get("_view_mode") == "search":
                     "CT", ["指定なし", "CTあり（合計）", "CTなし（合計）", "スペック別"],
                     key="ct_filter", label_visibility="collapsed",
                 )
-                s_ck_ct64 = s_ck_ct16p = s_ck_ct16m = False
-                if ct_filter == "スペック別":
-                    s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
-                    s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
-                    s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
+                # フォーム内だと「スペック別」を選んだ直後はチェックボックスが
+                # 検索ボタンを押すまで現れない（st.form内は非表示条件が即時反映
+                # されないため）。検索ボタンを1回押すだけで完結するよう、常に
+                # 表示しておき、「スペック別」選択時のみ判定に使う。
+                st.caption("↑スペック別を選んだ場合のみ以下が有効")
+                s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
+                s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
+                s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
                 st.markdown("**MRI**")
                 mri_filter = st.radio(
                     "MRI", ["指定なし", "MRIあり（合計）", "MRIなし（合計）", "スペック別"],
                     key="mri_filter", label_visibility="collapsed",
                 )
-                s_ck_mri3t = s_ck_mri15p = s_ck_mri15m = False
-                if mri_filter == "スペック別":
-                    s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
-                    s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
-                    s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+                st.caption("↑スペック別を選んだ場合のみ以下が有効")
+                s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
+                s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
+                s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
             with _eq2:
                 st.markdown("**放射線治療**")
                 s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
@@ -2432,7 +2434,6 @@ if st.session_state.get("_view_mode") == "search":
                 # 2列でグループ表示
                 _kg1, _kg2 = st.columns(2)
                 _s_kijun_sel: list[str] = []
-                _s_kubun_sel: list[str] = []
                 for _gi, (_grp_name, _grp_items) in enumerate(_SK_SEARCH_GROUPS):
                     _col = _kg1 if _gi % 2 == 0 else _kg2
                     with _col:
@@ -2444,29 +2445,29 @@ if st.session_state.get("_view_mode") == "search":
                             label_visibility="visible",
                         )
                         _s_kijun_sel.extend(_sel)
-                        # 選んだ届出名称に区分の選択肢があれば、その場ですぐ下に「派生条件」
-                        # として視覚的に分かるボックス（枠線＋アイコン＋補足文）で表示する。
-                        # 周囲の選択肢グループと同じ見た目だと出現に気づかれないため、
-                        # st.container(border=True) で明確に区別する。
-                        for _sel_label in _sel:
-                            _kopts = _NYUIN_KUBUN_OPTIONS.get(_sel_label)
-                            if _kopts:
-                                with st.container(border=True):
-                                    st.markdown(
-                                        f"<div style='font-size:0.82rem;font-weight:600;"
-                                        f"color:#b45309;margin-bottom:4px;'>"
-                                        f"🔎 「{_sel_label}」を選択中 → さらに区分で絞り込めます</div>",
-                                        unsafe_allow_html=True,
-                                    )
-                                    _ksel = st.multiselect(
-                                        "区分（任意）",
-                                        options=_kopts,
-                                        key=f"s_kubun_{_sel_label}",
-                                        placeholder="指定なし（すべて含む）",
-                                        help="病床機能報告データから直接絞り込みます",
-                                        label_visibility="collapsed",
-                                    )
-                                    _s_kubun_sel.extend(_ksel)
+
+                # 「一般病棟入院基本料」等を選んだ場合のみ意味を持つ区分（急性期一般
+                # 入院料１〜等）の絞り込み。フォーム内では届出名称を選んだ直後に
+                # 区分ボックスを出し分けられない（検索ボタンを押すまで反映されない）
+                # ため、常に表示しておき、検索ボタン1回で完結するようにする。
+                st.markdown("---")
+                st.markdown(
+                    "<div style='font-size:0.82rem;font-weight:600;color:#b45309;'>"
+                    "🔎 区分で絞り込む（任意・左の届出名称も選んだ場合のみ有効）</div>",
+                    unsafe_allow_html=True,
+                )
+                _kb_cols = st.columns(len(_NYUIN_KUBUN_OPTIONS))
+                _s_kubun_sel: list[str] = []
+                for _kb_col, (_sel_label, _kopts) in zip(_kb_cols, _NYUIN_KUBUN_OPTIONS.items()):
+                    with _kb_col:
+                        _ksel = st.multiselect(
+                            _sel_label,
+                            options=_kopts,
+                            key=f"s_kubun_{_sel_label}",
+                            placeholder="指定なし（すべて含む）",
+                            help="病床機能報告データから直接絞り込みます",
+                        )
+                        _s_kubun_sel.extend(_ksel)
 
                 st.markdown("---")
                 _s_kijun_kw_text = st.text_input(
