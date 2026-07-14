@@ -2104,39 +2104,44 @@ if st.session_state.get("_view_mode") == "clinic_search":
 if st.session_state.get("_view_mode") == "search":
     st.markdown("## 条件で病院を検索")
 
+    # ════════════════════════════════════════════════
+    # STEP 1: エリアを絞り込む
+    # ════════════════════════════════════════════════
+    # 年度・都道府県・二次医療圏は「どこを探すか」という主条件であり、
+    # 都道府県を選んだら二次医療圏の選択肢がすぐに絞り込まれてほしいため、
+    # st.form() の外に置いて即座に反映されるようにする（フォーム内だと
+    # 検索ボタンを押すまで選択肢が更新されない）。
+    st.markdown(
+        "<div style='border-left:4px solid #12886D;padding:8px 14px;background:#EAF4F0;"
+        "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
+        "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
+        "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+        "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    _sa, _sb, _sc = st.columns([1, 2, 2])
+    with _sa:
+        s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+        if st.session_state.get("_sel_year") not in s_years_list:
+            st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+        s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
+    with _sb:
+        s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
+        s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
+    with _sc:
+        if s_pref != "全都道府県":
+            s_all_regions = ["全二次医療圏"] + sorted(
+                r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
+                if r != "不明"
+            )
+        else:
+            s_all_regions = ["全二次医療圏"]
+        if st.session_state.get("s_region") not in s_all_regions:
+            st.session_state["s_region"] = "全二次医療圏"
+        s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
+
     with st.form("search_form"):
-        # ════════════════════════════════════════════════
-        # STEP 1: エリアを絞り込む
-        # ════════════════════════════════════════════════
-        st.markdown(
-            "<div style='border-left:4px solid #12886D;padding:8px 14px;background:#EAF4F0;"
-            "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
-            "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
-            "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
-            "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        _sa, _sb, _sc = st.columns([1, 2, 2])
-        with _sa:
-            s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-            if st.session_state.get("_sel_year") not in s_years_list:
-                st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
-            s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
-        with _sb:
-            s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-            s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
-        with _sc:
-            if s_pref != "全都道府県":
-                s_all_regions = ["全二次医療圏"] + sorted(
-                    r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
-                    if r != "不明"
-                )
-            else:
-                s_all_regions = ["全二次医療圏"]
-            if st.session_state.get("s_region") not in s_all_regions:
-                st.session_state["s_region"] = "全二次医療圏"
-            s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
         s_kw = st.text_input(
             "病院名キーワード",
             placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
