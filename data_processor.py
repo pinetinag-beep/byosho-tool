@@ -834,7 +834,7 @@ def hospital_trend(df: pd.DataFrame, hospital_code: str) -> pd.DataFrame:
     return sub.sort_values("報告年度")
 
 
-def hospital_los_trend(ward_df: pd.DataFrame, hospital_name: str) -> pd.DataFrame:
+def hospital_los_trend(ward_df: pd.DataFrame, hospital_name: str, hospital_code: str = None) -> pd.DataFrame:
     """
     病院の年度別 平均在院日数 推移を計算する。
 
@@ -844,11 +844,18 @@ def hospital_los_trend(ward_df: pd.DataFrame, hospital_name: str) -> pd.DataFram
 
     病棟データを病院・年度単位で合算してから算出する（病院全体の値）。
     ゼロ除算対策: 分母 = 0 の年度は NaN とする。
+
+    医療機関名は年度によって表記が変わることがある（全角/半角カタカナ・
+    法人格の略記ゆれ等）ため、hospital_code（年度を通じて不変）が渡された
+    場合はそちらを優先してマッチングする。
     """
     need = {"医療機関名", "報告年度", "在棟延べ数", "新規入棟患者数", "退棟患者数"}
     if ward_df is None or not need.issubset(ward_df.columns):
         return pd.DataFrame()
-    sub = ward_df[ward_df["医療機関名"] == hospital_name]
+    if hospital_code and "医療機関コード" in ward_df.columns:
+        sub = ward_df[ward_df["医療機関コード"].astype(str) == str(hospital_code)]
+    else:
+        sub = ward_df[ward_df["医療機関名"] == hospital_name]
     if sub.empty:
         return pd.DataFrame()
     agg = sub.groupby("報告年度", as_index=False)[
