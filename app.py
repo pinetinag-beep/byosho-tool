@@ -4153,8 +4153,42 @@ hosp_row = df[
     (df["医療機関名"] == hospital)
 ].squeeze()
 
+# 医療機関名は年度によって表記が変わることがある（全角/半角カタカナ、
+# 「医療法人社団」⇔「（医社）」等の法人格の略記ゆれ。実例: 海老名総合病院は
+# 2022〜2024年度が半角カナ表記、2025年度が全角表記で別文字列だった）。
+# 名前の完全一致で見つからない場合は、他の年度から医療機関コード
+# （施設固有で年度を通じて不変）を逆引きして再検索する。
+if (not isinstance(hosp_row, pd.Series) or hosp_row.empty) and "医療機関コード" in df.columns:
+    _any_year = df[df["医療機関名"] == hospital]
+    if not _any_year.empty:
+        _code_for_name = _any_year["医療機関コード"].iloc[0]
+        hosp_row = df[
+            (df["報告年度"] == year) &
+            (df["医療機関コード"] == _code_for_name)
+        ].squeeze()
+
 # コードが取れない場合は名前で代用
 hosp_code = hosp_row.get("医療機関コード") if isinstance(hosp_row, pd.Series) else None
+
+# 選択中の年度で実際に使われている医療機関名（hosp_rowから取得。表記ゆれで
+# hospital（選択時点の表記）と異なる場合がある）。他の年度別データ
+# （ward_df・surgery_df等）を「この年度・この病院」で絞り込む際は、
+# 可能な限り医療機関コードで、それが無ければこちらの実表記で照合する。
+hospital_for_year = (
+    hosp_row.get("医療機関名", hospital) if isinstance(hosp_row, pd.Series) else hospital
+)
+
+def _match_this_hospital(frame: pd.DataFrame, year_col: str = "報告年度", yr=None) -> pd.Series:
+    """frame内で「この病院（この年度）」に該当する行を選ぶ真偽マスクを返す。
+    医療機関コード列があればコードで、無ければ年度別の実表記名で照合する
+    （医療機関名は年度によって全角/半角・法人格略記等の表記ゆれがあるため）。"""
+    if hosp_code and "医療機関コード" in frame.columns:
+        mask = frame["医療機関コード"].astype(str) == str(hosp_code)
+    else:
+        mask = frame["医療機関名"] == hospital_for_year
+    if yr is not None and year_col in frame.columns:
+        mask = mask & (frame[year_col] == yr)
+    return mask
 
 # 地域データ
 region_df = region_share(df, year, pref, region)
@@ -4265,7 +4299,10 @@ else:
     occ = 0
     kado_sub = ""
 
-region_rank_row = region_df[region_df["医療機関名"] == hospital]
+if hosp_code and "医療機関コード" in region_df.columns:
+    region_rank_row = region_df[region_df["医療機関コード"] == hosp_code]
+else:
+    region_rank_row = region_df[region_df["医療機関名"] == hospital]
 region_rank = int(region_rank_row["地域内順位"].values[0]) if len(region_rank_row) > 0 else "-"
 region_share_val = float(region_rank_row["地域シェア(%)"].values[0]) if len(region_rank_row) > 0 else 0
 
@@ -4647,10 +4684,7 @@ with tab1:
                     }
                     _ward_df_all = st.session_state.get("ward_df")
                     if _ward_df_all is not None and not _ward_df_all.empty:
-                        _hosp_wards = _ward_df_all[
-                            (_ward_df_all["医療機関名"] == hospital)
-                            & (_ward_df_all["報告年度"] == year)
-                        ]
+                        _hosp_wards = _ward_df_all[_match_this_hospital(_ward_df_all, yr=year)]
                         _hosp_wards_kubun: dict[str, str] = {}
                         for _sk_name, _kw_list in _SK_NYUIN_KEYWORD_MAP.items():
                             _matched_wards = _hosp_wards[
@@ -4931,7 +4965,7 @@ with tab4:
         with c2:
             st.plotly_chart(trend_occupancy(trend_df, hospital), use_container_width=True)
 
-        _los_trend_df = hospital_los_trend(st.session_state.ward_df, hospital)
+        _los_trend_df = hospital_los_trend(st.session_state.ward_df, hospital, hospital_code=hosp_code)
         _has_los_trend = len(_los_trend_df.dropna(subset=["平均在院日数"])) >= 2
         _has_dpc_trend = len(_dpc_case_trend_df) >= 2
 
@@ -5111,7 +5145,7 @@ with tab5:
         st.markdown('<div class="section-header">選択病院 vs 地域平均</div>', unsafe_allow_html=True)
         if len(region_df_staff) > 0:
             metrics = ["医師数_per100床", "看護師数_per100床"]
-            hosp_vals = region_df_staff[region_df_staff["医療機関名"] == hospital][metrics].squeeze()
+            hosp_vals = region_df_staff[_match_this_hospital(region_df_staff)][metrics].squeeze()
 
             # 病院カテゴリ分類（地域比較タブと同じ考え方: 最大比率の種別が35%以上なら採用）
             def _bed_category(row):
@@ -5129,7 +5163,7 @@ with tab5:
             _cat_col_exists = "合計_許可病床数" in region_df_staff.columns
             if _cat_col_exists:
                 region_df_staff["_hosp_cat"] = region_df_staff.apply(_bed_category, axis=1)
-                _hosp_row = region_df_staff[region_df_staff["医療機関名"] == hospital]
+                _hosp_row = region_df_staff[_match_this_hospital(region_df_staff)]
                 _hosp_cat = _hosp_row["_hosp_cat"].iloc[0] if len(_hosp_row) > 0 else "その他"
                 _same_cat = region_df_staff[region_df_staff["_hosp_cat"] == _hosp_cat]
                 region_means = _same_cat[metrics].mean()
@@ -5161,10 +5195,7 @@ with tab6:
     if ward_df is None:
         st.info("病棟単位の詳細データがありません。厚労省様式1・2病棟票を再読み込みしてください。")
     else:
-        hosp_ward = ward_df[
-            (ward_df["医療機関名"] == hospital) &
-            (ward_df["報告年度"] == year)
-        ]
+        hosp_ward = ward_df[_match_this_hospital(ward_df, yr=year)]
 
         if hosp_ward.empty:
             st.info("選択した病院・年度の病棟データが見つかりません。データを再読み込みしてください。")
@@ -5278,12 +5309,9 @@ with tab6:
     else:
         # 年度フィルター（surgery_dfに報告年度列がある場合は絞り込む）
         if "報告年度" in surgery_df.columns:
-            hosp_surg = surgery_df[
-                (surgery_df["医療機関名"] == hospital) &
-                (surgery_df["報告年度"] == year)
-            ]
+            hosp_surg = surgery_df[_match_this_hospital(surgery_df, yr=year)]
         else:
-            hosp_surg = surgery_df[surgery_df["医療機関名"] == hospital]
+            hosp_surg = surgery_df[_match_this_hospital(surgery_df)]
 
         if hosp_surg.empty:
             st.info("この病院の手術データが見つかりません（手術件数0または非公表）。")
@@ -5355,7 +5383,7 @@ with tab6:
                 ).round(1)
                 region_surg = region_surg.sort_values("手術総数", ascending=True)
 
-                colors = ["#e74c3c" if n == hospital else "#3498db" for n in region_surg["医療機関名"]]
+                colors = ["#e74c3c" if n == hospital_for_year else "#3498db" for n in region_surg["医療機関名"]]
                 fig_share = go.Figure(go.Bar(
                     x=region_surg["手術総数"], y=region_surg["医療機関名"],
                     orientation="h",
@@ -5540,7 +5568,7 @@ with tab7:
                     else:
                         _color = "#3498db"
 
-                    _is_sel = _r["医療機関名"] == hospital
+                    _is_sel = _r["医療機関名"] == hospital_for_year
                     _popup_html = (
                         f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
                         f'<b style="font-size:13px">{_r["医療機関名"]}</b><br>'
