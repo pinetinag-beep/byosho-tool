@@ -1979,6 +1979,20 @@ if st.session_state.get("_view_mode") == "distance":
                                 _dist_col_cfg[_asc] = st.column_config.NumberColumn(
                                     _asc.replace("手術_", ""), format="%,d 件")
                         st.dataframe(_dist_result, use_container_width=True, column_config=_dist_col_cfg)
+
+                        _dist_csv_df = _dist_result.copy()
+                        for _c in _dist_auto_surg_cols:
+                            if _c in _dist_csv_df.columns:
+                                _v = pd.to_numeric(_dist_csv_df[_c], errors="coerce").fillna(0)
+                                _dist_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else int(x))
+                        st.download_button(
+                            "📥 CSV ダウンロード",
+                            _dist_csv_df.to_csv(index=False).encode("utf-8-sig"),
+                            file_name=f"distance_search_{_dist_year}.csv",
+                            mime="text/csv",
+                            key="dist_csv_dl",
+                        )
+
                         st.divider()
                         st.markdown("### 🏥 病院を選んで詳細を見る")
                         _dist_nav_cols = st.columns(3)
@@ -2064,6 +2078,14 @@ if st.session_state.get("_view_mode") == "clinic_search":
         if _cs_insts.empty:
             st.info("条件に一致する医療機関が見つかりませんでした。絞り込み条件を減らしてみてください。")
         else:
+            st.download_button(
+                "📥 CSV ダウンロード",
+                _cs_insts.drop(columns=["都道府県コード"]).to_csv(index=False).encode("utf-8-sig"),
+                file_name="clinic_search.csv",
+                mime="text/csv",
+                key="cs_csv_dl",
+            )
+
             _CS_FAC_COLOR = {"病院": "#3b82f6", "有床診療所": "#f59e0b", "無床診療所": "#6b7280"}
             _CS_PAGE_SIZE = 100
             _cs_page = _cs_insts.head(_CS_PAGE_SIZE)
@@ -3526,6 +3548,13 @@ if st.session_state.get("_view_mode") == "region_vision":
             "常勤医師数":     st.column_config.NumberColumn("医師", format="%,d 人"),
         },
     )
+    st.download_button(
+        "📥 CSV ダウンロード",
+        _rv_score_tbl.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"region_vision_score_{_rv_region}_{_rv_year}.csv",
+        mime="text/csv",
+        key="rv_score_csv_dl",
+    )
 
     # ポジショニングマップ（病床数 vs 手術件数 / 医師密度）
     _rv_scatter_df = rv_df.copy()
@@ -4104,6 +4133,19 @@ if st.session_state.get("_view_mode") == "dpc_search":
             on_select="rerun",
             selection_mode="single-row",
             key="_dsc_table",
+        )
+
+        _ds_csv_df = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
+        for _c in [_ds_cnt_col, "平均在院日数"]:
+            if _c in _ds_csv_df.columns:
+                _v = pd.to_numeric(_ds_csv_df[_c], errors="coerce")
+                _ds_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else ("" if pd.isna(x) else x))
+        st.download_button(
+            "📥 CSV ダウンロード",
+            _ds_csv_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name="dpc_search.csv",
+            mime="text/csv",
+            key="dsc_csv_dl",
         )
 
         # 行選択 → DPC施設名からbyosho医療機関名を解決してセッションステートに保存
@@ -5009,6 +5051,13 @@ with tab4:
             use_container_width=True,
             column_config=_disp_col_cfg,
         )
+        st.download_button(
+            "📥 CSV ダウンロード",
+            _disp_df[disp_cols].to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{hospital}_年度別データ.csv",
+            mime="text/csv",
+            key="trend_csv_dl",
+        )
 
         if len(trend_df) >= 2:
             first_y = trend_df.iloc[0]
@@ -5204,6 +5253,13 @@ with tab6:
             bed_tbl = detail_bed_type_table(hosp_ward, hospital)
             if not bed_tbl.empty:
                 st.dataframe(bed_tbl, hide_index=True, use_container_width=True)
+                st.download_button(
+                    "📥 CSV ダウンロード",
+                    bed_tbl.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"{hospital}_入院基本料別病床数_{year}.csv",
+                    mime="text/csv",
+                    key="bed_tbl_csv_dl",
+                )
             else:
                 st.info("病棟テーブルデータがありません。")
 
@@ -5408,6 +5464,13 @@ with tab6:
                     "手術総数":     st.column_config.NumberColumn(format="%,d 件"),
                     "全身麻酔手術数": st.column_config.NumberColumn(format="%,d 件"),
                 })
+                st.download_button(
+                    "📥 CSV ダウンロード",
+                    tbl.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"{region}_手術数比較_{year}.csv",
+                    mime="text/csv",
+                    key="region_surg_csv_dl",
+                )
             else:
                 st.info("この二次医療圏の手術データがありません。")
 
@@ -5742,6 +5805,13 @@ with tab7:
                                 "所要時間(分)": st.column_config.NumberColumn("所要時間", format="%.1f 分"),
                             },
                         )
+                        st.download_button(
+                            "📥 CSV ダウンロード",
+                            _pt_result.to_csv(index=False).encode("utf-8-sig"),
+                            file_name="map_distance_search.csv",
+                            mime="text/csv",
+                            key="map_pt_csv_dl",
+                        )
 
 
 # ── TAB DPC: DPC分析 ──────────────────────────────────────
@@ -5973,6 +6043,14 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                 _show = ["DPC6桁コード","疾患名","件数"]
                 if "手術実施率" in _sdisp.columns: _show.append("手術実施率")
                 if "平均在院日数" in _sdisp.columns: _show.append("平均在院日数")
+
+                st.download_button(
+                    "📥 CSV ダウンロード（全MDC分）",
+                    _sdisp[[c for c in _show if c in _sdisp.columns]].to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"{hospital}_疾患別手術件数_{year}.csv",
+                    mime="text/csv",
+                    key="dpc_mdc_surg_csv_dl",
+                )
 
                 # MDC順に並べ、MDCごとにexpanderで折り畳み表示
                 for _mdc_key in [k for k in MDC_LABELS if k in _sdisp["MDC"].values]:
