@@ -104,14 +104,18 @@ python build_byosho_r7.py --dir byosho_file_R7 --year 2025 \
 
 ## Git・デプロイ
 
-**Streamlit Cloud（`byosho-tool-testver.streamlit.app`）は `master` ブランチを参照している。**  
-`main` ブランチは削除済み。`master` が唯一の本番ブランチ。
+**Streamlit Cloud（`byosho-tool-testver.streamlit.app`）は `master` ブランチを参照している。GitHub上のブランチは`master`（本番）のみが正式運用。他に一時的な作業ブランチ（`claude/xxx`等）が残っていても、それはmasterにマージ済みの残骸か、他セッションが作業中の一時ブランチであり、"pushすべき2つ目の本番ブランチ"では絶対にない。**
 
-変更をコミットしたら必ず `master` と作業ブランチの両方にプッシュする：
+**過去に`main`という名前のローカルブランチ・リモートブランチが存在した名残で、「masterとmainの両方にpushする」という誤った運用がCLAUDE.mdに書かれていた時期があった（2026年7月に発覚・修正）。`main`はGitHub上には存在しない（`gh repo view --json defaultBranchRef`で確認可能）。ローカルの`git branch -a`が`origin/main`を表示する場合、それは削除されたリモートブランチの古いキャッシュ（stale remote-tracking ref）であり実体はない。** この思い込みにより、実際には別環境（別のClaude Codeセッション等）がmasterに直接pushした変更にローカルが気づかず、21コミット分の乖離に気づかないまま作業を進めてpushが`rejected`になる事故が起きた。
 
-```bash
-git push origin HEAD:master && git push origin HEAD:<作業ブランチ名>
-```
+**恒久対応（2026年7月実施）**: ローカルブランチ名を`master`に統一し、`origin/master`を追跡するよう設定済み（`git branch --set-upstream-to=origin/master master`）。これにより：
+- `git status` だけで本番との乖離（ahead/behind）が正確に分かる（以前のように存在しない`origin/main`と比較して誤った情報が出ることはない）
+- pushは単に `git push` でよい（`HEAD:master`等のrefspec指定は不要）
+- pullも単に `git pull` でよい
+
+**作業を始める前に必ず`git pull`（またはfetch状況を`git status`で確認）してから着手すること。** 他環境からの直接pushでローカルが本番より古くなっていることがあるため、これを毎回の作業の第一歩とする（気づいた時にfetchするのではなく、着手前に必ず行う）。乖離があれば`git rebase origin/master`で取り込み、pushの前に必ずローカルでStreamlitを起動して主要画面の動作を再確認する（UI仕様が変わっている可能性があるため）。
+
+もし別のClaude Codeセッションが独自の作業ブランチ（`claude/xxx`等）を作ってpushした場合は、masterにマージ後すみやかにそのリモートブランチを削除する（`git push origin --delete <branch>`）。マージ済みブランチを残しておくと「pushすべきブランチが複数ある」という誤解が再発する温床になる。
 
 ## データ管理
 
@@ -411,7 +415,7 @@ PDF解析で得た教訓（同種のPDFを今後解析する際に必ず踏ま�
 - **Streamlitで `st.markdown()` 内の `<script>` は実行されない**（innerHTML経由のため）。カスタムJSを動かす場合は `st.components.v1.html()` を使い、親ページのDOMを触るなら `window.parent.document` 経由でアクセスする（ブラウザ自動翻訳の抑止用notranslateタグ設定で対応）。
 - **ブラウザの自動翻訳が日本語ページを誤って再翻訳する**ことがある（「地域包括ケア」→「地域含むケア」等）。`<meta name="google" content="notranslate">` と `<html lang="ja">` を設定して防止する。
 - **ユーザーのWindows環境でのgit push失敗**: ローカルブランチ名が作業指定ブランチ名と一致していないと `git push origin <branch>` が `src refspec ... does not match any` で失敗する。`git push origin HEAD:<branch>` を使うか、先に `git pull origin <branch>` でマージしてから push する。マージコミット時にVimが開いたら `Esc` → `:wq` で保存終了。
-- **ローカルの`byosho_tool`フォルダは本番`master`から気づかず乖離することがある**（2026年7月、CSV出力機能追加時に発覚）: 別セッション・別環境から直接masterにpushされた変更（21コミット分、検索フォームのEnterキー無効化やUI仕様変更を含む）が、このローカルフォルダには反映されていなかった。コミット前の`git status`だけでは検知できず、`git push origin HEAD:master`が`rejected (fetch first)`になって初めて発覚した。**app.pyを編集する作業を始める前に必ず`git fetch origin master`＋`git log HEAD..origin/master --oneline`で本番との乖離を確認し、乖離があれば`git rebase origin/master`で取り込んでから作業・pushすること。** rebaseが自動で通っても、UI仕様が変わっている可能性があるため、pushする前に必ずローカルでStreamlitを起動して主要画面を再確認する。
+- **ローカルとmaster本番の乖離・`main`ブランチ名の混乱について**は根本原因を特定し恒久対応済み。詳細は「Git・デプロイ」セクション参照（ローカルブランチ名を`master`に統一し`origin/master`を追跡するよう設定、作業前は必ず`git pull`から）。
 - **Streamlit Community Cloudのメモリ制限**（約1GB）: 大きいparquetを `@st.cache_data` 無しで読み込むとOOMでアプリが落ちる。新しいキャッシュ読み込み関数を追加する際は必ず `@st.cache_data(show_spinner=False)` を付け、可能なら `drop_duplicates()` で不要な重複行を削減する。
 - **`drop_duplicates()`だけでは不十分、テキスト列のcategory化も必須**（2026年7月、施設基準届出の差分マージ後にアプリ全体が「かなり遅い」と報告され発覚）: `shisetsu_kijun_cache.parquet`（96万行）を`_load_shisetsu_kijun()`で読み込む際、都道府県コード等の一部列しかcategory化しておらず、`医療機関名称`・`住所`等の高重複率テキスト列が素の文字列のまま保持されていたため、メモリ上で240MB超（行数の8〜10倍以上、重複が非常に多い列）を占めていた。この1つのDataFrameだけでStreamlit Cloudの約1GB制限のかなりの部分を圧迫し、施設基準届出を使う検索・病院詳細ページの両方が全体的に遅くなっていた。該当列（ユニーク数が行数よりずっと少ない列すべて）をcategory化したところ実測62MB（74%減）に圧縮できた。**新しいparquetを読み込むキャッシュ関数を書く／既存データが大きく育った時は、`df[col].nunique()` と `df[col].memory_usage(deep=True)` を確認し、ユニーク数が行数よりずっと少ない列（体感目安: ユニーク数が行数の30%未満）は`category`型に変換すること。** 逆に対象データフレームが小さい（数千行程度）場合はこの最適化の効果は薄いので、大きく育ったデータセット（数万行〜）に絞って対応すれば十分。
 - **`detect_file_type()`のシート内容による判定は文字列部分一致でなく完全一致にする**（実際に事故った）: DPC公開データの「再入院」ファイル判定が、シート内容に「再入院」という文字列が含まれるかどうかの部分一致だったため、無関係な表（「予定救急医療入院」のMDC別内訳、「様式１の提出件数と転棟率」等）まで再入院ファイルとして誤って取り込んでいた。これらの表は列位置が違うため、`load_readmission()` が人数（件数）をそのまま再入院率としてパースし、`再入院率`列に最大2640%等の物理的にありえない値が混入していた（2026年7月発覚、`build_dpc_append.py`／旧`build_dpc.py`いずれの取り込み経路でも同じ不具合）。ヘッダー行（1行目）の列名が「再入院率」「再転棟率」と完全一致するかで判定するよう修正。同種のキーワード部分一致による種別判定を追加する際は、ヘッダー列名の完全一致や表のセル構造（何列目に何があるか）まで確認すること。
