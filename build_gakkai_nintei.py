@@ -4,10 +4,14 @@
 gakkai_nintei_raw/ に学会ごとに置かれた認定施設一覧（PDF）を読み込んで
 gakkai_nintei_cache.parquet を作る。
 
-現状対応しているのは「都道府県／施設名」の2列表がページ単位で並ぶ
-PDF形式（内科学会の基幹施設・連携施設・特別連携施設一覧で確認）。
-学会ごとに形式が異なる可能性が高いため、新しい学会を追加する際は
-まず該当PDFの構造を確認してから _SOCIETY_FILES に追記すること。
+学会ごとにPDF形式が異なる前提。新しい学会を追加する際は、まず該当PDFの
+構造を確認してから _SOCIETY_CONFIG に追記すること（既存の抽出関数が
+流用できるとは限らない）。対応済み形式:
+  - 内科学会: 「都道府県／施設名」の2列表がページ単位で並ぶ形式
+  - 内分泌学会: 「都道府県／施設名+診療科/郵便番号/住所」の4列表
+    （施設名と診療科がスペース区切りで1セルに結合されている。診療科名は
+    必ず「科」で終わる1トークンという前提で、セルの最後の空白区切り
+    トークンを診療科として分離する）
 
 使い方:
     python build_gakkai_nintei.py
@@ -24,15 +28,6 @@ RAW_DIR = BASE / "gakkai_nintei_raw"
 OUT_PARQUET = BASE / "gakkai_nintei_cache.parquet"
 DATA_CACHE = BASE / "data_cache.parquet"
 
-# 学会名 -> [(ファイル名, 区分ラベル), ...]
-# 新しい学会のPDFを追加したらここに追記する。
-_SOCIETY_FILES = {
-    "内科学会": [
-        ("kikan_2026.pdf", "基幹施設"),
-        ("renkei_2026.pdf", "連携施設"),
-        ("t_renkei_2026.pdf", "特別連携施設"),
-    ],
-}
 
 _LEGAL_PREFIXES = [
     "独立行政法人国立病院機構", "国家公務員共済組合連合会", "地方独立行政法人",
@@ -71,6 +66,55 @@ def _extract_pref_facility_pdf(path: Path) -> list[tuple[str, str]]:
                     continue
                 rows.append((pref.strip(), name.strip()))
     return rows
+
+
+def _extract_pref_dept_facility_pdf(path: Path) -> list[tuple[str, str]]:
+    """「都道府県／施設名+診療科名（1セルに結合）／郵便番号／住所」の4列表
+    から (都道府県, 施設名) のリストを抽出する（内分泌学会形式）。
+    診療科名は必ず「科」で終わる末尾の1トークンという前提で、セルを
+    空白で分割し最後のトークンを診療科として除いた残りを施設名とする。
+    """
+    rows = []
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            tables = page.extract_tables()
+            if not tables:
+                continue
+            for r in tables[0]:
+                if not r or len(r) < 2:
+                    continue
+                pref, cell = r[0], r[1]
+                if not pref or not cell or pref.strip() == "都道府県":
+                    continue
+                tokens = cell.split()
+                if len(tokens) < 2:
+                    continue  # 診療科が分離できない行はスキップ（誤爆防止）
+                facility = " ".join(tokens[:-1]).strip()
+                if facility:
+                    rows.append((pref.strip(), facility))
+    return rows
+
+
+_SOCIETY_CONFIG = {
+    "内科学会": {
+        "extractor": _extract_pref_facility_pdf,
+        "files": [
+            ("kikan_2026.pdf", "基幹施設"),
+            ("renkei_2026.pdf", "連携施設"),
+            ("t_renkei_2026.pdf", "特別連携施設"),
+        ],
+    },
+    "内分泌学会": {
+        "extractor": _extract_pref_dept_facility_pdf,
+        "files": [
+            ("shisetsu_1.pdf", "認定教育施設"),
+            ("shisetsu_2.pdf", "認定教育施設"),
+            ("shisetsu_3.pdf", "認定教育施設"),
+            ("shisetsu_4.pdf", "認定教育施設"),
+            ("shisetsu_5.pdf", "認定教育施設"),
+        ],
+    },
+}
 
 
 def _build_hospital_lookup():
@@ -113,14 +157,15 @@ def main():
     print(f"病院名逆引き辞書: {len(exact):,} 件（全年度の表記ゆれを含む）")
 
     all_rows = []
-    for society, files in _SOCIETY_FILES.items():
+    for society, config in _SOCIETY_CONFIG.items():
         society_dir = RAW_DIR / society
-        for fname, category in files:
+        extractor = config["extractor"]
+        for fname, category in config["files"]:
             path = society_dir / fname
             if not path.exists():
                 print(f"⚠ 見つかりません: {path}（スキップ）")
                 continue
-            rows = _extract_pref_facility_pdf(path)
+            rows = extractor(path)
             print(f"  {society}/{fname} ({category}): {len(rows)}件")
             for pref, name in rows:
                 all_rows.append({
@@ -135,6 +180,12 @@ def main():
         return
 
     out = pd.DataFrame(all_rows)
+    # 診療科ごとに複数行あるデータ（内分泌学会等）は、区分での絞り込みには
+    # 診療科の粒度が不要なため、学会×区分×施設単位に圧縮する。
+    before_dedup = len(out)
+    out = out.drop_duplicates(subset=["学会名", "区分", "都道府県名", "施設名"])
+    if before_dedup != len(out):
+        print(f"施設単位に重複除去: {before_dedup:,}行 → {len(out):,}行")
     out["施設名_正規化"] = out["施設名"].apply(_normalize)
     out["医療機関コード"] = out.apply(
         lambda r: _match(r["都道府県名"], r["施設名_正規化"], exact, by_pref), axis=1
