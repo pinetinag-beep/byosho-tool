@@ -68,6 +68,40 @@ def _extract_pref_facility_pdf(path: Path) -> list[tuple[str, str]]:
     return rows
 
 
+def _normalize_pref_suffix(pref: str) -> str:
+    """「青森」等、都道府県の末尾サフィックス（都/道/府/県）が省略された
+    表記を病床機能報告データ側の正式名称に合わせる。"""
+    pref = pref.strip()
+    if pref in ("北海道", "東京都", "大阪府", "京都府") or pref.endswith(("都", "道", "府", "県")):
+        return pref
+    if pref == "東京":
+        return "東京都"
+    if pref in ("大阪", "京都"):
+        return pref + "府"
+    return pref + "県"
+
+
+def _extract_pref_no_facility_pdf(path: Path) -> list[tuple[str, str]]:
+    """「県名／研修施設番号／研修施設名称」3列表のPDFから (都道府県, 施設名)
+    のリストを抽出する（眼科学会・一般研修施設形式。施設番号は使わない）。
+    県名は「青森」のようにサフィックス省略形で記載されているため正規化する。
+    """
+    rows = []
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            tables = page.extract_tables()
+            if not tables:
+                continue
+            for r in tables[0]:
+                if not r or len(r) < 3:
+                    continue
+                pref, name = r[0], r[2]
+                if not pref or not name or pref.strip() in ("県名", "都道府県"):
+                    continue
+                rows.append((_normalize_pref_suffix(pref), name.strip()))
+    return rows
+
+
 def _extract_pref_dept_facility_pdf(path: Path) -> list[tuple[str, str]]:
     """「都道府県／施設名+診療科名（1セルに結合）／郵便番号／住所」の4列表
     から (都道府県, 施設名) のリストを抽出する（内分泌学会形式）。
@@ -112,6 +146,13 @@ _SOCIETY_CONFIG = {
             ("shisetsu_3.pdf", "認定教育施設"),
             ("shisetsu_4.pdf", "認定教育施設"),
             ("shisetsu_5.pdf", "認定教育施設"),
+        ],
+    },
+    "眼科学会": {
+        "extractor": _extract_pref_no_facility_pdf,
+        "files": [
+            ("一般研修施設.pdf", "一般研修施設"),
+            # 基幹研修施設.pdf は画像PDF（テキスト層なし）のため未対応
         ],
     },
 }
