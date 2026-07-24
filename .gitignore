@@ -17,6 +17,7 @@ __pycache__/
 !dpc_surgery_detail.parquet
 !dpc_match.parquet
 !shisetsu_kijun_cache.parquet
+!gakkai_nintei_cache.parquet
 
 # 更新スクリプトが作る一時バックアップ
 *.parquet.bak

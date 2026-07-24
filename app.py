@@ -883,6 +883,18 @@ def _load_shisetsu_kijun():
             df[col] = df[col].astype("category")
     return df
 
+GAKKAI_NINTEI_PARQUET = Path(__file__).parent / "gakkai_nintei_cache.parquet"
+
+@st.cache_data(show_spinner=False)
+def _load_gakkai_nintei():
+    if not GAKKAI_NINTEI_PARQUET.exists():
+        return None
+    df = pd.read_parquet(GAKKAI_NINTEI_PARQUET)
+    for col in ["学会名", "区分", "都道府県名", "マッチ状態"]:
+        if col in df.columns and str(df[col].dtype) != "category":
+            df[col] = df[col].astype("category")
+    return df
+
 
 def _build_integrated_excel(df_all: pd.DataFrame) -> bytes:
     """病床機能報告 × DPC × 施設基準届出 の統合表を Excel バイト列で返す。"""
@@ -2248,7 +2260,9 @@ if st.session_state.get("_view_mode") == "search":
     }
     </style>
     """, unsafe_allow_html=True)
-        _tab_equip, _tab_surg, _tab_kijun = st.tabs(["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"])
+        _tab_equip, _tab_surg, _tab_kijun, _tab_gakkai = st.tabs(
+            ["🏥 医療設備", "✂️ 手術", "📋 施設基準届出", "🎓 学会認定施設"]
+        )
 
         with _tab_equip:
             _eq1, _eq2, _eq3 = st.columns(3)
@@ -2515,6 +2529,30 @@ if st.session_state.get("_view_mode") == "search":
                 _s_kijun_kw_text  = ""
                 _s_kubun_sel      = []
 
+        with _tab_gakkai:
+            _gk_df_filt = _load_gakkai_nintei()
+            if _gk_df_filt is None:
+                st.info("学会認定施設データがまだ登録されていません。")
+                _s_gakkai_sel: list[tuple[str, str]] = []
+            else:
+                st.caption("学会・区分ごとの認定施設で絞り込みます（複数選択でOR）")
+                _s_gakkai_sel = []
+                for _society in sorted(_gk_df_filt["学会名"].dropna().unique()):
+                    _cats = sorted(
+                        _gk_df_filt[_gk_df_filt["学会名"] == _society]["区分"].dropna().unique()
+                    )
+                    _gk_sel = st.multiselect(
+                        _society,
+                        options=_cats,
+                        key=f"s_gakkai_{_society}",
+                        placeholder="指定なし（すべて含む）",
+                    )
+                    _s_gakkai_sel.extend((_society, c) for c in _gk_sel)
+                st.caption(
+                    "出典：各学会公表の認定施設一覧。医療機関名で病床機能報告データと突合しているため、"
+                    "表記の違いにより一部の施設は反映されない場合があります。"
+                )
+
         st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
         _btn_col1, _btn_col2, _btn_col3 = st.columns([1, 1, 1])
         with _btn_col2:
@@ -2592,6 +2630,17 @@ if st.session_state.get("_view_mode") == "search":
                 _kubun_hosp_names |= set(_extra_matched["医療機関名"].unique())
 
         s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
+
+    # 学会認定施設フィルター（医療機関コードで突合済みのため直接絞り込む）
+    if _s_gakkai_sel:
+        _gk_mask = pd.Series(False, index=_gk_df_filt.index)
+        for _society, _cat in _s_gakkai_sel:
+            _gk_mask |= (_gk_df_filt["学会名"] == _society) & (_gk_df_filt["区分"] == _cat)
+        _gk_codes = set(_gk_df_filt.loc[_gk_mask, "医療機関コード"].dropna().unique())
+        if "医療機関コード" in s_df.columns:
+            s_df = s_df[s_df["医療機関コード"].isin(_gk_codes)]
+        else:
+            s_df = s_df.iloc[0:0]
 
     # 手術データをマージ
     _ORGAN_LABELS = [
