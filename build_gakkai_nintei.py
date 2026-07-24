@@ -4,14 +4,18 @@
 gakkai_nintei_raw/ に学会ごとに置かれた認定施設一覧（PDF）を読み込んで
 gakkai_nintei_cache.parquet を作る。
 
-学会ごとにPDF形式が異なる前提。新しい学会を追加する際は、まず該当PDFの
-構造を確認してから _SOCIETY_CONFIG に追記すること（既存の抽出関数が
-流用できるとは限らない）。対応済み形式:
-  - 内科学会: 「都道府県／施設名」の2列表がページ単位で並ぶ形式
-  - 内分泌学会: 「都道府県／施設名+診療科/郵便番号/住所」の4列表
+学会ごとに形式が異なる前提（PDF・HTMLいずれもある）。新しい学会を
+追加する際は、まず該当ファイルの構造を確認してから _SOCIETY_CONFIG に
+追記すること（既存の抽出関数が流用できるとは限らない）。対応済み形式:
+  - 内科学会: 「都道府県／施設名」の2列表がページ単位で並ぶPDF形式
+  - 内分泌学会: 「都道府県／施設名+診療科/郵便番号/住所」の4列表PDF
     （施設名と診療科がスペース区切りで1セルに結合されている。診療科名は
     必ず「科」で終わる1トークンという前提で、セルの最後の空白区切り
     トークンを診療科として分離する）
+  - 眼科学会・基幹施設: 元PDFが画像PDF（テキスト層なし）でextract_text不可
+    だったため、学会公式ページのHTML表（<table>部分のみ抜粋）を代わりに
+    使用。「認定番号／施設名」の2列表で、都道府県は
+    <td colspan="2">県名</td> という区切り行で表現される。
 
 使い方:
     python build_gakkai_nintei.py
@@ -22,6 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 import pdfplumber
+from bs4 import BeautifulSoup
 
 BASE = Path(__file__).parent
 RAW_DIR = BASE / "gakkai_nintei_raw"
@@ -102,6 +107,25 @@ def _extract_pref_no_facility_pdf(path: Path) -> list[tuple[str, str]]:
     return rows
 
 
+def _extract_kikan_html(path: Path) -> list[tuple[str, str]]:
+    """「認定番号／施設名」2列表のHTMLから (都道府県, 施設名) のリストを
+    抽出する（眼科学会・基幹施設。都道府県は colspan=2 の区切り行）。"""
+    with open(path, encoding="utf-8") as f:
+        soup = BeautifulSoup(f.read(), "html.parser")
+    current_pref = None
+    rows = []
+    for tr in soup.find_all("tr"):
+        tds = tr.find_all("td")
+        if len(tds) == 1 and tds[0].get("colspan") == "2":
+            current_pref = tds[0].get_text(strip=True)
+        elif len(tds) == 2:
+            num, name = tds[0].get_text(strip=True), tds[1].get_text(strip=True)
+            if num == "認定番号" or not current_pref or not name:
+                continue
+            rows.append((current_pref, name))
+    return rows
+
+
 def _extract_pref_dept_facility_pdf(path: Path) -> list[tuple[str, str]]:
     """「都道府県／施設名+診療科名（1セルに結合）／郵便番号／住所」の4列表
     から (都道府県, 施設名) のリストを抽出する（内分泌学会形式）。
@@ -152,7 +176,10 @@ _SOCIETY_CONFIG = {
         "extractor": _extract_pref_no_facility_pdf,
         "files": [
             ("一般研修施設.pdf", "一般研修施設"),
-            # 基幹研修施設.pdf は画像PDF（テキスト層なし）のため未対応
+            # 基幹研修施設.pdf は画像PDF（テキスト層なし）のため未対応。
+            # 代わりに学会公式ページのHTML表（kikan_shisetsu.html）を使う
+            # （extractorをこのファイルだけ上書き）。
+            ("kikan_shisetsu.html", "基幹施設", _extract_kikan_html),
         ],
     },
 }
@@ -200,8 +227,10 @@ def main():
     all_rows = []
     for society, config in _SOCIETY_CONFIG.items():
         society_dir = RAW_DIR / society
-        extractor = config["extractor"]
-        for fname, category in config["files"]:
+        default_extractor = config["extractor"]
+        for file_entry in config["files"]:
+            fname, category = file_entry[0], file_entry[1]
+            extractor = file_entry[2] if len(file_entry) > 2 else default_extractor
             path = society_dir / fname
             if not path.exists():
                 print(f"⚠ 見つかりません: {path}（スキップ）")
