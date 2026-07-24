@@ -2535,19 +2535,30 @@ if st.session_state.get("_view_mode") == "search":
                 st.info("学会認定施設データがまだ登録されていません。")
                 _s_gakkai_sel: list[tuple[str, str]] = []
             else:
-                st.caption("学会・区分ごとの認定施設で絞り込みます（複数選択でOR）")
-                _s_gakkai_sel = []
-                for _society in sorted(_gk_df_filt["学会名"].dropna().unique()):
-                    _cats = sorted(
-                        _gk_df_filt[_gk_df_filt["学会名"] == _society]["区分"].dropna().unique()
-                    )
-                    _gk_sel = st.multiselect(
-                        _society,
-                        options=_cats,
-                        key=f"s_gakkai_{_society}",
-                        placeholder="指定なし（すべて含む）",
-                    )
-                    _s_gakkai_sel.extend((_society, c) for c in _gk_sel)
+                # 学会数が今後大きく増える前提のため、学会ごとに行を分けず
+                # 「学会名 - 区分」を1つのラベルにまとめた単一のマルチセレクトに
+                # する（入力して絞り込み検索できるので、数十学会になっても
+                # 縦に場所を取らない）。
+                st.caption(
+                    "学会・区分で絞り込みます（複数選択でOR）。入力すると学会名や区分で絞り込み検索できます"
+                )
+                _gk_opts_df = (
+                    _gk_df_filt[["学会名", "区分"]]
+                    .drop_duplicates()
+                    .sort_values(["学会名", "区分"])
+                )
+                _gk_label_to_key = {
+                    f"{r['学会名']}　－　{r['区分']}": (r["学会名"], r["区分"])
+                    for _, r in _gk_opts_df.iterrows()
+                }
+                _gk_labels_sel = st.multiselect(
+                    "学会・区分",
+                    options=list(_gk_label_to_key.keys()),
+                    key="s_gakkai_combo",
+                    placeholder="指定なし（すべて含む）。例: 内科学会 と入力",
+                    label_visibility="collapsed",
+                )
+                _s_gakkai_sel = [_gk_label_to_key[lb] for lb in _gk_labels_sel]
                 st.caption(
                     "出典：各学会公表の認定施設一覧。医療機関名で病床機能報告データと突合しているため、"
                     "表記の違いにより一部の施設は反映されない場合があります。"
