@@ -16,6 +16,14 @@ gakkai_nintei_cache.parquet を作る。
     だったため、学会公式ページのHTML表（<table>部分のみ抜粋）を代わりに
     使用。「認定番号／施設名」の2列表で、都道府県は
     <td colspan="2">県名</td> という区切り行で表現される。
+  - 整形外科学会・消化器外科学会: Excel（都道府県／施設名の列を持つシート）。
+    区分は単一（全件同じカテゴリ）。
+  - 神経学会: Excel。都道府県・施設名に加え「施設区分」列（教育施設／
+    准教育施設／教育関連施設）が行ごとにあるため、抽出関数は
+    (都道府県, 施設名, 区分) の3要素タプルを返す。
+  - 産婦人科学会: Excel。**都道府県列が無い**（施設名・施設区分のみ）。
+    この場合は pref=None として返し、都道府県を使わない全国完全一致
+    （曖昧な場合はマッチさせない）でのみ突合する。
 
 使い方:
     python build_gakkai_nintei.py
@@ -153,6 +161,64 @@ def _extract_pref_dept_facility_pdf(path: Path) -> list[tuple[str, str]]:
     return rows
 
 
+def _extract_orthopedic_excel(path: Path) -> list[tuple[str, str]]:
+    """整形外科学会: 「全施設一覧」シートの都道府県／施設名列を使う
+    （施設数(都道府県内)列は単なる集計値なので無視）。"""
+    df = pd.read_excel(path, sheet_name="全施設一覧")
+    rows = []
+    for _, r in df.iterrows():
+        pref, name = r.get("都道府県"), r.get("施設名")
+        if pd.isna(pref) or pd.isna(name):
+            continue
+        rows.append((str(pref).strip(), str(name).strip()))
+    return rows
+
+
+def _extract_gi_surgery_excel(path: Path) -> list[tuple[str, str]]:
+    """消化器外科学会: 「認定施設一覧」シートの都道府県／認定施設名列を使う。"""
+    df = pd.read_excel(path, sheet_name="認定施設一覧")
+    rows = []
+    for _, r in df.iterrows():
+        pref, name = r.get("都道府県"), r.get("認定施設名")
+        if pd.isna(pref) or pd.isna(name):
+            continue
+        rows.append((str(pref).strip(), str(name).strip()))
+    return rows
+
+
+def _extract_neurology_excel(path: Path) -> list[tuple[str, str, str]]:
+    """神経学会: 「全国一覧」シート。施設区分（教育施設／准教育施設／
+    教育関連施設）が行ごとに異なるため (都道府県, 施設名, 区分) を返す。"""
+    df = pd.read_excel(path, sheet_name="全国一覧")
+    rows = []
+    for _, r in df.iterrows():
+        pref, name, cat = r.get("都道府県"), r.get("施設名"), r.get("施設区分")
+        if pd.isna(pref) or pd.isna(name):
+            continue
+        rows.append((
+            str(pref).strip(), str(name).strip(),
+            str(cat).strip() if pd.notna(cat) else "認定施設",
+        ))
+    return rows
+
+
+def _extract_obgyn_excel(path: Path) -> list[tuple[None, str, str]]:
+    """産婦人科学会: 「専門研修施設一覧」シート。**都道府県列が無い**ため
+    pref は常に None を返す（都道府県を使わない全国完全一致でのみ突合）。
+    施設区分（基幹／連携）は行ごとに異なるため区分も返す。"""
+    df = pd.read_excel(path, sheet_name="専門研修施設一覧")
+    rows = []
+    for _, r in df.iterrows():
+        name, cat = r.get("研修施設名称"), r.get("施設区分")
+        if pd.isna(name):
+            continue
+        rows.append((
+            None, str(name).strip(),
+            str(cat).strip() if pd.notna(cat) else "認定施設",
+        ))
+    return rows
+
+
 _SOCIETY_CONFIG = {
     "内科学会": {
         "extractor": _extract_pref_facility_pdf,
@@ -182,37 +248,82 @@ _SOCIETY_CONFIG = {
             ("kikan_shisetsu.html", "基幹施設", _extract_kikan_html),
         ],
     },
+    "整形外科学会": {
+        "extractor": _extract_orthopedic_excel,
+        "files": [
+            ("整形外科学会認定施設.xlsx", "認定施設"),
+        ],
+    },
+    "消化器外科学会": {
+        "extractor": _extract_gi_surgery_excel,
+        "files": [
+            ("消化器外科学会認定施設一覧.xlsx", "認定施設"),
+        ],
+    },
+    "神経学会": {
+        "extractor": _extract_neurology_excel,
+        "files": [
+            # 区分（教育施設／准教育施設／教育関連施設）は行ごとにextractorが
+            # 返すため、ここでの"認定施設"は使われないプレースホルダー。
+            ("日本神経学会_認定施設_全国一覧.xlsx", "認定施設"),
+        ],
+    },
+    "産婦人科学会": {
+        "extractor": _extract_obgyn_excel,
+        "files": [
+            # 区分（基幹／連携）は行ごとにextractorが返すためプレースホルダー。
+            # 都道府県列が無いデータのため全国完全一致でのみ突合される。
+            ("産婦人科学会_専門医研修施設一覧.xlsx", "認定施設"),
+        ],
+    },
 }
 
 
 def _build_hospital_lookup():
-    """(都道府県名, 正規化施設名) -> 医療機関コード の完全一致辞書と、
+    """(都道府県名, 正規化施設名) -> 医療機関コード の完全一致辞書、
     都道府県名 -> [(正規化施設名, 医療機関コード), ...] の一覧（サフィックス
-    一致フォールバック用）を作る。医療機関名は年度によって表記が変わる
-    ことがあるため、全年度分の名称をキーとして登録する。
+    一致フォールバック用）、および 正規化施設名 -> {医療機関コード, ...} の
+    全国版完全一致辞書（都道府県が分からないデータ用）を作る。医療機関名は
+    年度によって表記が変わることがあるため、全年度分の名称をキーとして
+    登録する。
     """
     df = pd.read_parquet(DATA_CACHE, columns=["都道府県名", "医療機関名", "医療機関コード"])
     df = df.drop_duplicates(subset=["都道府県名", "医療機関名"])
     exact = {}
     by_pref: dict[str, list] = {}
+    national: dict[str, set] = {}
     for _, r in df.iterrows():
         norm = _normalize(r["医療機関名"])
         key = (r["都道府県名"], norm)
         exact[key] = r["医療機関コード"]
         by_pref.setdefault(r["都道府県名"], []).append((norm, r["医療機関コード"]))
-    return exact, by_pref
+        national.setdefault(norm, set()).add(r["医療機関コード"])
+    return exact, by_pref, national
 
 
-def _match(pref: str, norm_name: str, exact: dict, by_pref: dict):
-    """完全一致 → 見つからなければ同一都道府県内でのサフィックス一致
-    （法人名等の付加語が片方だけに付いているケースを吸収。施設基準届出の
-    突合ロジックと同じ考え方）。"""
+def _match(pref, norm_name: str, exact: dict, by_pref: dict, national: dict):
+    """都道府県が分かる場合: 完全一致 → 見つからなければ同一都道府県内での
+    サフィックス一致（法人名等の付加語が片方だけに付いているケースを吸収。
+    施設基準届出の突合ロジックと同じ考え方）。
+    都道府県が分からない場合（産婦人科学会等）: 全国での完全一致のみを
+    試す。同名施設が複数都道府県にまたがって存在すると誤マッチの元になる
+    ため、サフィックス一致は行わず、候補が一意に定まる場合のみ採用する。
+    """
+    if not norm_name:
+        return None
+    # pd.DataFrame化した後は None が NaN（float）になるため、`pref is None`
+    # では判定できない（実際にこれで全件マッチ失敗する事故を起こした）。
+    if pref is None or (isinstance(pref, float) and pd.isna(pref)):
+        codes = national.get(norm_name)
+        if codes and len(codes) == 1:
+            return next(iter(codes))
+        return None
     code = exact.get((pref, norm_name))
     if code is not None:
         return code
     # 短すぎる名称同士のサフィックス一致は誤マッチの元になるため対象外
     # （例:「中央病院」のような一般的すぎる語での偶然一致を防ぐ）
-    if not norm_name or len(norm_name) < 4:
+    if len(norm_name) < 4:
         return None
     for cand_norm, cand_code in by_pref.get(pref, []):
         if cand_norm and len(cand_norm) >= 4 and (cand_norm.endswith(norm_name) or norm_name.endswith(cand_norm)):
@@ -221,7 +332,7 @@ def _match(pref: str, norm_name: str, exact: dict, by_pref: dict):
 
 
 def main():
-    exact, by_pref = _build_hospital_lookup()
+    exact, by_pref, national = _build_hospital_lookup()
     print(f"病院名逆引き辞書: {len(exact):,} 件（全年度の表記ゆれを含む）")
 
     all_rows = []
@@ -237,10 +348,17 @@ def main():
                 continue
             rows = extractor(path)
             print(f"  {society}/{fname} ({category}): {len(rows)}件")
-            for pref, name in rows:
+            for row in rows:
+                # 抽出関数が (都道府県, 施設名) の2要素、または区分が行ごとに
+                # 異なる場合は (都道府県, 施設名, 区分) の3要素を返す。
+                if len(row) == 3:
+                    pref, name, row_category = row
+                else:
+                    pref, name = row
+                    row_category = category
                 all_rows.append({
                     "学会名": society,
-                    "区分": category,
+                    "区分": row_category,
                     "都道府県名": pref,
                     "施設名": name,
                 })
@@ -258,7 +376,7 @@ def main():
         print(f"施設単位に重複除去: {before_dedup:,}行 → {len(out):,}行")
     out["施設名_正規化"] = out["施設名"].apply(_normalize)
     out["医療機関コード"] = out.apply(
-        lambda r: _match(r["都道府県名"], r["施設名_正規化"], exact, by_pref), axis=1
+        lambda r: _match(r["都道府県名"], r["施設名_正規化"], exact, by_pref, national), axis=1
     )
     out["マッチ状態"] = out["医療機関コード"].apply(lambda c: "一致" if pd.notna(c) else "未一致")
 
