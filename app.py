@@ -2309,29 +2309,43 @@ if st.session_state.get("_view_mode") == "search":
 
         with _tab_equip:
             _eq1, _eq2, _eq3 = st.columns(3)
+            # CT / MRI は以前「指定なし・あり・なし・スペック別」の4択ラジオ＋
+            # スペック3チェックという構成だったが、st.form 内ではラジオの選択に
+            # 応じてチェックボックスを出し分けられない（検索ボタンを押すまで
+            # 反映されない）ため、常に3つ表示して「↑スペック別を選んだ場合のみ
+            # 有効」と注記する形になっていた。＝常時表示なのに条件付きで無効、
+            # という分かりにくい状態だった。
+            #
+            # 「スペック別」という選択肢自体をなくし、スペックを選ぶこと＝そのCTを
+            # 持つ、という意味に変えることで条件分岐を解消した（無効になる入力欄が
+            # ゼロになり、注記も不要になった）。
             with _eq1:
                 st.markdown("**CT**")
+                _CT_RADIO = ["指定なし", "CTあり", "CTなし"]
+                if st.session_state.get("ct_filter") not in _CT_RADIO:
+                    st.session_state["ct_filter"] = "指定なし"   # 旧「スペック別」等からの移行
                 ct_filter = st.radio(
-                    "CT", ["指定なし", "CTあり（合計）", "CTなし（合計）", "スペック別"],
-                    key="ct_filter", label_visibility="collapsed",
+                    "CT", _CT_RADIO, key="ct_filter",
+                    label_visibility="collapsed", horizontal=True,
                 )
-                # フォーム内だと「スペック別」を選んだ直後はチェックボックスが
-                # 検索ボタンを押すまで現れない（st.form内は非表示条件が即時反映
-                # されないため）。検索ボタンを1回押すだけで完結するよう、常に
-                # 表示しておき、「スペック別」選択時のみ判定に使う。
-                st.caption("↑スペック別を選んだ場合のみ以下が有効")
-                s_ck_ct64  = st.checkbox("64列以上",  key="s_ck_ct64")
-                s_ck_ct16p = st.checkbox("16〜64列",  key="s_ck_ct16p")
-                s_ck_ct16m = st.checkbox("16列未満",  key="s_ck_ct16m")
+                s_ct_specs = st.multiselect(
+                    "スペック（いずれか1台以上）",
+                    ["64列以上", "16〜64列", "16列未満"],
+                    key="s_ct_specs", placeholder="指定なし",
+                )
                 st.markdown("**MRI**")
+                _MRI_RADIO = ["指定なし", "MRIあり", "MRIなし"]
+                if st.session_state.get("mri_filter") not in _MRI_RADIO:
+                    st.session_state["mri_filter"] = "指定なし"
                 mri_filter = st.radio(
-                    "MRI", ["指定なし", "MRIあり（合計）", "MRIなし（合計）", "スペック別"],
-                    key="mri_filter", label_visibility="collapsed",
+                    "MRI", _MRI_RADIO, key="mri_filter",
+                    label_visibility="collapsed", horizontal=True,
                 )
-                st.caption("↑スペック別を選んだ場合のみ以下が有効")
-                s_ck_mri3t  = st.checkbox("3T以上",   key="s_ck_mri3t")
-                s_ck_mri15p = st.checkbox("1.5〜3T",  key="s_ck_mri15p")
-                s_ck_mri15m = st.checkbox("1.5T未満", key="s_ck_mri15m")
+                s_mri_specs = st.multiselect(
+                    "スペック（いずれか1台以上）",
+                    ["3T以上", "1.5〜3T", "1.5T未満"],
+                    key="s_mri_specs", placeholder="指定なし",
+                )
             with _eq2:
                 st.markdown("**放射線治療**")
                 s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
@@ -2793,9 +2807,19 @@ if st.session_state.get("_view_mode") == "search":
                 _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
                 s_df = s_df[_v != 0]  # -1（マスク値）も「あり」として含む
 
+    def _spec_or_mask(_df, _cols):
+        """指定したスペック列のいずれかが1台以上ならTrueのマスクを返す。
+        マルチセレクトは「いずれか」と読むのが自然なためORで判定する
+        （旧実装はチェックボックスをANDで積んでいたため、2つ選ぶと
+        「両方の種類のCTを持つ病院」という滅多にない条件になっていた）。"""
+        _m = pd.Series(False, index=_df.index)
+        for _c in _cols:
+            _m = _m | (pd.to_numeric(_df[_c], errors="coerce").fillna(0) > 0)
+        return _m
+
     # ── CT フィルター ──
     _CT_SPEC_COLS = ["CT_64列以上", "CT_16〜64列", "CT_16列未満", "CT_その他"]
-    if ct_filter == "CTあり（合計）":
+    if ct_filter == "CTあり":
         if "CT台数" in s_df.columns:
             s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) > 0]
         else:
@@ -2803,7 +2827,7 @@ if st.session_state.get("_view_mode") == "search":
             if _ct_avail:
                 _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
                 s_df = s_df[_ct_sum > 0]
-    elif ct_filter == "CTなし（合計）":
+    elif ct_filter == "CTなし":
         if "CT台数" in s_df.columns:
             s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) == 0]
         else:
@@ -2811,14 +2835,16 @@ if st.session_state.get("_view_mode") == "search":
             if _ct_avail:
                 _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
                 s_df = s_df[_ct_sum == 0]
-    elif ct_filter == "スペック別":
-        for _ck, _col in [(s_ck_ct64, "CT_64列以上"), (s_ck_ct16p, "CT_16〜64列"), (s_ck_ct16m, "CT_16列未満")]:
-            if _ck and _col in s_df.columns:
-                s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+    # スペック指定は「そのCTを持つ」という意味なので、あり/なしの指定とは独立に
+    # AND で効く（「CTなし」と併用すれば矛盾して0件になるのは論理的に正しい）。
+    if s_ct_specs:
+        _cols = [f"CT_{_s}" for _s in s_ct_specs if f"CT_{_s}" in s_df.columns]
+        if _cols:
+            s_df = s_df[_spec_or_mask(s_df, _cols)]
 
     # ── MRI フィルター ──
     _MRI_SPEC_COLS = ["MRI_3T以上", "MRI_1.5〜3T", "MRI_1.5T未満"]
-    if mri_filter == "MRIあり（合計）":
+    if mri_filter == "MRIあり":
         if "MRI台数" in s_df.columns:
             s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) > 0]
         else:
@@ -2826,7 +2852,7 @@ if st.session_state.get("_view_mode") == "search":
             if _mri_avail:
                 _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
                 s_df = s_df[_mri_sum > 0]
-    elif mri_filter == "MRIなし（合計）":
+    elif mri_filter == "MRIなし":
         if "MRI台数" in s_df.columns:
             s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) == 0]
         else:
@@ -2834,10 +2860,10 @@ if st.session_state.get("_view_mode") == "search":
             if _mri_avail:
                 _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
                 s_df = s_df[_mri_sum == 0]
-    elif mri_filter == "スペック別":
-        for _ck, _col in [(s_ck_mri3t, "MRI_3T以上"), (s_ck_mri15p, "MRI_1.5〜3T"), (s_ck_mri15m, "MRI_1.5T未満")]:
-            if _ck and _col in s_df.columns:
-                s_df = s_df[pd.to_numeric(s_df[_col], errors="coerce").fillna(0) > 0]
+    if s_mri_specs:
+        _cols = [f"MRI_{_s}" for _s in s_mri_specs if f"MRI_{_s}" in s_df.columns]
+        if _cols:
+            s_df = s_df[_spec_or_mask(s_df, _cols)]
     if s_has_pet:
         _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
         _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
@@ -2931,21 +2957,15 @@ if st.session_state.get("_view_mode") == "search":
         _sshow.append("胸腔鏡下手術数")
     _checked_organ_cols = [f"{_organ_prefix}{lb}" for _ck, lb in _organ_checks if _ck]
     _organ_show = [c for c in _checked_organ_cols if c in s_df.columns]
-    _ct_ck_map  = [(s_ck_ct64, "CT_64列以上"), (s_ck_ct16p, "CT_16〜64列"), (s_ck_ct16m, "CT_16列未満")]
-    _mri_ck_map = [(s_ck_mri3t, "MRI_3T以上"), (s_ck_mri15p, "MRI_1.5〜3T"), (s_ck_mri15m, "MRI_1.5T未満")]
     _eshow = []
-    # CT列: スペック別なら選択スペック列、あり/なし指定なら合計台数列を表示
-    if ct_filter == "スペック別":
-        _eshow += [col for ck, col in _ct_ck_map if ck and col in s_df.columns]
-    elif ct_filter in ("CTあり（合計）", "CTなし（合計）"):
-        if "CT台数" in s_df.columns:
-            _eshow.append("CT台数")
-    # MRI列: 同様
-    if mri_filter == "スペック別":
-        _eshow += [col for ck, col in _mri_ck_map if ck and col in s_df.columns]
-    elif mri_filter in ("MRIあり（合計）", "MRIなし（合計）"):
-        if "MRI台数" in s_df.columns:
-            _eshow.append("MRI台数")
+    # 絞り込みに使った列を結果表に出す。あり/なしを指定したら合計台数列、
+    # スペックを選んだらそのスペック列（両方指定なら両方出す）。
+    if ct_filter in ("CTあり", "CTなし") and "CT台数" in s_df.columns:
+        _eshow.append("CT台数")
+    _eshow += [f"CT_{_s}" for _s in s_ct_specs if f"CT_{_s}" in s_df.columns]
+    if mri_filter in ("MRIあり", "MRIなし") and "MRI台数" in s_df.columns:
+        _eshow.append("MRI台数")
+    _eshow += [f"MRI_{_s}" for _s in s_mri_specs if f"MRI_{_s}" in s_df.columns]
     if s_has_pet:
         _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
     if s_has_spect and "SPECT台数" in s_df.columns:
@@ -2978,13 +2998,9 @@ if st.session_state.get("_view_mode") == "search":
 
     # ── 結果表示 ──
     st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div style='border-left:4px solid #10b981;padding:8px 14px;background:#ecfdf5;"
-        "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
-        "<span style='font-weight:700;font-size:1rem;color:#065f46;'>③ 検索結果</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    # ①②を外したのに「③」だけ残っていたため、他の検索ページと同じ
+    # .section-header に揃える（配色も緑の直書きをやめトークン経由にする）。
+    st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
     st.markdown(_source_tag(_byosho_source(s_year)), unsafe_allow_html=True)
     st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
 
