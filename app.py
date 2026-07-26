@@ -2643,6 +2643,7 @@ if st.session_state.get("_view_mode") == "search":
     # 設備・手術は元から s_df に列があるが、施設基準届出・入院基本料区分・学会認定は
     # 別データとの突合で絞り込んでいて列が残らないため、該当内容を後段で付与する。
     _sk_label_resolver = None
+    _sk_all_labels: list[str] = []
     _kubun_labels_map: dict[str, set] | None = None
     _gk_labels_map: dict[str, set] | None = None
 
@@ -2690,19 +2691,25 @@ if st.session_state.get("_view_mode") == "search":
                     .update(_labs))
 
         def _sk_labels_for(row):
+            """該当した届出ラベルの集合を返す（結合はしない。結果表では
+            項目ごとに列を分けるため、呼び出し側で集合を使う）。"""
             _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
             _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
             _d = _sk_labels_by_pref.get(_c)
             if not _n or not _d:
-                return ""
+                return set()
             _labs: set = set()
             if _n in _d:
                 _labs |= _d[_n]
             for _sn, _v in _d.items():
                 if _sn.endswith(_n):
                     _labs |= _v
-            return "／".join(sorted(_labs))
+            return _labs
         _sk_label_resolver = _sk_labels_for
+        # 列を作る対象（選択した届出名称＋キーワード指定があればその1列）
+        _sk_all_labels = list(_s_kijun_sel)
+        if _text_kw:
+            _sk_all_labels.append(f"「{_text_kw}」")
 
     # 入院基本料の区分フィルター（病床機能報告データから絞り込み。届出名称のみで
     # 区分を公表しない地方厚生局があるため、こちらは全国データで確実に絞り込める）
@@ -3054,23 +3061,34 @@ if st.session_state.get("_view_mode") == "search":
     # 別データとの突合で絞り込んだ条件（施設基準届出・入院基本料区分・学会認定）は
     # s_df に列が残らないため、ここで「何に該当したか」を列として付与する。
     # 全フィルター適用後の小さいDataFrameに対して行う（速度のため）。
-    # いずれもOR条件なので、病院ごとに該当した項目だけを「／」区切りで並べる。
+    #
+    # いずれもOR条件なので病院ごとに該当項目が異なる。1列に「／」で連結すると
+    # 表計算ソフトで項目ごとの絞り込み・集計ができないため、**選択した項目ごとに
+    # 列を分け**、該当を「○」で示す（列名は既存の CT_64列以上 等と同じ
+    # 「接頭辞_項目名」の形式に揃える）。
     _fshow = []
-    if _sk_label_resolver is not None:
-        s_df["該当施設基準届出"] = (
-            s_df.apply(_sk_label_resolver, axis=1) if not s_df.empty else ""
+
+    def _add_hit_columns(prefix, labels, hit_sets):
+        """labels の項目ごとに列を作り、hit_sets（各行の該当ラベル集合）から○を立てる。"""
+        for _lb in labels:
+            _col = f"{prefix}_{_lb}"
+            if _col in s_df.columns:      # 万一の列名衝突を避ける
+                _col = f"{_col}（条件）"
+            s_df[_col] = hit_sets.map(lambda _s, _l=_lb: "○" if _l in _s else "")
+            _fshow.append(_col)
+
+    if _sk_label_resolver is not None and _sk_all_labels:
+        _sk_hits = (
+            s_df.apply(_sk_label_resolver, axis=1) if not s_df.empty
+            else pd.Series(dtype=object, index=s_df.index)
         )
-        _fshow.append("該当施設基準届出")
+        _add_hit_columns("届出", _sk_all_labels, _sk_hits)
     if _kubun_labels_map is not None:
-        s_df["該当入院基本料区分"] = s_df["医療機関名"].map(
-            lambda n: "／".join(sorted(_kubun_labels_map.get(n, ())))
-        )
-        _fshow.append("該当入院基本料区分")
+        _kb_hits = s_df["医療機関名"].map(lambda n: _kubun_labels_map.get(n, set()))
+        _add_hit_columns("区分", _s_kubun_sel, _kb_hits)
     if _gk_labels_map is not None and "医療機関コード" in s_df.columns:
-        s_df["該当学会認定"] = s_df["医療機関コード"].map(
-            lambda c: "／".join(sorted(_gk_labels_map.get(c, ())))
-        )
-        _fshow.append("該当学会認定")
+        _gk_hits = s_df["医療機関コード"].map(lambda c: _gk_labels_map.get(c, set()))
+        _add_hit_columns("学会", [f"{_s}－{_c}" for _s, _c in _s_gakkai_sel], _gk_hits)
 
     _disp = _base + _sshow + _organ_show + _eshow + _fshow
 
@@ -3113,9 +3131,13 @@ if st.session_state.get("_view_mode") == "search":
     for _c in _eshow:
         if _c not in _col_cfg:
             _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
-    # 該当内容の列は複数項目が「／」で並ぶため幅を広めに取る
+    # 該当条件の列は値が「○」だけなので狭くしたいが、見出し（項目名）が切れると
+    # どの条件の列か分からなくなるため、ラベルが長いものだけ幅を広げる
     for _c in _fshow:
-        _col_cfg[_c] = st.column_config.TextColumn(_c, width="medium")
+        _label = _c.split("_", 1)[1] if "_" in _c else _c
+        _col_cfg[_c] = st.column_config.TextColumn(
+            _label, width="medium" if len(_label) > 10 else "small",
+        )
     if _tt_applied:
         _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
         _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
