@@ -2639,6 +2639,13 @@ if st.session_state.get("_view_mode") == "search":
         _norm_kw = _normalize_name(s_kw)
         s_df = s_df[s_df["医療機関名"].apply(_normalize_name).str.contains(_norm_kw, na=False)]
 
+    # 検索条件に使ったデータを結果表・CSVに列として出すための解決用（未使用なら None）。
+    # 設備・手術は元から s_df に列があるが、施設基準届出・入院基本料区分・学会認定は
+    # 別データとの突合で絞り込んでいて列が残らないため、該当内容を後段で付与する。
+    _sk_label_resolver = None
+    _kubun_labels_map: dict[str, set] | None = None
+    _gk_labels_map: dict[str, set] | None = None
+
     # 施設基準届出フィルター
     if _sk_df_filt is not None and (_s_kijun_sel or _s_kijun_kw_text.strip()):
         _kw_list   = [_sk_label_to_kw[lb] for lb in _s_kijun_sel]
@@ -2664,10 +2671,49 @@ if st.session_state.get("_view_mode") == "search":
             return _n in _names or any(sn.endswith(_n) for sn in _names)
         s_df = s_df[s_df.apply(_in_sk, axis=1)]
 
+        # どの届出に該当したかを結果表・CSVに出すため、病院ごとの該当ラベルを
+        # 引けるようにしておく（このフィルターはOR条件なので、返ってきた病院が
+        # 選択した届出のどれを持つのかは情報として意味がある）。
+        # 実際の列の付与は全フィルター適用後にまとめて行う（絞り込み済みの
+        # 小さいDataFrameに対して行う方が速いため）。
+        _sk_kw_to_label = {_sk_label_to_kw[lb]: lb for lb in _s_kijun_sel}
+        _sk_labels_by_pref: dict[str, dict[str, set]] = {}
+        for _, _r in _sk_sub[["都道府県コード", "医療機関名_正規化", "受理届出名称"]].drop_duplicates().iterrows():
+            _nm = str(_r["受理届出名称"])
+            _labs = {lb for kw, lb in _sk_kw_to_label.items() if kw in _nm}
+            if _text_kw and _text_kw in _nm:
+                _labs.add(f"「{_text_kw}」")
+            if _labs:
+                (_sk_labels_by_pref
+                    .setdefault(_r["都道府県コード"], {})
+                    .setdefault(_r["医療機関名_正規化"], set())
+                    .update(_labs))
+
+        def _sk_labels_for(row):
+            _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
+            _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
+            _d = _sk_labels_by_pref.get(_c)
+            if not _n or not _d:
+                return ""
+            _labs: set = set()
+            if _n in _d:
+                _labs |= _d[_n]
+            for _sn, _v in _d.items():
+                if _sn.endswith(_n):
+                    _labs |= _v
+            return "／".join(sorted(_labs))
+        _sk_label_resolver = _sk_labels_for
+
     # 入院基本料の区分フィルター（病床機能報告データから絞り込み。届出名称のみで
     # 区分を公表しない地方厚生局があるため、こちらは全国データで確実に絞り込める）
     if _s_kubun_sel:
         _kubun_hosp_names: set = set()
+        # 該当した区分を病院名ごとに集める（結果表・CSVの列用）
+        _kubun_labels_map = {}
+
+        def _add_kubun(_name, _kubun):
+            if _name and _kubun:
+                _kubun_labels_map.setdefault(_name, set()).add(str(_kubun))
 
         _ward_df_kubun = st.session_state.get("ward_df")
         if _ward_df_kubun is not None and not _ward_df_kubun.empty:
@@ -2676,6 +2722,8 @@ if st.session_state.get("_view_mode") == "search":
                 & (_ward_df_kubun["報告年度"] == s_year)
             ]
             _kubun_hosp_names |= set(_kubun_matched["医療機関名"].unique())
+            for _, _kr in _kubun_matched[["医療機関名", "入院基本料"]].drop_duplicates().iterrows():
+                _add_kubun(_kr["医療機関名"], _kr["入院基本料"])
 
         # 診療報酬改定で新設された区分（例: 急性期病院Ａ/Ｂ一般入院料）は、
         # 病床機能報告側にまだデータが無いため、施設基準届出の区分列からも
@@ -2684,18 +2732,33 @@ if st.session_state.get("_view_mode") == "search":
             _sk_kubun_matched = _sk_df_filt[_sk_df_filt["区分"].isin(_s_kubun_sel)]
             if not _sk_kubun_matched.empty:
                 _pref_name_to_code_kb = {v: k for k, v in PREF_CODE_MAP.items()}
-                _sk_kubun_set: dict[str, set[str]] = {}
-                for _, _r in _sk_kubun_matched[["都道府県コード", "医療機関名_正規化"]].drop_duplicates().iterrows():
-                    _sk_kubun_set.setdefault(_r["都道府県コード"], set()).add(_r["医療機関名_正規化"])
-                def _in_sk_kubun(row):
+                # 正規化名称 → 該当区分の集合（列表示用に区分名も保持する）
+                _sk_kubun_set: dict[str, dict[str, set]] = {}
+                for _, _r in _sk_kubun_matched[["都道府県コード", "医療機関名_正規化", "区分"]].drop_duplicates().iterrows():
+                    (_sk_kubun_set
+                        .setdefault(_r["都道府県コード"], {})
+                        .setdefault(_r["医療機関名_正規化"], set())
+                        .add(str(_r["区分"])))
+                def _sk_kubun_labels(row):
                     _c = _pref_name_to_code_kb.get(row.get("都道府県名", ""), "")
                     _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
-                    if not _n or _c not in _sk_kubun_set:
-                        return False
-                    _names = _sk_kubun_set[_c]
-                    return _n in _names or any(sn.endswith(_n) for sn in _names)
-                _extra_matched = s_df[s_df.apply(_in_sk_kubun, axis=1)]
+                    _d = _sk_kubun_set.get(_c)
+                    if not _n or not _d:
+                        return set()
+                    _labs: set = set()
+                    if _n in _d:
+                        _labs |= _d[_n]
+                    for _sn, _v in _d.items():
+                        if _sn.endswith(_n):
+                            _labs |= _v
+                    return _labs
+                _extra_labs = s_df.apply(_sk_kubun_labels, axis=1)
+                _extra_matched = s_df[_extra_labs.map(bool)]
                 _kubun_hosp_names |= set(_extra_matched["医療機関名"].unique())
+                for _idx, _labs in _extra_labs.items():
+                    if _labs:
+                        _nm = s_df.at[_idx, "医療機関名"]
+                        _kubun_labels_map.setdefault(_nm, set()).update(_labs)
 
         s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
 
@@ -2704,7 +2767,12 @@ if st.session_state.get("_view_mode") == "search":
         _gk_mask = pd.Series(False, index=_gk_df_filt.index)
         for _society, _cat in _s_gakkai_sel:
             _gk_mask |= (_gk_df_filt["学会名"] == _society) & (_gk_df_filt["区分"] == _cat)
-        _gk_codes = set(_gk_df_filt.loc[_gk_mask, "医療機関コード"].dropna().unique())
+        _gk_hit = _gk_df_filt.loc[_gk_mask & _gk_df_filt["医療機関コード"].notna()]
+        _gk_codes = set(_gk_hit["医療機関コード"].unique())
+        # 医療機関コード → 「学会名－区分」の集合（結果表・CSVの列用）
+        _gk_labels_map = {}
+        for _, _r in _gk_hit[["医療機関コード", "学会名", "区分"]].drop_duplicates().iterrows():
+            _gk_labels_map.setdefault(_r["医療機関コード"], set()).add(f"{_r['学会名']}－{_r['区分']}")
         if "医療機関コード" in s_df.columns:
             s_df = s_df[s_df["医療機関コード"].isin(_gk_codes)]
         else:
@@ -2982,7 +3050,29 @@ if st.session_state.get("_view_mode") == "search":
         _eshow.append("ガンマナイフ台数")
     if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
         _eshow.append("マンモグラフィ台数")
-    _disp = _base + _sshow + _organ_show + _eshow
+
+    # 別データとの突合で絞り込んだ条件（施設基準届出・入院基本料区分・学会認定）は
+    # s_df に列が残らないため、ここで「何に該当したか」を列として付与する。
+    # 全フィルター適用後の小さいDataFrameに対して行う（速度のため）。
+    # いずれもOR条件なので、病院ごとに該当した項目だけを「／」区切りで並べる。
+    _fshow = []
+    if _sk_label_resolver is not None:
+        s_df["該当施設基準届出"] = (
+            s_df.apply(_sk_label_resolver, axis=1) if not s_df.empty else ""
+        )
+        _fshow.append("該当施設基準届出")
+    if _kubun_labels_map is not None:
+        s_df["該当入院基本料区分"] = s_df["医療機関名"].map(
+            lambda n: "／".join(sorted(_kubun_labels_map.get(n, ())))
+        )
+        _fshow.append("該当入院基本料区分")
+    if _gk_labels_map is not None and "医療機関コード" in s_df.columns:
+        s_df["該当学会認定"] = s_df["医療機関コード"].map(
+            lambda c: "／".join(sorted(_gk_labels_map.get(c, ())))
+        )
+        _fshow.append("該当学会認定")
+
+    _disp = _base + _sshow + _organ_show + _eshow + _fshow
 
     result_s = (
         s_df[_disp]
@@ -3023,6 +3113,9 @@ if st.session_state.get("_view_mode") == "search":
     for _c in _eshow:
         if _c not in _col_cfg:
             _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
+    # 該当内容の列は複数項目が「／」で並ぶため幅を広めに取る
+    for _c in _fshow:
+        _col_cfg[_c] = st.column_config.TextColumn(_c, width="medium")
     if _tt_applied:
         _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
         _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
