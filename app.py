@@ -2157,10 +2157,10 @@ if st.session_state.get("_view_mode") == "search":
     # st.form() の外に置いて即座に反映されるようにする（フォーム内だと
     # 検索ボタンを押すまで選択肢が更新されない）。
     st.markdown(
-        "<div style='border-left:4px solid #12886D;padding:8px 14px;background:#EAF4F0;"
+        "<div style='border-left:4px solid var(--brand);padding:8px 14px;background:var(--brand-tint);"
         "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
-        "<span style='font-weight:700;font-size:1rem;color:#1e3a5f;'>① エリアを絞り込む</span>"
-        "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+        "<span style='font-weight:700;font-size:1rem;color:var(--ink);'>① エリアを絞り込む</span>"
+        "<span style='color:var(--ink-muted);font-size:0.8rem;margin-left:10px;'>"
         "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -2220,18 +2220,24 @@ if st.session_state.get("_view_mode") == "search":
         # ════════════════════════════════════════════════
         st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
         st.divider()
+        # ①と同じブランド緑で揃える。以前は琥珀色（#f59e0b系）だったが、
+        # このアプリの配色ルール「色はブランド緑＝操作・強調／意味色＝状態のみ」
+        # に反して橙を装飾目的で使っており、①と別の意味を持つように見えていた。
         st.markdown(
-            "<div style='border-left:4px solid #f59e0b;padding:8px 14px;background:#fffbeb;"
+            "<div style='border-left:4px solid var(--brand);padding:8px 14px;background:var(--brand-tint);"
             "border-radius:0 6px 6px 0;margin-bottom:16px;'>"
-            "<span style='font-weight:700;font-size:1rem;color:#78350f;'>② 絞り込み条件を選ぶ</span>"
-            "<span style='color:#6b7280;font-size:0.8rem;margin-left:10px;'>"
+            "<span style='font-weight:700;font-size:1rem;color:var(--ink);'>② 絞り込み条件を選ぶ</span>"
+            "<span style='color:var(--ink-muted);font-size:0.8rem;margin-left:10px;'>"
             "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
             "</div>",
             unsafe_allow_html=True,
         )
         st.markdown("""
     <style>
-    /* 検索条件タブをフォルダ型に */
+    /* 検索条件タブをフォルダ型に。
+       色は直書きせずアプリ共通トークン（app.py 冒頭の :root）を使う。
+       以前は Tailwind 既定の寒色グレー（#e5e7eb 等）を直書きしていて、
+       アプリの暖色系トークン（--line: #E8E4DB 等）と別系統に見えていた。 */
     div[data-testid="stTabs"] > div:first-child {
         gap: 4px;
     }
@@ -2240,23 +2246,37 @@ if st.session_state.get("_view_mode") == "search":
         font-weight: 600 !important;
         padding: 8px 20px !important;
         border-radius: 8px 8px 0 0 !important;
-        border: 1.5px solid #e5e7eb !important;
+        border: 1.5px solid var(--line) !important;
         border-bottom: none !important;
-        background: #f9fafb !important;
-        color: #6b7280 !important;
+        background: var(--paper) !important;
+        color: var(--ink-muted) !important;
         margin-bottom: -1px;
     }
     div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
-        background: #ffffff !important;
-        color: #1f2937 !important;
-        border-color: #d1d5db !important;
-        border-bottom: 2px solid #ffffff !important;
+        background: var(--card) !important;
+        color: var(--ink) !important;
+        border-color: var(--line) !important;
+        /* パネル上辺の罫線を選択中タブの下辺で覆い、タブとパネルを繋げる */
+        border-bottom: 2px solid var(--card) !important;
     }
-    div[data-testid="stTabPanel"] {
-        border: 1.5px solid #e5e7eb;
+    /* パネル本体。旧指定の div[data-testid="stTabPanel"] は Streamlit の
+       DOMに存在せず（実測0件）、枠線・白背景・角丸が一度も適用されて
+       いなかった。role属性で指定する。 */
+    div[data-testid="stTabs"] [role="tabpanel"] {
+        border: 1.5px solid var(--line);
         border-radius: 0 8px 8px 8px;
         padding: 16px !important;
-        background: #ffffff;
+        background: var(--card);
+    }
+    /* グローバルCSSのモバイル縮小指定（@media max-width:768px の
+       `.stTabs [role="tab"]`＝詳細度0,2,0）は、上のセレクタ
+       （0,2,2）に打ち消され効いていなかった。実測で375px幅では
+       タブ行がはみ出していたため、同じ詳細度で復元する。 */
+    @media (max-width: 768px) {
+        div[data-testid="stTabs"] button[data-baseweb="tab"] {
+            font-size: 0.79rem !important;
+            padding: 6px 10px !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
