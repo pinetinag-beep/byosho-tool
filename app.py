@@ -2150,17 +2150,20 @@ if st.session_state.get("_view_mode") == "search":
     st.markdown("## 条件で病院を検索")
 
     # ════════════════════════════════════════════════
-    # STEP 1: エリアを絞り込む
+    # エリアを絞り込む
     # ════════════════════════════════════════════════
     # 年度・都道府県・二次医療圏は「どこを探すか」という主条件であり、
     # 都道府県を選んだら二次医療圏の選択肢がすぐに絞り込まれてほしいため、
     # st.form() の外に置いて即座に反映されるようにする（フォーム内だと
     # 検索ボタンを押すまで選択肢が更新されない）。
+    #
+    # 見出しは以前「① エリアを絞り込む」という番号付きの色付きボックスだったが、
+    # エリアと絞り込み条件はどちらも省略可で相互依存もなく（実際この見出しの
+    # 補足自身が「すべて省略で全国対象」と書いている）、番号が存在しない順序を
+    # 約束してしまっていた。番号を外し、アプリ共通の .section-header に揃えた。
     st.markdown(
-        "<div style='border-left:4px solid var(--brand);padding:8px 14px;background:var(--brand-tint);"
-        "border-radius:0 6px 6px 0;margin-bottom:12px;'>"
-        "<span style='font-weight:700;font-size:1rem;color:var(--ink);'>① エリアを絞り込む</span>"
-        "<span style='color:var(--ink-muted);font-size:0.8rem;margin-left:10px;'>"
+        '<div class="section-header">エリアを絞り込む'
+        "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
         "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -2216,18 +2219,14 @@ if st.session_state.get("_view_mode") == "search":
                 s_tt_max  = st.session_state.get("s_tt_max",  30)
 
         # ════════════════════════════════════════════════
-        # STEP 2: 絞り込み条件を選ぶ
+        # 詳細条件を選ぶ
         # ════════════════════════════════════════════════
-        st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
-        st.divider()
-        # ①と同じブランド緑で揃える。以前は琥珀色（#f59e0b系）だったが、
-        # このアプリの配色ルール「色はブランド緑＝操作・強調／意味色＝状態のみ」
-        # に反して橙を装飾目的で使っており、①と別の意味を持つように見えていた。
+        # 以前はここに margin-top:32px の空div と st.divider() を重ねていたが、
+        # .section-header 自身が上マージン30pxを持つため、合計で100px近い
+        # 空白帯ができていた。見出しのマージンに任せて両方とも削除した。
         st.markdown(
-            "<div style='border-left:4px solid var(--brand);padding:8px 14px;background:var(--brand-tint);"
-            "border-radius:0 6px 6px 0;margin-bottom:16px;'>"
-            "<span style='font-weight:700;font-size:1rem;color:var(--ink);'>② 絞り込み条件を選ぶ</span>"
-            "<span style='color:var(--ink-muted);font-size:0.8rem;margin-left:10px;'>"
+            '<div class="section-header">詳細条件を選ぶ'
+            "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
             "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
             "</div>",
             unsafe_allow_html=True,
