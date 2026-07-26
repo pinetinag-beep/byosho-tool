@@ -511,11 +511,22 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 .st-key-ms_filter_box,
 .st-key-dist_filter_box,
 .st-key-rv_filter_box,
-.st-key-cs_filter_box {
+.st-key-cs_filter_box,
+.st-key-s_area_box,
+.st-key-s_scope_box {
     border-color: var(--brand-line) !important;
     background: var(--brand-tint) !important;
     border-radius: var(--radius-card) !important;
 }
+
+/* 条件検索の「エリア」は都道府県→二次医療圏のカスケードを即時反映させる
+   都合でフォームの外に出さざるを得ず、囲いが s_area_box / s_scope_box の
+   2つに分かれる。両者は同じ1グループなので、間の余白を詰めて上下の角丸を
+   落とし、1枚のパネルとして繋がって見えるようにする。 */
+.st-key-s_area_box  { margin-bottom: -16px !important; border-bottom: none !important;
+                      border-radius: var(--radius-card) var(--radius-card) 0 0 !important; }
+.st-key-s_scope_box { border-top: none !important;
+                      border-radius: 0 0 var(--radius-card) var(--radius-card) !important; }
 
 /* ── ボタン・入力の角丸を統一 ── */
 .stButton button, .stDownloadButton button { border-radius: 10px !important; }
@@ -2168,55 +2179,68 @@ if st.session_state.get("_view_mode") == "search":
         "</div>",
         unsafe_allow_html=True,
     )
-    _sa, _sb, _sc = st.columns([1, 2, 2])
-    with _sa:
-        s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-        if st.session_state.get("_sel_year") not in s_years_list:
-            st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
-        s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
-    with _sb:
-        s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-        s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
-    with _sc:
-        if s_pref != "全都道府県":
-            s_all_regions = ["全二次医療圏"] + sorted(
-                r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
-                if r != "不明"
-            )
-        else:
-            s_all_regions = ["全二次医療圏"]
-        if st.session_state.get("s_region") not in s_all_regions:
-            st.session_state["s_region"] = "全二次医療圏"
-        s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
-
-    with st.form("search_form"):
-        s_kw = st.text_input(
-            "病院名キーワード",
-            placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
-            key="s_kw",
-        )
-
-        # 所要時間（折りたたみ）
-        _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
-        _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
-        with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
-            if not _tt_db_ok:
-                st.caption("座標データ（locations_cache.parquet）が必要です")
-            s_tt_addr = st.text_input(
-                "出発地（住所・ランドマーク）",
-                placeholder="例: 東京都新宿区西新宿2丁目8",
-                key="s_tt_addr",
-                disabled=not _tt_db_ok,
-            )
-            if s_tt_addr and _tt_db_ok:
-                _tt1, _tt2 = st.columns(2)
-                with _tt1:
-                    s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
-                with _tt2:
-                    s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
+    # 入力欄は「囲い（common region）」でまとめないと、見出しの細い縦バーだけでは
+    # どこからどこまでが1つのグループか読み取れない（見出しの背景塗りを外した際に
+    # 「検索項目が分かりにくくなった」と指摘されて判明）。他の検索ページと同じ
+    # `*_filter_box`（ブランド緑の淡背景パネル）で囲う。
+    with st.container(border=True, key="s_area_box"):
+        _sa, _sb, _sc = st.columns([1, 2, 2])
+        with _sa:
+            s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+            if st.session_state.get("_sel_year") not in s_years_list:
+                st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+            s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
+        with _sb:
+            s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
+            s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
+        with _sc:
+            if s_pref != "全都道府県":
+                s_all_regions = ["全二次医療圏"] + sorted(
+                    r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
+                    if r != "不明"
+                )
             else:
-                s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
-                s_tt_max  = st.session_state.get("s_tt_max",  30)
+                s_all_regions = ["全二次医療圏"]
+            if st.session_state.get("s_region") not in s_all_regions:
+                st.session_state["s_region"] = "全二次医療圏"
+            s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
+
+    # st.form の既定の枠線は「病院名〜4タブ〜検索ボタン」という論理的に
+    # ひとまとまりでない範囲を囲ってしまい、グループの目印として誤解を招くため
+    # border=False にする。囲いは意味のある単位ごとに下で明示的に付ける。
+    with st.form("search_form", border=False):
+        # 病院名・所要時間もエリアと同じ「どの病院を対象にするか」の条件なので、
+        # 上のエリアボックスと同じ淡背景で続けて1グループに見せる（都道府県→
+        # 二次医療圏のカスケードを即時反映させるため、エリア側だけはフォームの
+        # 外に出す必要があり、囲いが2つに分かれるのはこの制約によるもの）。
+        with st.container(border=True, key="s_scope_box"):
+            s_kw = st.text_input(
+                "病院名キーワード",
+                placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
+                key="s_kw",
+            )
+
+            # 所要時間（折りたたみ）
+            _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
+            _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
+            with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
+                if not _tt_db_ok:
+                    st.caption("座標データ（locations_cache.parquet）が必要です")
+                s_tt_addr = st.text_input(
+                    "出発地（住所・ランドマーク）",
+                    placeholder="例: 東京都新宿区西新宿2丁目8",
+                    key="s_tt_addr",
+                    disabled=not _tt_db_ok,
+                )
+                if s_tt_addr and _tt_db_ok:
+                    _tt1, _tt2 = st.columns(2)
+                    with _tt1:
+                        s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
+                    with _tt2:
+                        s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
+                else:
+                    s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
+                    s_tt_max  = st.session_state.get("s_tt_max",  30)
 
         # ════════════════════════════════════════════════
         # 詳細条件を選ぶ
