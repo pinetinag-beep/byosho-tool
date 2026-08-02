@@ -894,12 +894,18 @@ def _load_dpc_disease_index(_mtime: float = 0.0):
 
 
 @st.cache_data(show_spinner=False)
-def _load_dpc_surgery_by_disease(disease: str, _mtime: float = 0.0):
-    """選択された1疾患のDPC手術詳細だけを述語プッシュダウンで読む。"""
-    if not DPC_PARQUET_SURG.exists() or not disease:
+def _load_dpc_surgery_by_disease(diseases, _mtime: float = 0.0):
+    """選択された疾患（複数可）のDPC手術詳細だけを述語プッシュダウンで読む。
+
+    diseases は st.cache_data のキーにするため tuple で渡すこと（listは非ハッシュ可）。
+    """
+    if isinstance(diseases, str):
+        diseases = (diseases,)
+    _names = [d for d in (diseases or ()) if d]
+    if not DPC_PARQUET_SURG.exists() or not _names:
         return pd.DataFrame()
     return pq.read_table(
-        DPC_PARQUET_SURG, filters=[("疾患名", "=", disease)]
+        DPC_PARQUET_SURG, filters=[("疾患名", "in", _names)]
     ).to_pandas()
 
 
@@ -1718,7 +1724,12 @@ if st.session_state.get("_view_mode") == "map":
                 _ms_center_lon = float(_ms_valid["lon"].mean())
                 _ms_zoom = 10 if _ms_region else 8
 
-                _ms_m = folium.Map(location=[_ms_center_lat, _ms_center_lon], zoom_start=_ms_zoom, tiles="CartoDB positron")
+                # マウスホイールでのズームは無効（地図の下の「この病院の詳細を
+                # 見る」ボタンに到達しにくくなるため）。ズームは +/- とダブルクリック。
+                _ms_m = folium.Map(
+                    location=[_ms_center_lat, _ms_center_lon], zoom_start=_ms_zoom,
+                    tiles="CartoDB positron", scrollWheelZoom=False,
+                )
                 _ms_max_beds = max(int(_ms_valid["合計_許可病床数"].max() or 1), 1)
 
                 for _, _mr in _ms_valid.iterrows():
@@ -4293,9 +4304,26 @@ if st.session_state.get("_view_mode") == "dpc_search":
         )
         _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
         # セッションステート検証（MDC変更時に古い疾患名が残らないように）
-        if st.session_state.get("_dsc_disease") not in _ds_diseases:
-            st.session_state["_dsc_disease"] = _ds_diseases[0] if _ds_diseases else None
-        _ds_disease = st.selectbox("疾患名", _ds_diseases, key="_dsc_disease")
+        # 複数疾患を選んで合算比較できるようにしている（例: 胃がん＋大腸がん）。
+        # 旧実装は単一選択(selectbox)で session_state に文字列が入っていたため、
+        # 残っていた場合はリストに移行する。MDCを変えた際に選択肢から消えた疾患も
+        # ここで落とす。
+        _prev = st.session_state.get("_dsc_disease")
+        if isinstance(_prev, str):
+            _prev = [_prev]
+        if _prev is None:
+            # 初回は先頭の疾患を選んでおく（旧・単一選択時と同じく、開いた直後から
+            # 結果が出ている状態にするため）
+            st.session_state["_dsc_disease"] = _ds_diseases[:1]
+        else:
+            _kept = [d for d in _prev if d in _ds_diseases]
+            if _kept != list(_prev):
+                st.session_state["_dsc_disease"] = _kept
+        _ds_disease_sel = st.multiselect(
+            "疾患名（複数選択可・合算して比較）",
+            _ds_diseases, key="_dsc_disease",
+            placeholder="疾患名を入力して選択",
+        )
 
     # ── 地域絞り込み（都道府県→二次医療圏）は選択のたびに連動させたいため、
     #    フォームの外に置いて即座に反映されるようにする（フォーム内だと
@@ -4369,9 +4397,11 @@ if st.session_state.get("_view_mode") == "dpc_search":
         _ds_cnt_col = "_ds_cnt_total"
         _ds_los_col = _ds_los_col_base
 
-    if _ds_cnt_col_base and _ds_disease:
-        # 疾患でフィルター（最新年度のみ）
-        _ds_filtered = _load_dpc_surgery_by_disease(_ds_disease, _DPC_SURG_MTIME).copy()
+    if _ds_cnt_col_base and _ds_disease_sel:
+        # 選択した疾患（複数可）でフィルター（最新年度のみ）
+        _ds_filtered = _load_dpc_surgery_by_disease(
+            tuple(_ds_disease_sel), _DPC_SURG_MTIME
+        ).copy()
         if "年度" in _ds_filtered.columns:
             _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
 
@@ -4386,13 +4416,36 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if _ds_surg_sel != "すべて" and _ds_has_surg_detail:
             _surg_avail = _ds_filtered["件数_手術有"].notna().any() if "件数_手術有" in _ds_filtered.columns else False
             if not _surg_avail:
-                st.info("この疾患の手術有無別データは公表されていません。「すべて」に切り替えると患者総数で比較できます。")
+                st.info(
+                    "選択した疾患には手術有無別データが公表されていません。"
+                    "「すべて」に切り替えると患者総数で比較できます。"
+                )
 
         # 告示番号単位で集計
         _ds_agg: dict = {_ds_cnt_col: "sum", "施設名": "first"}
-        if _ds_los_col and _ds_los_col in _ds_filtered.columns:
-            _ds_agg[_ds_los_col] = "first"
         _ds_result = _ds_filtered.groupby("告示番号", as_index=False).agg(_ds_agg)
+
+        # 平均在院日数は疾患ごとに違うため、複数疾患を合算するときは件数で
+        # 重み付けした加重平均にする（"first" や単純平均だと症例数の少ない疾患に
+        # 引っ張られて実態とズレる。実測で1.8〜5.8日の差が出た）。
+        # 単一疾患ならその疾患の値と一致する。
+        # 件数が -1（＊マスク値）の行は重みにできないので除外する。
+        if _ds_los_col and _ds_los_col in _ds_filtered.columns:
+            _w = _ds_filtered[["告示番号", _ds_cnt_col, _ds_los_col]].copy()
+            _w["_c"] = pd.to_numeric(_w[_ds_cnt_col], errors="coerce")
+            _w["_l"] = pd.to_numeric(_w[_ds_los_col], errors="coerce")
+            _w = _w[(_w["_c"] > 0) & _w["_l"].notna()]
+            if not _w.empty:
+                _w["_p"] = _w["_c"] * _w["_l"]
+                _wa = _w.groupby("告示番号", as_index=False).agg(
+                    _psum=("_p", "sum"), _csum=("_c", "sum")
+                )
+                _wa[_ds_los_col] = (_wa["_psum"] / _wa["_csum"]).round(1)
+                _ds_result = _ds_result.merge(
+                    _wa[["告示番号", _ds_los_col]], on="告示番号", how="left"
+                )
+            else:
+                _ds_result[_ds_los_col] = np.nan
 
         # 病院情報（病院区分・都道府県名）をJOIN
         if not _ds_hosp_info.empty:
@@ -4457,8 +4510,11 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if _ds_year:
             st.markdown(_source_tag(_dpc_source(_ds_year)), unsafe_allow_html=True)
         st.caption(
-            f"**{_total_n:,}病院** が対象 / 疾患: {_ds_disease}"
+            f"**{_total_n:,}病院** が対象 / 疾患（{len(_ds_disease_sel)}件）: "
+            + "、".join(_ds_disease_sel)
             + (f" / 合計 {_total_patients:,}例（＊除く）" if not _ds_hide_nan else "")
+            + ("　※複数疾患の合算です。平均在院日数は件数で重み付けした加重平均。"
+               if len(_ds_disease_sel) > 1 else "")
         )
 
         _ds_show_cols = ["施設名", "病院区分", "都道府県名", "二次医療圏名", _ds_cnt_col]
@@ -4569,6 +4625,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
                         )
             st.session_state["_dsc_last_selected"] = _nav_name
             st.rerun()
+
+    elif _ds_cnt_col_base and not _ds_disease_sel:
+        st.info("疾患名を1つ以上選んでください（複数選べば合算した件数で比較できます）。")
 
     _render_footer()
     st.stop()
@@ -5997,10 +6056,15 @@ with tab7:
                 center_lon = float(map_valid["lon"].mean())
                 zoom = 11 if map_scope == "選択中の二次医療圏" else 9
 
+                # マウスホイールでのズームは無効にする。有効だと地図の上で
+                # ページを下にスクロールしようとした時に地図がズームしてしまい、
+                # 地図より下にある操作に到達しにくい。
+                # ズームは +/- ボタンとダブルクリックで可能。
                 _m = folium.Map(
                     location=[center_lat, center_lon],
                     zoom_start=zoom,
                     tiles="CartoDB positron",
+                    scrollWheelZoom=False,
                 )
 
                 _max_beds = max(int(map_valid["合計_許可病床数"].max() or 1), 1)
