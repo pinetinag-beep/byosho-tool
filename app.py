@@ -6,6 +6,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
+import pyarrow.parquet as pq   # 大きいparquetを辞書エンコードのまま読むために使用
 import unicodedata
 import re
 
@@ -857,13 +858,72 @@ def _load_dpc_readmission():
 
 _DPC_SURG_MTIME: float = DPC_PARQUET_SURG.stat().st_mtime if DPC_PARQUET_SURG.exists() else 0.0
 
+# dpc_surgery_detail.parquet（約634万行）は全件をメモリに載せない方針。
+# 以前は全件読み＋実行時の重複除去で約11秒・ピークRSS約986MBかかっていたが、
+# 重複除去はビルド時に済ませ、（年度, 告示番号）順に並べて出力してあるので、
+# 用途ごとに必要な分だけ述語プッシュダウンで読む:
+#   _load_dpc_disease_index()       … 選択肢（MDC・疾患名）と年度・列名だけ
+#   _load_dpc_surgery_by_disease()  … 選んだ1疾患ぶん（DPC疾患別検索）
+#   _load_dpc_surgery_for()         … 1病院×1年度ぶん（病院詳細ページ）
+
 @st.cache_data(show_spinner=False)
-def _load_dpc_surgery_detail(_mtime: float = 0.0):
+def _load_dpc_disease_index(_mtime: float = 0.0):
+    """DPC疾患別検索の選択肢（MDC・疾患名）と年度・列名だけを返す軽量インデックス。
+
+    この画面は「MDC一覧」「疾患名一覧」「選んだ1疾患の明細」しか使わないのに、
+    634万行×10列を丸ごと保持していた（保持188MB）。選択肢の構築に必要な4列だけ
+    読んで一意化すれば345行・15KBで済む（実測ピークRSS 557MB→352MB）。
+    """
     if not DPC_PARQUET_SURG.exists():
         return None
-    df = pd.read_parquet(DPC_PARQUET_SURG)
-    # 疾患名まで含めた完全重複のみ除去（同一dpc6でも疾患名が異なるレコードは別行）
-    return df.drop_duplicates(subset=["年度", "告示番号", "MDC", "dpc6", "疾患名"], keep="first")
+    cols = pq.ParquetFile(DPC_PARQUET_SURG).schema_arrow.names
+    _use = [c for c in ("MDC", "疾患名", "件数_総計", "件数_手術有", "年度") if c in cols]
+    d = pq.read_table(DPC_PARQUET_SURG, columns=_use).to_pandas()
+    _mask = pd.Series(False, index=d.index)
+    for _c in ("件数_総計", "件数_手術有"):
+        if _c in d.columns:
+            _mask = _mask | (d[_c].fillna(0) != 0)
+    idx = d.loc[_mask, [c for c in ("MDC", "疾患名") if c in d.columns]].drop_duplicates()
+    max_year = int(d["年度"].max()) if "年度" in d.columns else None
+    del d
+    return {
+        "options": idx.reset_index(drop=True),
+        "max_year": max_year,
+        "columns": list(cols),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_surgery_by_disease(disease: str, _mtime: float = 0.0):
+    """選択された1疾患のDPC手術詳細だけを述語プッシュダウンで読む。"""
+    if not DPC_PARQUET_SURG.exists() or not disease:
+        return pd.DataFrame()
+    return pq.read_table(
+        DPC_PARQUET_SURG, filters=[("疾患名", "=", disease)]
+    ).to_pandas()
+
+
+@st.cache_data(show_spinner=False)
+def _load_dpc_surgery_for(ban, year, _mtime: float = 0.0):
+    """特定の医療機関（告示番号）×年度のDPC手術詳細だけを読む。
+
+    病院詳細ページは1病院・1年度分しか使わないのに全634万行を読んでいた。
+    parquet を（年度, 告示番号）順に並べて出力してあるので、述語プッシュダウンで
+    該当row groupだけを展開できる（実測 0.05秒 / ピークRSS 268MB。
+    全件読みは 0.46秒 / 597MB、旧実装は重複除去込みで約11秒）。
+    """
+    if not DPC_PARQUET_SURG.exists() or ban is None:
+        return pd.DataFrame()
+    try:
+        tbl = pq.read_table(
+            DPC_PARQUET_SURG,
+            filters=[("告示番号", "=", int(ban)), ("年度", "=", int(year))],
+        )
+    except (ValueError, TypeError):
+        return pd.DataFrame()
+    return tbl.to_pandas(
+        categories=[c for c in ("施設名", "MDC", "dpc6", "疾患名") if c in tbl.column_names]
+    )
 
 SHISETSU_KIJUN_PARQUET = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
 
@@ -871,28 +931,33 @@ SHISETSU_KIJUN_PARQUET = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
 def _load_shisetsu_kijun():
     if not SHISETSU_KIJUN_PARQUET.exists():
         return None
-    df = pd.read_parquet(SHISETSU_KIJUN_PARQUET)
-    # 同一病院×同一届出が複数月分存在するため、検索用途に必要な一意組み合わせに圧縮。
-    # 受理番号も含めるのは、同一届出名称でも病棟ごとに区分（急性期一般入院料１〜６等）
-    # が異なる別registrationのケースがあるため（受理番号がその識別子になる）。
-    _dedup_cols = ["都道府県コード", "医療機関番号", "受理届出名称"]
-    if "受理番号" in df.columns:
-        _dedup_cols.append("受理番号")
-    df = df.drop_duplicates(subset=_dedup_cols)
-    # 全国96万行規模になり、テキスト列（医療機関名称・住所等）を素の文字列の
-    # まま持つとメモリが240MB超になる（Streamlit Cloudの約1GBメモリ上限を圧迫し、
-    # 全画面の表示が遅くなる原因になっていた）。行数に対して重複が多い列は
-    # category化することで実測60MB程度まで削減できる。
+    # 全国96万行規模。テキスト列（医療機関名称・住所等）を素の文字列のまま持つと
+    # メモリが240MB超になる（Streamlit Cloudの約1GB上限を圧迫し全画面が遅くなる）。
+    # 重複が多い列をcategory化すると実測60MB程度まで落ちる。
+    #
+    # ただし「pd.read_parquetで全部object型として読んでから astype("category")」だと、
+    # 一度96万行×18列のobject配列を作るため実測7.6秒・ピークRSS763MBかかっていた。
+    # pyarrowの辞書エンコードのままCategoricalに変換すればobject配列を作らずに済み、
+    # 実測0.96秒・ピークRSS678MBになる（約8倍速）。
     _CAT_COLS = [
         "都道府県コード", "都道府県名", "医療機関番号", "医療機関名称",
         "医療機関名_正規化", "住所", "受理届出名称", "受理記号", "受理番号",
         "算定開始年月日", "病棟種別", "病床区分", "病棟数", "病床数",
         "区分", "内訳その他", "年月", "施設種別",
     ]
-    for col in _CAT_COLS:
-        if col in df.columns and str(df[col].dtype) != "category":
-            df[col] = df[col].astype("category")
-    return df
+    tbl = pq.read_table(SHISETSU_KIJUN_PARQUET)
+    df = tbl.to_pandas(
+        categories=[c for c in _CAT_COLS if c in tbl.column_names],
+        split_blocks=True, self_destruct=True,
+    )
+    del tbl
+    # 同一病院×同一届出が複数月分存在するため、検索用途に必要な一意組み合わせに圧縮。
+    # 受理番号も含めるのは、同一届出名称でも病棟ごとに区分（急性期一般入院料１〜６等）
+    # が異なる別registrationのケースがあるため（受理番号がその識別子になる）。
+    _dedup_cols = ["都道府県コード", "医療機関番号", "受理届出名称"]
+    if "受理番号" in df.columns:
+        _dedup_cols.append("受理番号")
+    return df.drop_duplicates(subset=_dedup_cols)
 
 GAKKAI_NINTEI_PARQUET = Path(__file__).parent / "gakkai_nintei_cache.parquet"
 
@@ -4195,8 +4260,10 @@ if st.session_state.get("_view_mode") == "dpc_search":
             st.session_state["_view_mode"] = "home"
             st.rerun()
 
-    _ds_surg_all = _load_dpc_surgery_detail(_DPC_SURG_MTIME)
-    if _ds_surg_all is None:
+    # 選択肢（MDC・疾患名）と年度・列名だけの軽量インデックス。明細は疾患を
+    # 選んでから該当分だけ読む（634万行を保持しないため）。
+    _ds_idx = _load_dpc_disease_index(_DPC_SURG_MTIME)
+    if _ds_idx is None:
         st.warning("DPCデータが読み込まれていません")
         _render_footer()
         st.stop()
@@ -4208,7 +4275,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
     #    絞り込まれる。フォーム内だと検索ボタンを押すまで反映されない）。
     _dsf1, _dsf2 = st.columns([2, 4])
     with _dsf1:
-        _ds_mdc_present = set(_ds_surg_all["MDC"].dropna().unique())
+        _ds_mdc_present = set(_ds_idx["options"]["MDC"].dropna().unique())
         _ds_mdc_opts = ["すべて"] + [
             f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
         ]
@@ -4217,15 +4284,13 @@ if st.session_state.get("_view_mode") == "dpc_search":
         _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
 
     with _dsf2:
+        # インデックスは「件数が0でない」行だけで作ってあるので、ここでは
+        # MDCで絞るだけでよい。
         _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
+        _ds_opts = _ds_idx["options"]
         _ds_disease_src = (
-            _ds_surg_all if _ds_mdc_key is None
-            else _ds_surg_all[_ds_surg_all["MDC"] == _ds_mdc_key]
+            _ds_opts if _ds_mdc_key is None else _ds_opts[_ds_opts["MDC"] == _ds_mdc_key]
         )
-        _ds_disease_mask = _ds_disease_src["件数_総計"].fillna(0) != 0
-        if "件数_手術有" in _ds_disease_src.columns:
-            _ds_disease_mask = _ds_disease_mask | (_ds_disease_src["件数_手術有"].fillna(0) != 0)
-        _ds_disease_src = _ds_disease_src[_ds_disease_mask]
         _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
         # セッションステート検証（MDC変更時に古い疾患名が残らないように）
         if st.session_state.get("_dsc_disease") not in _ds_diseases:
@@ -4285,16 +4350,18 @@ if st.session_state.get("_view_mode") == "dpc_search":
     st.markdown("---")
 
     # ── 検索・集計 ──
-    _ds_has_surg_detail = "件数_手術有" in _ds_surg_all.columns
-    _ds_cnt_col_base = next((c for c in _ds_surg_all.columns if "件数" in c and "総計" in c), None)
-    _ds_los_col_base = next((c for c in _ds_surg_all.columns if "在院" in c and "総計" in c), None)
+    # 列名の判定はparquetのスキーマ（インデックスが保持）で行い、データは読まない。
+    _ds_all_cols = _ds_idx["columns"]
+    _ds_has_surg_detail = "件数_手術有" in _ds_all_cols
+    _ds_cnt_col_base = next((c for c in _ds_all_cols if "件数" in c and "総計" in c), None)
+    _ds_los_col_base = next((c for c in _ds_all_cols if "在院" in c and "総計" in c), None)
 
     # 件数_総計 = Excelコード99 = 手術なし件数（真の総計ではない）
     # 件数_手術有 = Excelコード97 = 手術あり件数
     # 真の総計 = 件数_総計(code99) + 件数_手術有(code97)
     if _ds_surg_sel == "手術あり" and _ds_has_surg_detail:
         _ds_cnt_col = "件数_手術有"
-        _ds_los_col = "在院日数_手術有" if "在院日数_手術有" in _ds_surg_all.columns else _ds_los_col_base
+        _ds_los_col = "在院日数_手術有" if "在院日数_手術有" in _ds_all_cols else _ds_los_col_base
     elif _ds_surg_sel == "手術なし":
         _ds_cnt_col = _ds_cnt_col_base  # 件数_総計 = code99 = 手術なし
         _ds_los_col = _ds_los_col_base
@@ -4304,7 +4371,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
 
     if _ds_cnt_col_base and _ds_disease:
         # 疾患でフィルター（最新年度のみ）
-        _ds_filtered = _ds_surg_all[_ds_surg_all["疾患名"] == _ds_disease].copy()
+        _ds_filtered = _load_dpc_surgery_by_disease(_ds_disease, _DPC_SURG_MTIME).copy()
         if "年度" in _ds_filtered.columns:
             _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
 
@@ -4386,7 +4453,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
         _total_n = len(_ds_result)
         # -1（マスク値）を除いた実件数合計
         _total_patients = int(_ds_result[_ds_cnt_col].clip(lower=0).sum()) if _ds_cnt_col in _ds_result.columns else 0
-        _ds_year = int(_ds_surg_all["年度"].max()) if "年度" in _ds_surg_all.columns else None
+        _ds_year = _ds_idx["max_year"]
         if _ds_year:
             st.markdown(_source_tag(_dpc_source(_ds_year)), unsafe_allow_html=True)
         st.caption(
@@ -6143,7 +6210,9 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         _dp_proc_all  = _load_dpc_procedure_stats()
         _dp_ratio_all = _load_dpc_mdc_ratio()
         _dp_readm_all = _load_dpc_readmission()
-        _dp_surg_all  = _load_dpc_surgery_detail(_DPC_SURG_MTIME)
+        # 手術詳細は634万行あるが、このページで使うのは1病院×1年度分だけなので
+        # 全件読まずに述語プッシュダウンで該当分だけ読む（他の3つは数MB規模なので全件）。
+        _dp_surg = _load_dpc_surgery_for(_dpc_ban, year, _DPC_SURG_MTIME)
 
         def _dpc_latest(df, ban):
             # 選択中の病床機能報告年度と同じ年度のDPCのみ返す（年度ズレ防止）。
@@ -6157,7 +6226,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         _dp_proc  = _dpc_latest(_dp_proc_all, _dpc_ban)
         _dp_ratio = _dpc_latest(_dp_ratio_all, _dpc_ban)
         _dp_readm = _dpc_latest(_dp_readm_all, _dpc_ban)
-        _dp_surg  = _dpc_latest(_dp_surg_all, _dpc_ban) if _dp_surg_all is not None else pd.DataFrame()
+        # _dp_surg は読み込み時点で告示番号・年度で絞り込み済み
 
         # ── 基本情報ヘッダー ──
         if _dpc_hosp_row is not None:
