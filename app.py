@@ -3090,7 +3090,62 @@ if st.session_state.get("_view_mode") == "search":
         _gk_hits = s_df["医療機関コード"].map(lambda c: _gk_labels_map.get(c, set()))
         _add_hit_columns("学会", [f"{_s}－{_c}" for _s, _c in _s_gakkai_sel], _gk_hits)
 
-    _disp = _base + _sshow + _organ_show + _eshow + _fshow
+    # ── 表示項目（比較したい列）──────────────────────────────
+    # 「リストを作る条件」と「表示したい項目」は別物。上の _eshow/_fshow は
+    # 絞り込みに使った条件が何に該当したかを示す“確認用”の列で、比較のために
+    # 見たい項目はユーザーが自由に選べる必要がある。
+    # ウィジェット自体は結果表の直上に置く（条件フォームとは分離する）ため、
+    # 値は session_state から先に読む。
+    # 比較用の派生指標を「単位を名前に明示した列」として作る。
+    # 既存の `合計稼働率`（data_processor.occupancy_rate）は 0〜1 の比率を返すが、
+    # 消費側が比率前提（charts.py は ×100 している）と%前提（region_vision の
+    # しきい値判定）で混在しているため、共有列には手を触れず別名で持つ。
+    # 計算式は病床機能報告の報告値のみから算出（独自の補正は入れない）:
+    #   稼働率(%) = 在棟延べ数 ÷ 365 ÷ 許可病床数 × 100
+    _kyoka_d = pd.to_numeric(s_df.get("合計_許可病床数"), errors="coerce").replace(0, np.nan)
+    if "合計_在棟延べ数" in s_df.columns:
+        s_df["稼働率(%)"] = (
+            pd.to_numeric(s_df["合計_在棟延べ数"], errors="coerce") / 365 / _kyoka_d * 100
+        ).round(1)
+    if "常勤医師数" in s_df.columns:
+        s_df["常勤医師数/100床"] = (
+            pd.to_numeric(s_df["常勤医師数"], errors="coerce") / _kyoka_d * 100
+        ).round(1)
+    if "常勤看護師数" in s_df.columns:
+        s_df["常勤看護師数/100床"] = (
+            pd.to_numeric(s_df["常勤看護師数"], errors="coerce") / _kyoka_d * 100
+        ).round(1)
+
+    _DISP_PRESETS = {
+        "病床構成": ["合計_許可病床数", "合計_稼働病床数", "稼働率(%)",
+                     "高度急性期_許可病床数", "急性期_許可病床数",
+                     "回復期_許可病床数", "慢性期_許可病床数"],
+        "スタッフ": ["常勤医師数", "非常勤医師数", "常勤看護師数", "非常勤看護師数",
+                     "常勤医師数/100床", "常勤看護師数/100床"],
+        "リハビリ職": ["常勤理学療法士数", "常勤作業療法士数", "常勤言語聴覚士数"],
+        "医療設備": ["CT台数", "MRI台数", "PET台数", "PETCT台数", "SPECT台数",
+                     "血管連続撮影装置台数", "内視鏡手術支援機器台数", "マンモグラフィ台数"],
+        "診療実績": ["合計_在棟延べ数", "救急搬送件数"],
+        "所在地":   ["住所", "url"],
+    }
+    _sel_presets  = st.session_state.get("_s_disp_presets", [])
+    _sel_cols     = st.session_state.get("_s_disp_cols", [])
+    _show_hit_col = st.session_state.get("_s_show_hits", True)
+
+    _user_cols: list[str] = []
+    for _p in _sel_presets:
+        for _c in _DISP_PRESETS.get(_p, []):
+            if _c in s_df.columns and _c not in _user_cols:
+                _user_cols.append(_c)
+    for _c in _sel_cols:
+        if _c in s_df.columns and _c not in _user_cols:
+            _user_cols.append(_c)
+
+    _disp = _base + _user_cols + _sshow + _organ_show + _eshow
+    if _show_hit_col:
+        _disp += _fshow
+    # 同じ列が複数の由来で入りうるので順序を保って重複を除く
+    _disp = list(dict.fromkeys(_disp))
 
     result_s = (
         s_df[_disp]
@@ -3111,6 +3166,39 @@ if st.session_state.get("_view_mode") == "search":
     st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
     st.markdown(_source_tag(_byosho_source(s_year)), unsafe_allow_html=True)
     st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
+
+    # ── 表示項目の選択 ─────────────────────────────────────
+    # 検索条件（上のフォーム）とは別の操作。ここでの変更は検索ボタンを押さずに
+    # 即座に表に反映される。束（プリセット）で大まかに選び、個別列で足し引きする。
+    _cand_cols = [
+        c for c in s_df.columns
+        if c not in _base and c not in ("医療機関コード", "報告年度") and c not in _fshow
+    ]
+    with st.container(border=True, key="s_disp_box"):
+        st.markdown(
+            "<div style='font-size:0.82rem;font-weight:700;color:var(--brand-deep);"
+            "margin-bottom:8px;'>📊 表示する項目（比較したい指標を選ぶ）"
+            "<span style='font-weight:400;color:var(--ink-muted);margin-left:10px;'>"
+            "検索条件とは別に、いつでも変更できます</span></div>",
+            unsafe_allow_html=True,
+        )
+        _dc1, _dc2 = st.columns([1, 2])
+        with _dc1:
+            st.multiselect(
+                "まとめて追加", options=list(_DISP_PRESETS.keys()),
+                key="_s_disp_presets", placeholder="束で選ぶ",
+            )
+        with _dc2:
+            st.multiselect(
+                "個別に追加", options=_cand_cols,
+                key="_s_disp_cols", placeholder="列名を入力して検索",
+            )
+        if _fshow:
+            st.checkbox(
+                f"絞り込み条件の該当列（○印 {len(_fshow)}列）も表示する",
+                key="_s_show_hits", value=True,
+                help="どの条件に該当してヒットしたかを示す確認用の列です",
+            )
 
     _col_cfg = {
         "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%,d 床"),
