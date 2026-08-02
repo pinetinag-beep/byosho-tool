@@ -4447,6 +4447,29 @@ if st.session_state.get("_view_mode") == "dpc_search":
             else:
                 _ds_result[_ds_los_col] = np.nan
 
+        # 選択した疾患ごとの件数を列として持たせる（合算値だけだと内訳が見えないため。
+        # 「検索条件に使ったデータは結果表とCSVに列として出す」方針のDPC版）。
+        # 疾患を1つしか選んでいない場合は「患者数」列と同じ値になるので付けない。
+        _ds_by_disease_cols: list[str] = []
+        if len(_ds_disease_sel) > 1 and "疾患名" in _ds_filtered.columns:
+            _piv = (
+                _ds_filtered.pivot_table(
+                    index="告示番号", columns="疾患名", values=_ds_cnt_col,
+                    aggfunc="sum", observed=True,
+                )
+                .reset_index()
+            )
+            _ren = {}
+            for _dn in _ds_disease_sel:
+                if _dn in _piv.columns:
+                    _ren[_dn] = f"疾患_{_dn}"
+            _piv = _piv.rename(columns=_ren)
+            _ds_by_disease_cols = [c for c in _ren.values()]
+            if _ds_by_disease_cols:
+                _ds_result = _ds_result.merge(
+                    _piv[["告示番号"] + _ds_by_disease_cols], on="告示番号", how="left"
+                )
+
         # 病院情報（病院区分・都道府県名）をJOIN
         if not _ds_hosp_info.empty:
             _ds_result = _ds_result.merge(_ds_hosp_info, on="告示番号", how="left")
@@ -4528,17 +4551,30 @@ if st.session_state.get("_view_mode") == "dpc_search":
         if "平均在院日数" in _ds_result.columns:
             _ds_show_cols.append("平均在院日数")
             _ds_col_cfg["平均在院日数"] = st.column_config.TextColumn("平均在院日数")
+        # 疾患ごとの内訳列（合計 → 平均在院日数 → シェア の後ろに並べる）
+        for _c in _ds_by_disease_cols:
+            if _c in _ds_result.columns:
+                _ds_show_cols.append(_c)
+                # 疾患名は長いものが多く、見出しが切れるとどの列か分からなくなる
+                _lb = _c.split("_", 1)[1]
+                _ds_col_cfg[_c] = st.column_config.TextColumn(
+                    _lb, width="medium" if len(_lb) > 8 else "small",
+                )
         if "医療圏シェア" in _ds_result.columns:
             _ds_show_cols.append("医療圏シェア")
             _ds_col_cfg["医療圏シェア"] = st.column_config.TextColumn("医療圏シェア")
 
         # -1（マスク値）を "*" に変換した表示用コピー
         _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
-        for _c in [_ds_cnt_col, "平均在院日数"]:
+        # 疾患ごとの内訳列も件数と同じ書式（-1は＊マスク値、未該当は空欄）にする
+        for _c in [_ds_cnt_col, "平均在院日数"] + _ds_by_disease_cols:
             if _c in _ds_disp.columns:
+                _is_los = (_c == "平均在院日数")
                 _v = pd.to_numeric(_ds_disp[_c], errors="coerce")
                 _ds_disp[_c] = _v.apply(
-                    lambda x: "*" if x == -1 else ("" if pd.isna(x) else (f"{int(x):,}例" if _c == _ds_cnt_col else f"{x:.1f}日"))
+                    lambda x, _l=_is_los: "*" if x == -1 else (
+                        "" if pd.isna(x) else (f"{x:.1f}日" if _l else f"{int(x):,}例")
+                    )
                 )
         if "医療圏シェア" in _ds_disp.columns:
             _ds_disp["医療圏シェア"] = _ds_result["医療圏シェア"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
@@ -4581,7 +4617,7 @@ if st.session_state.get("_view_mode") == "dpc_search":
         )
 
         _ds_csv_df = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
-        for _c in [_ds_cnt_col, "平均在院日数"]:
+        for _c in [_ds_cnt_col, "平均在院日数"] + _ds_by_disease_cols:
             if _c in _ds_csv_df.columns:
                 _v = pd.to_numeric(_ds_csv_df[_c], errors="coerce")
                 _ds_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else ("" if pd.isna(x) else x))
