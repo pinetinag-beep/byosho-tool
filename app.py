@@ -505,7 +505,6 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 .st-key-rg_filter_box,
 .st-key-ms_filter_box,
 .st-key-dist_filter_box,
-.st-key-ddist_filter_box,
 .st-key-rv_filter_box,
 .st-key-cs_filter_box,
 .st-key-s_area_box,
@@ -1591,38 +1590,21 @@ def _render_dpc_search_tab():
         st.info("疾患名を1つ以上選んでください（複数選べば合算した件数で比較できます）。")
 
 
-def _render_dpc_distance_tab():
-    """「距離・所要時間で探す」画面の「DPCで探す」タブ。
+def _render_dpc_distance_filters():
+    """「距離・所要時間で探す」画面の「詳細条件を追加」内、DPC選択時の
+    フィルターUI（MDC→疾患名・病院区分・非公表除外・手術有無）を描画する。
 
-    「条件で病院を検索」画面のDPCタブ（`_render_dpc_search_tab()`）と同じ
-    検索方法（MDC→疾患名・病院区分・非公表除外・手術有無）を使うが、疾患別
-    集計をエリアではなく出発地からの所要時間で絞り込む（ユーザー要望：
-    「手術・条件検索のところと同じような仕様で」）。集計ロジック自体は
-    `_render_dpc_search_tab()` と共通の考え方（件数の合算・在院日数の
-    加重平均・＊マスク値の扱い）を踏襲しているが、エリア絞り込みが無く
-    座標ベースのフィルターに置き換わっている分だけ実装は独立している
-    （両者で完全に共通化するには集計ロジックの大規模な関数分離が必要になり
-    リスクが大きいため、今回は見送った）。
+    出発地・所要時間・移動手段は病床機能報告と共通の入力欄（画面上部の
+    `dist_filter_box`）を使うため、ここでは描画しない——ユーザーから
+    「まず出発地・所要時間をセットして、その後で詳細条件の中で病床機能報告
+    ／DPCを切り替えたい」との指摘があり、以前の「外側タブごとに出発地欄を
+    複製する」実装（条件で病院を検索画面と同じ構造）から変更した（2026年8月）。
+    選択内容は呼び出し側（`_run_dpc_distance_search()`）に渡すため辞書で返す。
     """
     _ds_idx = _load_dpc_disease_index(_DPC_SURG_MTIME)
     if _ds_idx is None:
         st.warning("DPCデータが読み込まれていません")
-        return
-
-    _ds_hosp_info = _build_dpc_hosp_info()
-
-    with st.container(border=True, key="ddist_filter_box"):
-        _dd_addr = st.text_input(
-            "📍 出発地（住所・ランドマーク）",
-            placeholder="例: 東京都新宿区西新宿2丁目8",
-            key="_ddist_addr",
-        )
-        _dd_c1, _dd_c2 = st.columns([2, 4])
-        with _dd_c1:
-            _dd_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
-                key="_ddist_max")
-        with _dd_c2:
-            _dd_mode = st.radio("移動手段", ["🚗 車", "🚌 電車・バス"], horizontal=True, key="_ddist_mode")
+        return None
 
     _dsf1, _dsf2 = st.columns([2, 4])
     with _dsf1:
@@ -1665,24 +1647,37 @@ def _render_dpc_distance_tab():
         _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_ddist_hide_nan")
         _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=True, key="_ddist_surg")
 
-    _dist_has_coords = DB_PATH.exists() or _LOCS_PARQUET.exists()
-    if not _dist_has_coords:
-        st.warning("距離検索には公式座標データ（locations_cache.parquet）またはDuckDBが必要です。")
+    return {
+        "disease_sel": _ds_disease_sel,
+        "kubun_sel":   _ds_kubun_sel,
+        "hide_nan":    _ds_hide_nan,
+        "surg_sel":    _ds_surg_sel,
+    }
+
+
+def _run_dpc_distance_search(_origin, _dd_addr, _dd_max, _dd_mode, _dpc_sel):
+    """DPCデータを出発地からの所要時間で絞り込んで検索結果を表示する。
+
+    フィルター条件は `_render_dpc_distance_filters()` の戻り値（辞書）で
+    受け取る。集計ロジックの考え方（件数の合算・在院日数の加重平均・＊
+    マスク値の扱い）は `_render_dpc_search_tab()` と共通だが、エリア絞り込み
+    が無く座標ベースのフィルターに置き換わっている分だけ実装は独立している。
+    """
+    if _dpc_sel is None:
         return
-    if not _dd_addr:
-        st.info("出発地を入力してください。")
-        return
+    _ds_disease_sel = _dpc_sel["disease_sel"]
+    _ds_kubun_sel   = _dpc_sel["kubun_sel"]
+    _ds_hide_nan    = _dpc_sel["hide_nan"]
+    _ds_surg_sel    = _dpc_sel["surg_sel"]
     if not _ds_disease_sel:
         st.info("疾患名を1つ以上選んでください。")
         return
 
-    if not st.button("🔍 検索する", type="primary", key="_ddist_search_btn"):
+    _ds_idx = _load_dpc_disease_index(_DPC_SURG_MTIME)
+    if _ds_idx is None:
+        st.warning("DPCデータが読み込まれていません")
         return
-
-    _origin = _cached_geocode_address(_dd_addr)
-    if _origin is None:
-        st.error(f"「{_dd_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
-        return
+    _ds_hosp_info = _build_dpc_hosp_info()
 
     _ds_all_cols = _ds_idx["columns"]
     _ds_has_surg_detail = "件数_手術有" in _ds_all_cols
@@ -2415,57 +2410,55 @@ if st.session_state.get("_view_mode") == "distance":
     st.markdown("## 距離・所要時間で病院を探す")
 
     # 病床機能報告データとDPCデータの両方から、出発地からの所要時間で
-    # 絞り込めるようにする（ユーザー要望：「手術・条件検索のところと
-    # 同じような仕様で」）。外側タブのCSSは「条件で病院を検索」画面と共通化した
-    # `_render_outer_switch_css()` を使う。
-    _render_outer_switch_css("dist_outer_switch")
-    with st.container(key="dist_outer_switch"):
-        _dist_outer_tab1, _dist_outer_tab2 = st.tabs(
-            ["🔍 条件で絞り込む（病床機能報告）", "🩺 DPCで探す"]
+    # 絞り込めるようにする（ユーザー要望：まず出発地・所要時間をセットし、
+    # その後「詳細条件を追加」の中で病床機能報告／DPCを切り替えたい）。
+    from geocoder import geocode_address as _dist_gc, haversine_km as _dist_hkm, osrm_durations as _dist_osrm
+
+    with st.container(border=True, key="dist_filter_box"):
+        _dist_addr = st.text_input(
+            "📍 出発地（住所・ランドマーク）",
+            placeholder="例: 東京都新宿区西新宿2丁目8",
+            key="_dist_addr",
         )
 
-    with _dist_outer_tab1:
-        from geocoder import geocode_address as _dist_gc, haversine_km as _dist_hkm, osrm_durations as _dist_osrm
+        _dist_c1, _dist_c2 = st.columns([2, 4])
+        with _dist_c1:
+            _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
+                key="_dist_max")
+        with _dist_c2:
+            _dist_mode = st.radio("移動手段", ["🚗 車", "🚌 電車・バス"],
+                horizontal=True, key="_dist_mode")
 
-        with st.container(border=True, key="dist_filter_box"):
-            _dist_addr = st.text_input(
-                "📍 出発地（住所・ランドマーク）",
-                placeholder="例: 東京都新宿区西新宿2丁目8",
-                key="_dist_addr",
+    _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
+    _dist_year  = _dist_years[0]
+    _dist_pref  = "全都道府県"
+
+    _dist_has_coords = DB_PATH.exists() or _LOCS_PARQUET.exists()
+    if not _dist_has_coords:
+        st.warning("距離検索には公式座標データ（locations_cache.parquet）またはDuckDBが必要です。")
+    elif not _dist_addr:
+        st.info("出発地を入力してください。")
+    else:
+        _dist_col_options = {
+            "救急搬送件数":         "救急搬送件数",
+            "稼働率":               "合計稼働率",
+            "高度急性期（病床数）": "高度急性期_許可病床数",
+            "急性期（病床数）":     "急性期_許可病床数",
+            "回復期（病床数）":     "回復期_許可病床数",
+            "慢性期（病床数）":     "慢性期_許可病床数",
+            "常勤医師数":           "常勤医師数",
+            "CT台数":              "CT台数",
+            "MRI台数":             "MRI台数",
+            "手術総数":             "手術総数",
+            "全身麻酔手術数":       "全身麻酔手術数",
+        }
+        with st.expander("＋ 詳細条件を追加", expanded=False):
+            _dist_source = st.radio(
+                "検索対象", ["🔍 病床機能報告", "🩺 DPC"],
+                horizontal=True, key="_dist_source",
             )
-
-            _dist_c1, _dist_c2 = st.columns([2, 4])
-            with _dist_c1:
-                _dist_max = st.number_input("所要時間（分以内）", min_value=5, max_value=180, value=30, step=5,
-                    key="_dist_max")
-            with _dist_c2:
-                _dist_mode = st.radio("移動手段", ["🚗 車", "🚌 電車・バス"],
-                    horizontal=True, key="_dist_mode")
-
-        _dist_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-        _dist_year  = _dist_years[0]
-        _dist_pref  = "全都道府県"
-
-        _dist_has_coords = DB_PATH.exists() or _LOCS_PARQUET.exists()
-        if not _dist_has_coords:
-            st.warning("距離検索には公式座標データ（locations_cache.parquet）またはDuckDBが必要です。")
-        elif not _dist_addr:
-            st.info("出発地を入力してください。")
-        else:
-            _dist_col_options = {
-                "救急搬送件数":         "救急搬送件数",
-                "稼働率":               "合計稼働率",
-                "高度急性期（病床数）": "高度急性期_許可病床数",
-                "急性期（病床数）":     "急性期_許可病床数",
-                "回復期（病床数）":     "回復期_許可病床数",
-                "慢性期（病床数）":     "慢性期_許可病床数",
-                "常勤医師数":           "常勤医師数",
-                "CT台数":              "CT台数",
-                "MRI台数":             "MRI台数",
-                "手術総数":             "手術総数",
-                "全身麻酔手術数":       "全身麻酔手術数",
-            }
-            with st.expander("＋ 詳細条件を追加", expanded=False):
+            st.divider()
+            if _dist_source == "🔍 病床機能報告":
                 _fcy1, _fcy2 = st.columns([1, 5])
                 with _fcy1:
                     if st.session_state.get("_sel_year") not in _dist_years:
@@ -2529,204 +2522,205 @@ if st.session_state.get("_view_mode") == "distance":
                     key="_dist_result_cols",
                     label_visibility="collapsed",
                 )
+            else:
+                _dpc_sel = _render_dpc_distance_filters()
 
-            if st.button("🔍 検索する", type="primary", key="_dist_search_btn"):
-                _origin = _cached_geocode_address(_dist_addr)
-                if _origin is None:
-                    st.error(f"「{_dist_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
-                else:
-                    # 対象病院絞り込み
-                    _dist_df_base = _df_all[_df_all["報告年度"] == _dist_year].copy()
-                    if _dist_pref != "全都道府県":
-                        _dist_df_base = _dist_df_base[_dist_df_base["都道府県名"] == _dist_pref]
-                    # 詳細条件フィルター（設備・救急・病床種別）
-                    def _fnum(col):
-                        return pd.to_numeric(_dist_df_base[col], errors="coerce").fillna(0)
-                    if bool(st.session_state.get("_dist_f_ct")) and "CT台数" in _dist_df_base.columns:
-                        _dist_df_base = _dist_df_base[_fnum("CT台数") >= 1]
-                    if bool(st.session_state.get("_dist_f_mri")) and "MRI台数" in _dist_df_base.columns:
-                        _dist_df_base = _dist_df_base[_fnum("MRI台数") >= 1]
-                    if bool(st.session_state.get("_dist_f_robot")) and "内視鏡手術支援機器台数" in _dist_df_base.columns:
-                        _dist_df_base = _dist_df_base[_fnum("内視鏡手術支援機器台数") >= 1]
-                    if bool(st.session_state.get("_dist_f_angio")) and "血管連続撮影装置台数" in _dist_df_base.columns:
-                        _dist_df_base = _dist_df_base[_fnum("血管連続撮影装置台数") >= 1]
-                    _f_emg_min = int(st.session_state.get("_dist_f_emg_min") or 0)
-                    if _f_emg_min > 0 and "救急搬送件数" in _dist_df_base.columns:
-                        _dist_df_base = _dist_df_base[_fnum("救急搬送件数") >= _f_emg_min]
-                    for _bt, _bkey in [("高度急性期", "_dist_f_kodo"), ("急性期", "_dist_f_kyusei"),
-                                        ("回復期", "_dist_f_kaifuku"), ("慢性期", "_dist_f_mansei")]:
-                        _bc = f"{_bt}_許可病床数"
-                        if bool(st.session_state.get(_bkey)) and _bc in _dist_df_base.columns:
-                            _dist_df_base = _dist_df_base[_fnum(_bc) >= 1]
-                    # 手術フィルター（surgery_df マージ）
-                    _f_surg_min   = int(st.session_state.get("_dist_f_surg_min") or 0)
-                    _f_zensui_min = int(st.session_state.get("_dist_f_zensui_min") or 0)
-                    _dist_organ_map = [
-                        ("_dist_f_hifuka",  "皮膚・皮下組織"),
-                        ("_dist_f_kinkot",  "筋骨格系・四肢・体幹"),
-                        ("_dist_f_shinkei", "神経系・頭蓋"),
-                        ("_dist_f_me",      "眼"),
-                        ("_dist_f_jibika",  "耳鼻咽喉"),
-                        ("_dist_f_ganmen",  "顔面・口腔・頸部"),
-                        ("_dist_f_kyobu",   "胸部"),
-                        ("_dist_f_shin",    "心・脈管"),
-                        ("_dist_f_fukubu",  "腹部"),
-                        ("_dist_f_nyo",     "尿路系・副腎"),
-                        ("_dist_f_seiki",   "性器"),
-                        ("_dist_f_shika",   "歯科"),
-                    ]
-                    _any_surg_filter = _f_surg_min > 0 or _f_zensui_min > 0 or any(
-                        bool(st.session_state.get(k)) for k, _ in _dist_organ_map
-                    )
-                    _dist_auto_surg_cols = []  # 結果テーブルに自動追加する手術列
-                    if _any_surg_filter:
-                        _surg_state = st.session_state.get("surgery_df")
-                        if _surg_state is not None and not _surg_state.empty:
-                            _sy = (_surg_state[_surg_state["報告年度"] == _dist_year]
-                                   if "報告年度" in _surg_state.columns else _surg_state)
-                            _surg_need = (
-                                [c for c in ["手術総数", "全身麻酔手術数"] if c in _sy.columns]
-                                + [f"手術_{lb}" for _, lb in _dist_organ_map if f"手術_{lb}" in _sy.columns]
-                            )
-                            if _surg_need:
-                                _jk = ("医療機関コード"
-                                       if "医療機関コード" in _sy.columns and "医療機関コード" in _dist_df_base.columns
-                                       else "医療機関名")
-                                _sy_m = _sy[[_jk] + _surg_need].drop_duplicates(_jk).copy()
-                                _sy_m[_jk] = _sy_m[_jk].astype(str).str.strip()
-                                _dist_df_base = _dist_df_base.merge(_sy_m, on=_jk, how="left", suffixes=("", "_sy"))
-                                for _sc in _surg_need:
-                                    _dist_df_base[_sc] = pd.to_numeric(_dist_df_base[_sc], errors="coerce").fillna(0)
-                            if _f_surg_min > 0 and "手術総数" in _dist_df_base.columns:
+        if st.button("🔍 検索する", type="primary", key="_dist_search_btn"):
+            _origin = _cached_geocode_address(_dist_addr)
+            if _origin is None:
+                st.error(f"「{_dist_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
+            elif _dist_source == "🔍 病床機能報告":
+                # 対象病院絞り込み
+                _dist_df_base = _df_all[_df_all["報告年度"] == _dist_year].copy()
+                if _dist_pref != "全都道府県":
+                    _dist_df_base = _dist_df_base[_dist_df_base["都道府県名"] == _dist_pref]
+                # 詳細条件フィルター（設備・救急・病床種別）
+                def _fnum(col):
+                    return pd.to_numeric(_dist_df_base[col], errors="coerce").fillna(0)
+                if bool(st.session_state.get("_dist_f_ct")) and "CT台数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[_fnum("CT台数") >= 1]
+                if bool(st.session_state.get("_dist_f_mri")) and "MRI台数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[_fnum("MRI台数") >= 1]
+                if bool(st.session_state.get("_dist_f_robot")) and "内視鏡手術支援機器台数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[_fnum("内視鏡手術支援機器台数") >= 1]
+                if bool(st.session_state.get("_dist_f_angio")) and "血管連続撮影装置台数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[_fnum("血管連続撮影装置台数") >= 1]
+                _f_emg_min = int(st.session_state.get("_dist_f_emg_min") or 0)
+                if _f_emg_min > 0 and "救急搬送件数" in _dist_df_base.columns:
+                    _dist_df_base = _dist_df_base[_fnum("救急搬送件数") >= _f_emg_min]
+                for _bt, _bkey in [("高度急性期", "_dist_f_kodo"), ("急性期", "_dist_f_kyusei"),
+                                    ("回復期", "_dist_f_kaifuku"), ("慢性期", "_dist_f_mansei")]:
+                    _bc = f"{_bt}_許可病床数"
+                    if bool(st.session_state.get(_bkey)) and _bc in _dist_df_base.columns:
+                        _dist_df_base = _dist_df_base[_fnum(_bc) >= 1]
+                # 手術フィルター（surgery_df マージ）
+                _f_surg_min   = int(st.session_state.get("_dist_f_surg_min") or 0)
+                _f_zensui_min = int(st.session_state.get("_dist_f_zensui_min") or 0)
+                _dist_organ_map = [
+                    ("_dist_f_hifuka",  "皮膚・皮下組織"),
+                    ("_dist_f_kinkot",  "筋骨格系・四肢・体幹"),
+                    ("_dist_f_shinkei", "神経系・頭蓋"),
+                    ("_dist_f_me",      "眼"),
+                    ("_dist_f_jibika",  "耳鼻咽喉"),
+                    ("_dist_f_ganmen",  "顔面・口腔・頸部"),
+                    ("_dist_f_kyobu",   "胸部"),
+                    ("_dist_f_shin",    "心・脈管"),
+                    ("_dist_f_fukubu",  "腹部"),
+                    ("_dist_f_nyo",     "尿路系・副腎"),
+                    ("_dist_f_seiki",   "性器"),
+                    ("_dist_f_shika",   "歯科"),
+                ]
+                _any_surg_filter = _f_surg_min > 0 or _f_zensui_min > 0 or any(
+                    bool(st.session_state.get(k)) for k, _ in _dist_organ_map
+                )
+                _dist_auto_surg_cols = []  # 結果テーブルに自動追加する手術列
+                if _any_surg_filter:
+                    _surg_state = st.session_state.get("surgery_df")
+                    if _surg_state is not None and not _surg_state.empty:
+                        _sy = (_surg_state[_surg_state["報告年度"] == _dist_year]
+                               if "報告年度" in _surg_state.columns else _surg_state)
+                        _surg_need = (
+                            [c for c in ["手術総数", "全身麻酔手術数"] if c in _sy.columns]
+                            + [f"手術_{lb}" for _, lb in _dist_organ_map if f"手術_{lb}" in _sy.columns]
+                        )
+                        if _surg_need:
+                            _jk = ("医療機関コード"
+                                   if "医療機関コード" in _sy.columns and "医療機関コード" in _dist_df_base.columns
+                                   else "医療機関名")
+                            _sy_m = _sy[[_jk] + _surg_need].drop_duplicates(_jk).copy()
+                            _sy_m[_jk] = _sy_m[_jk].astype(str).str.strip()
+                            _dist_df_base = _dist_df_base.merge(_sy_m, on=_jk, how="left", suffixes=("", "_sy"))
+                            for _sc in _surg_need:
+                                _dist_df_base[_sc] = pd.to_numeric(_dist_df_base[_sc], errors="coerce").fillna(0)
+                        if _f_surg_min > 0 and "手術総数" in _dist_df_base.columns:
+                            _dist_df_base = _dist_df_base[
+                                pd.to_numeric(_dist_df_base["手術総数"], errors="coerce").fillna(0) >= _f_surg_min]
+                            _dist_auto_surg_cols.append("手術総数")
+                        if _f_zensui_min > 0 and "全身麻酔手術数" in _dist_df_base.columns:
+                            _dist_df_base = _dist_df_base[
+                                pd.to_numeric(_dist_df_base["全身麻酔手術数"], errors="coerce").fillna(0) >= _f_zensui_min]
+                            _dist_auto_surg_cols.append("全身麻酔手術数")
+                        for _okey, _olabel in _dist_organ_map:
+                            _ocol = f"手術_{_olabel}"
+                            if bool(st.session_state.get(_okey)) and _ocol in _dist_df_base.columns:
                                 _dist_df_base = _dist_df_base[
-                                    pd.to_numeric(_dist_df_base["手術総数"], errors="coerce").fillna(0) >= _f_surg_min]
-                                _dist_auto_surg_cols.append("手術総数")
-                            if _f_zensui_min > 0 and "全身麻酔手術数" in _dist_df_base.columns:
-                                _dist_df_base = _dist_df_base[
-                                    pd.to_numeric(_dist_df_base["全身麻酔手術数"], errors="coerce").fillna(0) >= _f_zensui_min]
-                                _dist_auto_surg_cols.append("全身麻酔手術数")
-                            for _okey, _olabel in _dist_organ_map:
-                                _ocol = f"手術_{_olabel}"
-                                if bool(st.session_state.get(_okey)) and _ocol in _dist_df_base.columns:
-                                    _dist_df_base = _dist_df_base[
-                                        pd.to_numeric(_dist_df_base[_ocol], errors="coerce").fillna(0) >= 1]
-                                    _dist_auto_surg_cols.append(_ocol)
-                        else:
-                            st.warning("⚠️ 手術条件を指定しましたが手術データが読み込まれていません。手術フィルターは無効です。")
-
-                    from geocoder import load_all_hospital_coords as _dist_lac
-                    _dist_all_coords = _dist_lac(
-                        db_path=str(DB_PATH) if DB_PATH.exists() else None,
-                        parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
-                    )
-
-                    def _dist_lookup(name):
-                        return _dist_all_coords.get(name) or _dist_all_coords.get(_normalize_name(name))
-
-                    _dist_names = _dist_df_base["医療機関名"].tolist()
-                    _dist_known = [(n, _dist_lookup(n)) for n in _dist_names if _dist_lookup(n)]
-                    _dist_max_sec = _dist_max * 60
-
-                    if not _dist_known:
-                        st.warning("座標データが取得できる病院がありません。")
+                                    pd.to_numeric(_dist_df_base[_ocol], errors="coerce").fillna(0) >= 1]
+                                _dist_auto_surg_cols.append(_ocol)
                     else:
-                        _dist_dests = [coords for _, coords in _dist_known]
-                        if "車" in _dist_mode:
-                            with st.spinner("OSRM で所要時間を計算中..."):
-                                _dist_durs = _dist_osrm(_origin[0], _origin[1], _dist_dests)
-                            _transit_note = False
-                        else:
-                            _dist_durs = [
-                                _dist_hkm(_origin[0], _origin[1], lat, lon) / 25.0 * 3600
-                                for lat, lon in _dist_dests
-                            ]
-                            _transit_note = True
+                        st.warning("⚠️ 手術条件を指定しましたが手術データが読み込まれていません。手術フィルターは無効です。")
 
-                        _dist_rows = []
-                        for (name, coords), dur in zip(_dist_known, _dist_durs):
-                            km = _dist_hkm(_origin[0], _origin[1], *coords)
-                            mins = round(dur / 60, 1) if dur is not None else None
-                            if mins is not None and dur <= _dist_max_sec:
-                                _dist_rows.append({"医療機関名": name, "直線距離(km)": round(km, 1), "所要時間(分)": mins})
+                from geocoder import load_all_hospital_coords as _dist_lac
+                _dist_all_coords = _dist_lac(
+                    db_path=str(DB_PATH) if DB_PATH.exists() else None,
+                    parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
+                )
 
-                        if not _dist_rows:
-                            st.info(f"{_dist_max}分以内に見つかりません。上限時間を広げてみてください。")
-                        else:
-                            _dist_result = pd.DataFrame(_dist_rows).sort_values("所要時間(分)").reset_index(drop=True)
-                            _dist_extra_cols = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
-                            for _sel_label in st.session_state.get("_dist_result_cols", []):
-                                _sel_col = _dist_col_options.get(_sel_label)
-                                if _sel_col and _sel_col in _dist_df_base.columns:
-                                    _dist_extra_cols.append(_sel_col)
-                            for _asc in _dist_auto_surg_cols:
-                                if _asc not in _dist_extra_cols and _asc in _dist_df_base.columns:
-                                    _dist_extra_cols.append(_asc)
-                            _dist_result = _dist_result.merge(
-                                _dist_df_base[_dist_extra_cols].drop_duplicates("医療機関名"),
-                                on="医療機関名", how="left"
-                            )
-                            _dist_result.index += 1
+                def _dist_lookup(name):
+                    return _dist_all_coords.get(name) or _dist_all_coords.get(_normalize_name(name))
 
-                            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-                            st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
-                            st.markdown(_source_tag(_byosho_source(_dist_year)), unsafe_allow_html=True)
-                            if _transit_note:
-                                st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
-                            st.caption(f"**{len(_dist_result):,}病院** が {_dist_max}分以内 — 出発地: {_dist_addr}")
-                            _dist_col_cfg = {
-                                "直線距離(km)":         st.column_config.NumberColumn("直線距離",     format="%.1f km"),
-                                "所要時間(分)":         st.column_config.NumberColumn("所要時間",     format="%.1f 分"),
-                                "合計_許可病床数":       st.column_config.NumberColumn("許可病床数",   format="%,d 床"),
-                                "高度急性期_許可病床数": st.column_config.NumberColumn("高度急性期",   format="%,d 床"),
-                                "急性期_許可病床数":     st.column_config.NumberColumn("急性期",       format="%,d 床"),
-                                "回復期_許可病床数":     st.column_config.NumberColumn("回復期",       format="%,d 床"),
-                                "慢性期_許可病床数":     st.column_config.NumberColumn("慢性期",       format="%,d 床"),
-                                "合計稼働率":            st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
-                                "救急搬送件数":          st.column_config.NumberColumn("救急搬送",     format="%,d 件"),
-                                "常勤医師数":            st.column_config.NumberColumn("常勤医師数",   format="%,d 人"),
-                                "CT台数":               st.column_config.NumberColumn("CT台数",       format="%,d 台"),
-                                "MRI台数":              st.column_config.NumberColumn("MRI台数",      format="%,d 台"),
-                                "手術総数":              st.column_config.NumberColumn("手術総数",     format="%,d 件"),
-                                "全身麻酔手術数":        st.column_config.NumberColumn("全身麻酔手術", format="%,d 件"),
-                            }
-                            for _asc in _dist_auto_surg_cols:
-                                if _asc.startswith("手術_"):
-                                    _dist_col_cfg[_asc] = st.column_config.NumberColumn(
-                                        _asc.replace("手術_", ""), format="%,d 件")
-                            st.dataframe(_dist_result, use_container_width=True, column_config=_dist_col_cfg)
+                _dist_names = _dist_df_base["医療機関名"].tolist()
+                _dist_known = [(n, _dist_lookup(n)) for n in _dist_names if _dist_lookup(n)]
+                _dist_max_sec = _dist_max * 60
 
-                            _dist_csv_df = _dist_result.copy()
-                            for _c in _dist_auto_surg_cols:
-                                if _c in _dist_csv_df.columns:
-                                    _v = pd.to_numeric(_dist_csv_df[_c], errors="coerce").fillna(0)
-                                    _dist_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else int(x))
-                            st.download_button(
-                                "📥 CSV ダウンロード",
-                                _dist_csv_df.to_csv(index=False).encode("utf-8-sig"),
-                                file_name=f"distance_search_{_dist_year}.csv",
-                                mime="text/csv",
-                                key="dist_csv_dl",
-                            )
+                if not _dist_known:
+                    st.warning("座標データが取得できる病院がありません。")
+                else:
+                    _dist_dests = [coords for _, coords in _dist_known]
+                    if "車" in _dist_mode:
+                        with st.spinner("OSRM で所要時間を計算中..."):
+                            _dist_durs = _dist_osrm(_origin[0], _origin[1], _dist_dests)
+                        _transit_note = False
+                    else:
+                        _dist_durs = [
+                            _dist_hkm(_origin[0], _origin[1], lat, lon) / 25.0 * 3600
+                            for lat, lon in _dist_dests
+                        ]
+                        _transit_note = True
 
-                            st.divider()
-                            st.markdown("### 🏥 病院を選んで詳細を見る")
-                            _dist_nav_cols = st.columns(3)
-                            for _di, _dname in enumerate(_dist_result["医療機関名"].tolist()[:30]):
-                                with _dist_nav_cols[_di % 3]:
-                                    if st.button(f"🏥 {_dname}", key=f"_dist_nav_{_di}", use_container_width=True):
-                                        _drow = _dist_df_base[_dist_df_base["医療機関名"] == _dname]
-                                        if not _drow.empty:
-                                            _dr = _drow.iloc[0]
-                                            st.session_state["_nav_jump"] = {
-                                                "year": int(_dr["報告年度"]),
-                                                "pref": str(_dr["都道府県名"]),
-                                                "region": str(_dr["二次医療圏名"]),
-                                                "hospital": _dname,
-                                            }
-                                            st.rerun()
+                    _dist_rows = []
+                    for (name, coords), dur in zip(_dist_known, _dist_durs):
+                        km = _dist_hkm(_origin[0], _origin[1], *coords)
+                        mins = round(dur / 60, 1) if dur is not None else None
+                        if mins is not None and dur <= _dist_max_sec:
+                            _dist_rows.append({"医療機関名": name, "直線距離(km)": round(km, 1), "所要時間(分)": mins})
 
-    with _dist_outer_tab2:
-        _render_dpc_distance_tab()
+                    if not _dist_rows:
+                        st.info(f"{_dist_max}分以内に見つかりません。上限時間を広げてみてください。")
+                    else:
+                        _dist_result = pd.DataFrame(_dist_rows).sort_values("所要時間(分)").reset_index(drop=True)
+                        _dist_extra_cols = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
+                        for _sel_label in st.session_state.get("_dist_result_cols", []):
+                            _sel_col = _dist_col_options.get(_sel_label)
+                            if _sel_col and _sel_col in _dist_df_base.columns:
+                                _dist_extra_cols.append(_sel_col)
+                        for _asc in _dist_auto_surg_cols:
+                            if _asc not in _dist_extra_cols and _asc in _dist_df_base.columns:
+                                _dist_extra_cols.append(_asc)
+                        _dist_result = _dist_result.merge(
+                            _dist_df_base[_dist_extra_cols].drop_duplicates("医療機関名"),
+                            on="医療機関名", how="left"
+                        )
+                        _dist_result.index += 1
+
+                        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                        st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
+                        st.markdown(_source_tag(_byosho_source(_dist_year)), unsafe_allow_html=True)
+                        if _transit_note:
+                            st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
+                        st.caption(f"**{len(_dist_result):,}病院** が {_dist_max}分以内 — 出発地: {_dist_addr}")
+                        _dist_col_cfg = {
+                            "直線距離(km)":         st.column_config.NumberColumn("直線距離",     format="%.1f km"),
+                            "所要時間(分)":         st.column_config.NumberColumn("所要時間",     format="%.1f 分"),
+                            "合計_許可病床数":       st.column_config.NumberColumn("許可病床数",   format="%,d 床"),
+                            "高度急性期_許可病床数": st.column_config.NumberColumn("高度急性期",   format="%,d 床"),
+                            "急性期_許可病床数":     st.column_config.NumberColumn("急性期",       format="%,d 床"),
+                            "回復期_許可病床数":     st.column_config.NumberColumn("回復期",       format="%,d 床"),
+                            "慢性期_許可病床数":     st.column_config.NumberColumn("慢性期",       format="%,d 床"),
+                            "合計稼働率":            st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
+                            "救急搬送件数":          st.column_config.NumberColumn("救急搬送",     format="%,d 件"),
+                            "常勤医師数":            st.column_config.NumberColumn("常勤医師数",   format="%,d 人"),
+                            "CT台数":               st.column_config.NumberColumn("CT台数",       format="%,d 台"),
+                            "MRI台数":              st.column_config.NumberColumn("MRI台数",      format="%,d 台"),
+                            "手術総数":              st.column_config.NumberColumn("手術総数",     format="%,d 件"),
+                            "全身麻酔手術数":        st.column_config.NumberColumn("全身麻酔手術", format="%,d 件"),
+                        }
+                        for _asc in _dist_auto_surg_cols:
+                            if _asc.startswith("手術_"):
+                                _dist_col_cfg[_asc] = st.column_config.NumberColumn(
+                                    _asc.replace("手術_", ""), format="%,d 件")
+                        st.dataframe(_dist_result, use_container_width=True, column_config=_dist_col_cfg)
+
+                        _dist_csv_df = _dist_result.copy()
+                        for _c in _dist_auto_surg_cols:
+                            if _c in _dist_csv_df.columns:
+                                _v = pd.to_numeric(_dist_csv_df[_c], errors="coerce").fillna(0)
+                                _dist_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else int(x))
+                        st.download_button(
+                            "📥 CSV ダウンロード",
+                            _dist_csv_df.to_csv(index=False).encode("utf-8-sig"),
+                            file_name=f"distance_search_{_dist_year}.csv",
+                            mime="text/csv",
+                            key="dist_csv_dl",
+                        )
+
+                        st.divider()
+                        st.markdown("### 🏥 病院を選んで詳細を見る")
+                        _dist_nav_cols = st.columns(3)
+                        for _di, _dname in enumerate(_dist_result["医療機関名"].tolist()[:30]):
+                            with _dist_nav_cols[_di % 3]:
+                                if st.button(f"🏥 {_dname}", key=f"_dist_nav_{_di}", use_container_width=True):
+                                    _drow = _dist_df_base[_dist_df_base["医療機関名"] == _dname]
+                                    if not _drow.empty:
+                                        _dr = _drow.iloc[0]
+                                        st.session_state["_nav_jump"] = {
+                                            "year": int(_dr["報告年度"]),
+                                            "pref": str(_dr["都道府県名"]),
+                                            "region": str(_dr["二次医療圏名"]),
+                                            "hospital": _dname,
+                                        }
+                                        st.rerun()
+            else:
+                _run_dpc_distance_search(_origin, _dist_addr, _dist_max, _dist_mode, _dpc_sel)
 
     _render_footer()
     st.stop()
@@ -2859,8 +2853,9 @@ if st.session_state.get("_view_mode") == "search":
     # 施設基準届出）が同じ「フォルダ型タブ」の見た目だと、2段構造だと気づけない
     # （ユーザーから実際に指摘された）。外側だけ丸いピル型ボタンにして、
     # 「検索対象そのものを切り替える」操作だと一目で分かるようにする
-    # （CSSは `_render_outer_switch_css()` に共通化、「距離・所要時間で探す」
-    # 画面でも同じ見た目のタブ切り替えを使う）。
+    # （CSSは `_render_outer_switch_css()` に切り出し。「距離・所要時間で探す」
+    # 画面は出発地・所要時間が病床機能報告／DPC共通のため、この外側タブ方式
+    # ではなく「詳細条件を追加」内のラジオボタンで切り替える別方式にした）。
     _render_outer_switch_css("s_outer_switch")
     with st.container(key="s_outer_switch"):
         _outer_tab1, _outer_tab2 = st.tabs(
