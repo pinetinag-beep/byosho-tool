@@ -198,12 +198,6 @@ def _render_header():
                 if _pref:     _parts.append(f"<span style='color:#6b7280;'>{_pref}</span>")
                 if _region:   _parts.append(f"<span style='color:#6b7280;'>{_region}</span>")
                 if _hospital: _parts.append(f"<strong style='color:#111827;'>{_hospital}</strong>")
-            elif mode == "region":
-                _rg_pref   = st.session_state.get("_rg_pref", "")
-                _rg_region = st.session_state.get("_rg_region", "")
-                if _rg_pref:   _parts.append(f"<span style='color:#6b7280;'>{_rg_pref}</span>")
-                if _rg_region: _parts.append(f"<span style='color:#6b7280;'>{_rg_region}</span>")
-                _parts.append("<span style='color:#111827;font-weight:600;'>地域から選ぶ</span>")
             elif mode == "map":
                 _ms_pref = st.session_state.get("_ms_pref", "")
                 if _ms_pref: _parts.append(f"<span style='color:#6b7280;'>{_ms_pref}</span>")
@@ -1283,7 +1277,7 @@ if _qp_hosp:
 _qp_go = st.query_params.get("go")
 if _qp_go:
     _GO_MODES = {
-        "name_search", "region", "map", "distance", "search",
+        "name_search", "map", "distance", "search",
         "dpc_search", "clinic_search", "region_vision",
     }
     if _qp_go in _GO_MODES:
@@ -1392,17 +1386,16 @@ if st.session_state.get("_view_mode") == "home":
         )
 
     # グループ1: 特定の病院を調べる ──────────────────────────
-    _landing_group_header("特定の病院を調べる", "病院名・地域・地図から、個別の病院ページを開きます")
-    _mc1, _mc2, _mc3 = st.columns(3, gap="medium")
+    # 「地域から選ぶ」は2026年8月に廃止（都道府県・二次医療圏で絞り込んで一覧を
+    # 見る、という同じ仕事は「地図で探す」と「条件で病院を検索」（エリア指定のみ
+    # で全国対象を絞る使い方）でカバーできるため）。
+    _landing_group_header("特定の病院を調べる", "病院名・地図から、個別の病院ページを開きます")
+    _mc1, _mc2 = st.columns(2, gap="medium")
     with _mc1:
         st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
             "病院名の一部を入力して<br>候補をリストアップします",
             go="name_search"), unsafe_allow_html=True)
     with _mc2:
-        st.markdown(_method_card(_ICON_REGION, "地域から選ぶ",
-            "都道府県・二次医療圏・病院名を<br>選択して詳細を確認します",
-            go="region"), unsafe_allow_html=True)
-    with _mc3:
         st.markdown(_method_card(_ICON_MAP, "地図で探す",
             "都道府県・二次医療圏を選択し<br>病院の分布を地図で確認します",
             go="map"), unsafe_allow_html=True)
@@ -1522,102 +1515,6 @@ if st.session_state.get("_view_mode") == "name_search":
                         st.rerun()
             if len(_ns_hits) > _NS_PAGE:
                 st.caption(f"… 他 {len(_ns_hits)-_NS_PAGE:,}件（キーワードを絞り込んでください）")
-
-    _render_footer()
-    st.stop()
-
-
-# ══════════════════════════════════════════════════════════
-# 地域から選ぶモード
-# ══════════════════════════════════════════════════════════
-
-if st.session_state.get("_view_mode") == "region":
-
-    st.markdown("## 地域から病院を選ぶ")
-
-    with st.container(border=True, key="rg_filter_box"):
-        st.markdown(
-            "<div style='font-size:0.78rem;font-weight:700;color:#0B6653;"
-            "letter-spacing:.03em;margin-bottom:10px;'>"
-            "①年度 → ②都道府県 → ③二次医療圏 の順に絞り込んでください</div>",
-            unsafe_allow_html=True,
-        )
-        _rg_c1, _rg_c2, _rg_c3 = st.columns(3)
-        with _rg_c1:
-            _rg_years = [int(y) for y in sorted(_df_all["報告年度"].unique(), reverse=True)]
-            if st.session_state.get("_sel_year") not in _rg_years:
-                st.session_state["_sel_year"] = _rg_years[0] if _rg_years else None
-            _rg_year  = st.selectbox("📅 年度", _rg_years, key="_sel_year")
-        with _rg_c2:
-            _rg_prefs = _sort_prefs(_df_all["都道府県名"].unique())
-            if st.session_state.get("_rg_pref") not in _rg_prefs:
-                st.session_state["_rg_pref"] = _rg_prefs[0] if _rg_prefs else None
-            _rg_pref = st.selectbox("🗾 都道府県", _rg_prefs, key="_rg_pref")
-        with _rg_c3:
-            _rg_regions = sorted(
-                r for r in _df_all[_df_all["都道府県名"] == _rg_pref]["二次医療圏名"].unique()
-                if r != "不明"
-            )
-            if st.session_state.get("_rg_region") not in _rg_regions:
-                st.session_state["_rg_region"] = _rg_regions[0] if _rg_regions else None
-            _rg_region = st.selectbox("🏘️ 二次医療圏", _rg_regions, key="_rg_region")
-
-    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-    st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
-
-    # 病院一覧
-    _rg_extra_cols = ["医療機関名", "合計_許可病床数"]
-    for _ec in ["合計稼働率", "救急搬送件数"]:
-        if _ec in _df_all.columns:
-            _rg_extra_cols.append(_ec)
-    _rg_list = (
-        _df_all[
-            (_df_all["報告年度"] == _rg_year) &
-            (_df_all["都道府県名"] == _rg_pref) &
-            (_df_all["二次医療圏名"] == _rg_region)
-        ][_rg_extra_cols]
-        .sort_values("合計_許可病床数", ascending=False)
-        .reset_index(drop=True)
-    )
-
-    if _rg_list.empty:
-        st.info("この年度・地域のデータがありません")
-    else:
-        st.markdown(_source_tag(_byosho_source(_rg_year)), unsafe_allow_html=True)
-        st.caption(f"{_rg_region}　**{len(_rg_list)}院** が該当")
-        _rg_cols = st.columns(3)
-        for _ri, _rrow in enumerate(_rg_list.itertuples(index=False)):
-            _rname = _rg_list.iloc[_ri]["医療機関名"]
-            _rbeds = _rg_list.iloc[_ri]["合計_許可病床数"]
-            with _rg_cols[_ri % 3]:
-                _stat_parts = [f"🛏 {int(_rbeds):,}床" if pd.notna(_rbeds) else "🛏 -床"]
-                if "合計稼働率" in _rg_list.columns:
-                    _rocc = _rg_list.iloc[_ri]["合計稼働率"]
-                    if _rocc is not None and not pd.isna(_rocc):
-                        _stat_parts.append(f"稼働{_rocc:.0f}%")
-                if "救急搬送件数" in _rg_list.columns:
-                    _remg = _rg_list.iloc[_ri]["救急搬送件数"]
-                    if _remg is not None and not pd.isna(_remg) and _remg > 0:
-                        _stat_parts.append("🚑救急")
-                st.caption("　".join(_stat_parts))
-                if st.button(
-                    f"🏥 {_rname}",
-                    key=f"_rg_nav_{_ri}",
-                    use_container_width=True,
-                ):
-                    _rg_row = _df_all[
-                        (_df_all["医療機関名"] == _rname) &
-                        (_df_all["報告年度"]  == _rg_year)
-                    ]
-                    if not _rg_row.empty:
-                        _rr = _rg_row.iloc[0]
-                        st.session_state["_nav_jump"] = {
-                            "year":     int(_rg_year),
-                            "pref":     str(_rr["都道府県名"]),
-                            "region":   str(_rr["二次医療圏名"]),
-                            "hospital": _rname,
-                        }
-                        st.rerun()
 
     _render_footer()
     st.stop()
