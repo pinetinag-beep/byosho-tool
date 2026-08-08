@@ -508,7 +508,8 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 .st-key-rv_filter_box,
 .st-key-cs_filter_box,
 .st-key-s_area_box,
-.st-key-s_scope_box {
+.st-key-s_scope_box,
+.st-key-ds_area_box {
     border-color: var(--brand-line) !important;
     background: var(--brand-tint) !important;
     border-radius: var(--radius-card) !important;
@@ -1144,6 +1145,43 @@ def _render_dpc_search_tab():
 
     _ds_hosp_info = _build_dpc_hosp_info()
 
+    # ════════════════════════════════════════════════
+    # エリアを絞り込む
+    # ════════════════════════════════════════════════
+    # 「条件で絞り込む（病床機能報告）」タブの同名セクションと見た目・挙動を
+    # 揃えてほしいという指摘（2026年8月）を受け、都道府県→二次医療圏の2段
+    # セレクトボックス＋緑の淡背景パネルという同じ形にした。以前は
+    # 「全国／都道府県／二次医療圏」のラジオボタンで選択肢を出し分ける方式
+    # だったが、他タブと操作感が異なる上、病院区分などDPC固有の条件と1行に
+    # 同居していて「エリアを絞り込む」以外の要素が混ざって見えていた。
+    st.markdown(
+        '<div class="section-header">エリアを絞り込む'
+        "<span style='font-weight:400;font-size:0.78rem;color:var(--ink-muted);margin-left:12px;'>"
+        "（すべて省略で全国対象）</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    with st.container(border=True, key="ds_area_box"):
+        _dsa, _dsb = st.columns(2)
+        with _dsa:
+            _ds_all_prefs = ["全都道府県"] + sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
+            if st.session_state.get("_dsc_pref") not in _ds_all_prefs:
+                st.session_state["_dsc_pref"] = "全都道府県"
+            _ds_pref_sel = st.selectbox("🗾 都道府県", _ds_all_prefs, key="_dsc_pref")
+        with _dsb:
+            if _ds_pref_sel != "全都道府県":
+                _ds_all_regions = ["全二次医療圏"] + sorted(
+                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
+                    if r
+                )
+                if len(_ds_all_regions) == 1:
+                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
+            else:
+                _ds_all_regions = ["全二次医療圏"]
+            if st.session_state.get("_dsc_region") not in _ds_all_regions:
+                st.session_state["_dsc_region"] = "全二次医療圏"
+            _ds_region_sel = st.selectbox("🏘️ 二次医療圏", _ds_all_regions, key="_dsc_region")
+
     # ── MDC・疾患名は選択のたびに連動させたいため、即座に反映されるようにする
     #    （フォーム内だと検索ボタンを押すまで反映されない）。
     _dsf1, _dsf2 = st.columns([2, 4])
@@ -1187,27 +1225,9 @@ def _render_dpc_search_tab():
             placeholder="疾患名を入力して選択",
         )
 
-    # ── 地域絞り込み（都道府県→二次医療圏）は選択のたびに連動させたいため、
-    #    即座に反映されるようにする（フォーム内だと都道府県を選んでも選択肢が
-    #    すぐ現れず、検索ボタンを押すまで反映されない）。
-    _dsf4, _dsf5 = st.columns([3, 5])
-    with _dsf4:
-        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
-        _ds_pref_sel = None
-        _ds_region_sel = None
-        if _ds_geo_scope in ("都道府県", "二次医療圏"):
-            _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
-            _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
-            if _ds_geo_scope == "二次医療圏":
-                _ds_all_regions = sorted(
-                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
-                    if r
-                )
-                if _ds_all_regions:
-                    _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
-                else:
-                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
-
+    # ── 病院区分（エリア絞り込みとは別の条件のため、上の緑ボックスには
+    #    含めない） ──
+    _dsf5, _dsf5b = st.columns([4, 4])
     with _dsf5:
         _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
         # 旧デフォルト（出来高除外）のセッションを更新
@@ -1219,6 +1239,7 @@ def _render_dpc_search_tab():
             default=_ds_all_kubun,
             key="_dsc_kubun",
         )
+    with _dsf5b:
         _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
 
     # 以前はここに st.form("dpc_search_form") ＋「検索する」ボタンがあったが、
@@ -1360,11 +1381,11 @@ def _render_dpc_search_tab():
             _ds_result["医療圏シェア"] = _ds_result.apply(_calc_share, axis=1)
 
         # 都道府県フィルター
-        if _ds_geo_scope in ("都道府県", "二次医療圏") and _ds_pref_sel:
+        if _ds_pref_sel != "全都道府県":
             _ds_result = _ds_result[_ds_result["都道府県名"] == _ds_pref_sel]
 
         # 二次医療圏フィルター
-        if _ds_geo_scope == "二次医療圏" and _ds_region_sel:
+        if _ds_region_sel != "全二次医療圏":
             _ds_result = _ds_result[_ds_result["二次医療圏名"] == _ds_region_sel]
 
         # 非公表除外（0件を除く。-1はマスク値なので残す）
