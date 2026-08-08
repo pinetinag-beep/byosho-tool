@@ -1147,7 +1147,7 @@ def _render_outer_switch_css(key: str):
         font-size: 1.0rem !important;
         font-weight: 700 !important;
         padding: 12px 26px !important;
-        border-radius: 999px !important;
+        border-radius: 999px 999px 0 0 !important;
         border: 1.5px solid var(--line) !important;
         background: var(--card) !important;
         color: var(--ink-muted) !important;
@@ -3808,6 +3808,17 @@ if st.session_state.get("_view_mode") == "search":
             "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%,d 台"),
             "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%,d 台"),
             "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%,d 台"),
+            "常勤医師数":       st.column_config.NumberColumn("常勤医師数",     format="%,d 人"),
+            "非常勤医師数":     st.column_config.NumberColumn("非常勤医師数",   format="%,d 人"),
+            "常勤看護師数":     st.column_config.NumberColumn("常勤看護師数",   format="%,d 人"),
+            "非常勤看護師数":   st.column_config.NumberColumn("非常勤看護師数", format="%,d 人"),
+            "常勤医師数/100床": st.column_config.NumberColumn("常勤医師数/100床",   format="%.1f 人"),
+            "常勤看護師数/100床": st.column_config.NumberColumn("常勤看護師数/100床", format="%.1f 人"),
+            "常勤理学療法士数": st.column_config.NumberColumn("常勤理学療法士数", format="%,d 人"),
+            "常勤作業療法士数": st.column_config.NumberColumn("常勤作業療法士数", format="%,d 人"),
+            "常勤言語聴覚士数": st.column_config.NumberColumn("常勤言語聴覚士数", format="%,d 人"),
+            "合計_在棟延べ数":  st.column_config.NumberColumn("在棟延べ数",     format="%,d 人日"),
+            "救急搬送件数":     st.column_config.NumberColumn("救急搬送件数",   format="%,d 件"),
         }
         for _c in _sshow:
             _col_cfg[_c] = st.column_config.TextColumn()
@@ -5138,6 +5149,7 @@ with tab1:
         st.plotly_chart(bed_type_occupancy_bar(hosp_row, hospital), use_container_width=True)
 
         st.markdown('<div class="section-header">病床種別詳細</div>', unsafe_allow_html=True)
+        st.markdown(_source_tag("病床機能報告"), unsafe_allow_html=True)
         def _safe_int(val):
             try:
                 return int(val or 0)
@@ -5188,6 +5200,7 @@ with tab1:
 
         if "救急搬送件数" in hosp_row and hosp_row["救急搬送件数"] > 0:
             st.markdown('<div class="section-header">診療実績</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag("病床機能報告"), unsafe_allow_html=True)
             r1, r2 = st.columns(2)
             r1.metric("救急搬送件数（年間）", f"{int(hosp_row['救急搬送件数']):,}件")
             if "手術件数" in hosp_row:
@@ -5227,6 +5240,7 @@ with tab1:
 
         if has_equip:
             st.markdown('<div class="section-header">医療設備（モダリティ）</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag("病床機能報告"), unsafe_allow_html=True)
 
             def _modality_card(title: str, accent: str, total: int, breakdown: dict) -> str:
                 items_html = "".join(
