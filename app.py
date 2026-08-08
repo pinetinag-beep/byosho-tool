@@ -2536,9 +2536,54 @@ if st.session_state.get("_view_mode") == "clinic_search":
 if st.session_state.get("_view_mode") == "search":
     st.markdown("## 条件で病院を検索")
 
-    _outer_tab1, _outer_tab2 = st.tabs(
-        ["🔍 条件で絞り込む（病床機能報告）", "🩺 DPCで探す"]
-    )
+    # 外側（検索対象の切り替え）と内側（詳細条件を選ぶ タブ内の 医療設備／手術／
+    # 施設基準届出）が同じ「フォルダ型タブ」の見た目だと、2段構造だと気づけない
+    # （ユーザーから実際に指摘された）。外側だけ丸いピル型ボタンにして、
+    # 「検索対象そのものを切り替える」操作だと一目で分かるようにする。
+    st.markdown("""
+    <style>
+    /* Streamlitのタブ内部DOMは以前 <button data-baseweb="tab"> だったが、
+       バージョンアップで <div data-testid="stTab" role="tab"> に変わった
+       （2026年8月、実DOM調査で判明。CSSを書いたら実際に何件マッチしているか
+       必ず数えること——というCLAUDE.mdの教訓通りの事故が再発した）。
+       内部実装のtestidより安定するARIAロール（role="tab"）を主に使う。
+       ただし `.st-key-s_outer_switch` の中には外側タブのパネルとして
+       内側タブ（医療設備／手術／施設基準届出）も子孫として含まれるため、
+       子孫セレクタ（半角スペース）だと内側タブまでピル型になってしまう
+       （実際に発生：5個すべてが緑ピルになった）。`>` の直接子チェーンで
+       外側の1階層だけに絞り込む。 */
+    .st-key-s_outer_switch > div[data-testid="stTabs"] > div > [role="tablist"] {
+        gap: 10px;
+        border-bottom: none !important;
+    }
+    .st-key-s_outer_switch > div[data-testid="stTabs"] > div > [role="tablist"] > [role="tab"] {
+        font-size: 1.0rem !important;
+        font-weight: 700 !important;
+        padding: 12px 26px !important;
+        border-radius: 999px !important;
+        border: 1.5px solid var(--line) !important;
+        background: var(--card) !important;
+        color: var(--ink-muted) !important;
+        margin-bottom: 0 !important;
+    }
+    .st-key-s_outer_switch > div[data-testid="stTabs"] > div > [role="tablist"] > [role="tab"][aria-selected="true"] {
+        background: var(--brand) !important;
+        color: #fff !important;
+        border-color: var(--brand) !important;
+    }
+    /* 内側タブのようなパネルの白箱・枠線は付けない（ピルボタンの直下に
+       そのまま次のセクションが続く方が「切り替えた」感が出るため） */
+    .st-key-s_outer_switch > div[data-testid="stTabs"] > div > [role="tabpanel"] {
+        border: none !important;
+        background: transparent !important;
+        padding: 4px 0 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    with st.container(key="s_outer_switch"):
+        _outer_tab1, _outer_tab2 = st.tabs(
+            ["🔍 条件で絞り込む（病床機能報告）", "🩺 DPCで探す"]
+        )
 
     with _outer_tab1:
         # ════════════════════════════════════════════════
@@ -2642,10 +2687,10 @@ if st.session_state.get("_view_mode") == "search":
            色は直書きせずアプリ共通トークン（app.py 冒頭の :root）を使う。
            以前は Tailwind 既定の寒色グレー（#e5e7eb 等）を直書きしていて、
            アプリの暖色系トークン（--line: #E8E4DB 等）と別系統に見えていた。 */
-        div[data-testid="stTabs"] > div:first-child {
+        div[data-testid="stTabs"] [role="tablist"] {
             gap: 4px;
         }
-        div[data-testid="stTabs"] button[data-baseweb="tab"] {
+        div[data-testid="stTabs"] [role="tab"] {
             font-size: 0.9rem !important;
             font-weight: 600 !important;
             padding: 8px 20px !important;
@@ -2656,7 +2701,7 @@ if st.session_state.get("_view_mode") == "search":
             color: var(--ink-muted) !important;
             margin-bottom: -1px;
         }
-        div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+        div[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
             background: var(--card) !important;
             color: var(--ink) !important;
             border-color: var(--line) !important;
@@ -2677,7 +2722,7 @@ if st.session_state.get("_view_mode") == "search":
            （0,2,2）に打ち消され効いていなかった。実測で375px幅では
            タブ行がはみ出していたため、同じ詳細度で復元する。 */
         @media (max-width: 768px) {
-            div[data-testid="stTabs"] button[data-baseweb="tab"] {
+            div[data-testid="stTabs"] [role="tab"] {
                 font-size: 0.79rem !important;
                 padding: 6px 10px !important;
             }
