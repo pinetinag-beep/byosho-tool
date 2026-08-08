@@ -2631,43 +2631,15 @@ if st.session_state.get("_view_mode") == "search":
                     st.session_state["s_region"] = "全二次医療圏"
                 s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
 
-        # st.form の既定の枠線は「病院名〜4タブ〜検索ボタン」という論理的に
+        # 病院名キーワード・出発地からの所要時間は、それぞれ専用画面
+        # （「病院名で探す」「距離所要時間で探す」）と機能が重複しており、
+        # ここに置くと画面がごちゃついて見える、との指摘を受けて削除した
+        # （2026年8月）。エリア絞り込みだけを残す。
+        #
+        # st.form の既定の枠線は「詳細条件〜検索ボタン」という論理的に
         # ひとまとまりでない範囲を囲ってしまい、グループの目印として誤解を招くため
         # border=False にする。囲いは意味のある単位ごとに下で明示的に付ける。
         with st.form("search_form", border=False):
-            # 病院名・所要時間もエリアと同じ「どの病院を対象にするか」の条件なので、
-            # 上のエリアボックスと同じ淡背景で続けて1グループに見せる（都道府県→
-            # 二次医療圏のカスケードを即時反映させるため、エリア側だけはフォームの
-            # 外に出す必要があり、囲いが2つに分かれるのはこの制約によるもの）。
-            with st.container(border=True, key="s_scope_box"):
-                s_kw = st.text_input(
-                    "病院名キーワード",
-                    placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
-                    key="s_kw",
-                )
-
-                # 所要時間（折りたたみ）
-                _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
-                _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
-                with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
-                    if not _tt_db_ok:
-                        st.caption("座標データ（locations_cache.parquet）が必要です")
-                    s_tt_addr = st.text_input(
-                        "出発地（住所・ランドマーク）",
-                        placeholder="例: 東京都新宿区西新宿2丁目8",
-                        key="s_tt_addr",
-                        disabled=not _tt_db_ok,
-                    )
-                    if s_tt_addr and _tt_db_ok:
-                        _tt1, _tt2 = st.columns(2)
-                        with _tt1:
-                            s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
-                        with _tt2:
-                            s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
-                    else:
-                        s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
-                        s_tt_max  = st.session_state.get("s_tt_max",  30)
-
             # ════════════════════════════════════════════════
             # 詳細条件を選ぶ
             # ════════════════════════════════════════════════
@@ -3036,9 +3008,6 @@ if st.session_state.get("_view_mode") == "search":
             s_df = s_df[s_df["都道府県名"] == s_pref]
         if s_region != "全二次医療圏":
             s_df = s_df[s_df["二次医療圏名"] == s_region]
-        if s_kw:
-            _norm_kw = _normalize_name(s_kw)
-            s_df = s_df[s_df["医療機関名"].apply(_normalize_name).str.contains(_norm_kw, na=False)]
 
         # 検索条件に使ったデータを結果表・CSVに列として出すための解決用（未使用なら None）。
         # 設備・手術は元から s_df に列があるが、施設基準届出・入院基本料区分・学会認定は
@@ -3359,62 +3328,6 @@ if st.session_state.get("_view_mode") == "search":
         if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
             s_df = s_df[pd.to_numeric(s_df["マンモグラフィ台数"], errors="coerce").fillna(0) > 0]
 
-        # ── 所要時間フィルター ──
-        _tt_applied = False
-        _tt_dist_col: dict[str, float] = {}   # {医療機関名: 分}
-        _tt_km_col:   dict[str, float] = {}   # {医療機関名: km}
-        if s_tt_addr and (DB_PATH.exists() or _LOCS_PARQUET.exists()):
-            _origin = _cached_geocode_address(s_tt_addr)
-            if _origin is None:
-                st.warning(f"⚠️ 出発地「{s_tt_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
-            else:
-                _all_coords = load_all_hospital_coords(
-                    db_path=str(DB_PATH) if DB_PATH.exists() else None,
-                    parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
-                )
-                _hosp_names = s_df["医療機関名"].tolist()
-                # 正規化名でも検索（施設名と医療機関名の表記ゆれ対策）
-                def _tt_lookup(name):
-                    return _all_coords.get(name) or _all_coords.get(_normalize_name(name))
-                _known_pairs = [(n, _tt_lookup(n)) for n in _hosp_names if _tt_lookup(n)]
-                _no_coord = [n for n in _hosp_names if not _tt_lookup(n)]
-                if _no_coord:
-                    st.caption(f"ℹ️ 座標未取得のため除外対象外: {len(_no_coord)}病院")
-
-                if _known_pairs:
-                    _dests = [coords for _, coords in _known_pairs]
-                    _max_sec = s_tt_max * 60
-
-                    if s_tt_mode == "車（OSRM）":
-                        with st.spinner("OSRM で所要時間を計算中..."):
-                            _durations = osrm_durations(_origin[0], _origin[1], _dests)
-                        _transit_note = False
-                    else:
-                        _speed_kmph = 25.0
-                        _durations = [
-                            haversine_km(_origin[0], _origin[1], lat, lon) / _speed_kmph * 3600
-                            for lat, lon in _dests
-                        ]
-                        _transit_note = True
-
-                    _keep_names: set[str] = set()
-                    for (name, (lat, lon)), dur in zip(_known_pairs, _durations):
-                        km = haversine_km(_origin[0], _origin[1], lat, lon)
-                        _tt_km_col[name] = round(km, 1)
-                        if dur is not None:
-                            mins = round(dur / 60, 1)
-                            _tt_dist_col[name] = mins
-                            if dur <= _max_sec:
-                                _keep_names.add(name)
-                        else:
-                            _tt_dist_col[name] = None
-
-                    s_df = s_df[s_df["医療機関名"].isin(_keep_names)]
-                    _tt_applied = True
-
-                    if _transit_note:
-                        st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
-
         # ── 表示列の決定 ──
         _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
         if "合計稼働率" in s_df.columns:
@@ -3554,12 +3467,6 @@ if st.session_state.get("_view_mode") == "search":
             .reset_index(drop=True)
         )
 
-        # 所要時間列を追加（フィルター適用時）
-        if _tt_applied:
-            result_s["直線距離(km)"] = result_s["医療機関名"].map(_tt_km_col)
-            result_s["所要時間(分)"] = result_s["医療機関名"].map(_tt_dist_col)
-            result_s = result_s.sort_values("所要時間(分)").reset_index(drop=True)
-
         # ── 結果表示 ──
         st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
         # ①②を外したのに「③」だけ残っていたため、他の検索ページと同じ
@@ -3631,9 +3538,6 @@ if st.session_state.get("_view_mode") == "search":
             _col_cfg[_c] = st.column_config.TextColumn(
                 _label, width="medium" if len(_label) > 10 else "small",
             )
-        if _tt_applied:
-            _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
-            _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
 
         # -1（マスク値）を表示用に "*" へ変換（手術列のみ）
         result_s_disp = result_s.copy()
