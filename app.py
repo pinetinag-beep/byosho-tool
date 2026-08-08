@@ -2379,8 +2379,8 @@ if st.session_state.get("_view_mode") == "search":
     }
     </style>
     """, unsafe_allow_html=True)
-        _tab_equip, _tab_surg, _tab_kijun, _tab_gakkai = st.tabs(
-            ["🏥 医療設備", "✂️ 手術", "📋 施設基準届出", "🎓 学会認定施設"]
+        _tab_equip, _tab_surg, _tab_kijun = st.tabs(
+            ["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"]
         )
 
         with _tab_equip:
@@ -2662,40 +2662,15 @@ if st.session_state.get("_view_mode") == "search":
                 _s_kijun_kw_text  = ""
                 _s_kubun_sel      = []
 
-        with _tab_gakkai:
-            _gk_df_filt = _load_gakkai_nintei()
-            if _gk_df_filt is None:
-                st.info("学会認定施設データがまだ登録されていません。")
-                _s_gakkai_sel: list[tuple[str, str]] = []
-            else:
-                # 学会数が今後大きく増える前提のため、学会ごとに行を分けず
-                # 「学会名 - 区分」を1つのラベルにまとめた単一のマルチセレクトに
-                # する（入力して絞り込み検索できるので、数十学会になっても
-                # 縦に場所を取らない）。
-                st.caption(
-                    "学会・区分で絞り込みます（複数選択でOR）。入力すると学会名や区分で絞り込み検索できます"
-                )
-                _gk_opts_df = (
-                    _gk_df_filt[["学会名", "区分"]]
-                    .drop_duplicates()
-                    .sort_values(["学会名", "区分"])
-                )
-                _gk_label_to_key = {
-                    f"{r['学会名']}　－　{r['区分']}": (r["学会名"], r["区分"])
-                    for _, r in _gk_opts_df.iterrows()
-                }
-                _gk_labels_sel = st.multiselect(
-                    "学会・区分",
-                    options=list(_gk_label_to_key.keys()),
-                    key="s_gakkai_combo",
-                    placeholder="指定なし（すべて含む）。例: 内科学会 と入力",
-                    label_visibility="collapsed",
-                )
-                _s_gakkai_sel = [_gk_label_to_key[lb] for lb in _gk_labels_sel]
-                st.caption(
-                    "出典：各学会公表の認定施設一覧。医療機関名で病床機能報告データと突合しているため、"
-                    "表記の違いにより一部の施設は反映されない場合があります。"
-                )
+        # 学会認定施設タブは2026年8月、有料化スコープの見直しでUIから非表示にした
+        # （突合の一致率が学会によって63.1〜97.6%とばらつき、フルカバーできて
+        # いる学会も無いため「自信を持って正確」と言える対象から一旦外した、
+        # というユーザー判断。詳細はCLAUDE.mdの「学会認定施設データ」セクション
+        # 参照）。データ（gakkai_nintei_cache.parquet）・突合ロジック
+        # （build_gakkai_nintei.py）・フィルタリング処理は残してあり、
+        # _s_gakkai_sel を常に空にするだけで機能自体は削除していない。
+        # 一致率が改善した学会から順次UIへ復帰させることを想定している。
+        _s_gakkai_sel: list[tuple[str, str]] = []
 
         st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
         _btn_col1, _btn_col2, _btn_col3 = st.columns([1, 1, 1])
