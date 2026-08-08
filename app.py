@@ -1794,13 +1794,8 @@ if st.session_state.get("_view_mode") == "home":
         )
 
     _ICON_SEARCH  = _svg('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>')
-    _ICON_REGION  = _svg('<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="16" x2="13" y2="16"/>')
-    _ICON_MAP     = _svg('<polygon points="1 6 8 2 16 6 23 2 23 18 16 22 8 18 1 22"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>')
     _ICON_CLOCK   = _svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')
     _ICON_SLIDERS = _svg('<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>')
-    _ICON_PULSE   = _svg('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>')
-    _ICON_STETHO  = _svg('<path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/>')
-    _ICON_CHART   = _svg('<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>')
 
     def _landing_group_header(title, desc):
         st.markdown(
@@ -1809,26 +1804,29 @@ if st.session_state.get("_view_mode") == "home":
             unsafe_allow_html=True,
         )
 
+    # ホームカードを3枚（病院名で探す・距離所要時間・設備手術条件）に絞り込み
+    # （2026年8月）。地図で探す（座標カバレッジ不十分と判断）・DPC疾患別
+    # 病院検索（既に「設備・手術条件で探す」内のタブとして残るため導線として
+    # は冗長）・診療所を探す（今回のアプリではスコープ外）・地域医療構想を
+    # 分析（もう少し機能を作り込んでから出したい）の4カードをホームから外した。
+    # 「地域から選ぶ」廃止時（2026年8月）とは異なり、これら4つは「恒久的に
+    # 重複しているから削除」ではなく「まだ表に出す段階ではない」という判断
+    # のため、画面本体（`_view_mode`）自体は削除せず残してある——`?go=map`
+    # 等への直接アクセスは今まで通り動作する。カードだけを外しているので、
+    # 準備が整った機能から順にカードを復活させれば再度導線を作れる。
     # グループ1: 特定の病院を調べる ──────────────────────────
-    # 「地域から選ぶ」は2026年8月に廃止（都道府県・二次医療圏で絞り込んで一覧を
-    # 見る、という同じ仕事は「地図で探す」と「条件で病院を検索」（エリア指定のみ
-    # で全国対象を絞る使い方）でカバーできるため）。
-    _landing_group_header("特定の病院を調べる", "病院名・地図から、個別の病院ページを開きます")
-    _mc1, _mc2 = st.columns(2, gap="medium")
+    _landing_group_header("特定の病院を調べる", "病院名を入力して、個別の病院ページを開きます")
+    _mc1, _ = st.columns(2, gap="medium")
     with _mc1:
         st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
             "病院名の一部を入力して<br>候補をリストアップします",
             go="name_search"), unsafe_allow_html=True)
-    with _mc2:
-        st.markdown(_method_card(_ICON_MAP, "地図で探す",
-            "都道府県・二次医療圏を選択し<br>病院の分布を地図で確認します",
-            go="map"), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # グループ2: 条件で絞り込む ──────────────────────────────
     _landing_group_header("条件で絞り込む", "距離・設備・疾患などの条件で、全国の病院を横断的に絞り込みます")
-    _mc4, _mc5, _mc6 = st.columns(3, gap="medium")
+    _mc4, _mc5 = st.columns(2, gap="medium")
     with _mc4:
         st.markdown(_method_card(_ICON_CLOCK, "距離・所要時間で探す",
             "住所やランドマークから<br>N分以内の病院を一覧表示します",
@@ -1837,30 +1835,6 @@ if st.session_state.get("_view_mode") == "home":
         st.markdown(_method_card(_ICON_SLIDERS, "設備・手術条件で探す",
             "CT/MRI台数・手術件数・<br>スタッフ数などで全国を絞り込み",
             go="search"), unsafe_allow_html=True)
-    with _mc6:
-        if DPC_PARQUET_SURG.exists():
-            st.markdown(_method_card(_ICON_PULSE, "DPC疾患別 病院検索",
-                "手術件数・在院日数を疾患ごとに<br>全国・都道府県・二次医療圏で比較",
-                go="dpc_search"), unsafe_allow_html=True)
-
-    if SHISETSU_KIJUN_PARQUET.exists():
-        st.markdown("<br>", unsafe_allow_html=True)
-        _landing_group_header("診療所を調べる", "病院とは別の統計制度（施設基準届出）から、有床・無床診療所を直接検索します")
-        _mc10, _mc11, _mc12 = st.columns(3, gap="medium")
-        with _mc10:
-            st.markdown(_method_card(_ICON_STETHO, "診療所を探す",
-                "有床・無床診療所を含め、<br>施設基準届出データから直接検索します",
-                go="clinic_search"), unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # グループ3: 地域全体を分析する ────────────────────────────
-    _landing_group_header("地域全体を分析する", "二次医療圏単位で、地域医療構想の視点から俯瞰します")
-    _mc7, _mc8, _mc9 = st.columns(3, gap="medium")
-    with _mc7:
-        st.markdown(_method_card(_ICON_CHART, "地域医療構想を分析",
-            "二次医療圏ごとの急性期拠点・<br>機能分担をスコアリングします",
-            go="region_vision"), unsafe_allow_html=True)
 
     _render_footer()
     st.stop()
