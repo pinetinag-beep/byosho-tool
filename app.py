@@ -3254,6 +3254,10 @@ if st.session_state.get("_view_mode") == "search":
     _col_cfg = {
         "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%,d 床"),
         "合計稼働率":       st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
+        "稼働率(%)":        st.column_config.NumberColumn(
+            "稼働率(%)", format="%.1f%%",
+            help="許可病床数は年度の7月1日時点、分子の在棟延べ数は前年度（前年4月〜当年3月）の実績です",
+        ),
         "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%,d 台"),
         "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%,d 台"),
         "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%,d 台"),
@@ -4832,11 +4836,17 @@ else:
     _doc_val, _doc_sub = "—", f"未報告 · {_nurse_txt}"
 
 kpi_card(m1, "許可病床数",  f"{total_kyoka:,}床",         kado_sub,                color="#6366f1")
-kpi_card(m2, "総稼働率",    f"{_occ_pct:.1f}%",           "",                      color=_occ_color)
+kpi_card(m2, "総稼働率",    f"{_occ_pct:.1f}%",           "在棟延べ数は前年度実績", color=_occ_color)
 kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_df)}院中", color="#8b5cf6")
 kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース",       color="#0ea5e9")
 kpi_card(m5, "常勤医師数",  _doc_val,                     _doc_sub,                color="#14b8a6")
 
+# 「総稼働率」だけは年度表記だけでは実態を示せない。厚労省の実施要綱（令和6年度
+# 病床・外来機能報告の実施について）で確認した通り、同じ「令和X年度」報告の中でも
+# 許可病床数は当該年7月1日時点、在棟患者延べ数（稼働率の分子）は前年度
+# （前年4月〜当年3月）の実績という異なる期間が混在するため。他の指標は年度表記の
+# 統一で足りる（許可病床数・地域内順位・地域シェア・常勤医師数はいずれも7月1日
+# 時点の値のみを使っており、期間の混在が無いため）。
 st.markdown(_source_tag(_byosho_source(year)), unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -6363,6 +6373,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         # ── 診療実績（手術・化学療法・放射線・全身麻酔・救急） ──
         if not _dp_proc.empty:
             st.markdown('<div class="section-header">診療実績（手術・化学療法・放射線療法・全身麻酔）</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag(_dpc_source(year)), unsafe_allow_html=True)
             _proc_row = _dp_proc.iloc[0]
             _proc_avg = {}
             if _dp_proc_all is not None:
@@ -6400,6 +6411,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         if not _dp_cases.empty:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown('<div class="section-header">MDC別患者件数</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag(_dpc_source(year)), unsafe_allow_html=True)
             _mdc_keys = [k for k in MDC_LABELS if k in _dp_cases.columns]
             if _mdc_keys:
                 _noop_row = _dp_cases[_dp_cases["手術有無"] == "無し"]
@@ -6486,6 +6498,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
         if not _dp_surg.empty:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown('<div class="section-header">疾患別手術件数（MDC別）</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag(_dpc_source(year)), unsafe_allow_html=True)
             _cnt_col  = next((c for c in _dp_surg.columns if "件数" in c and "総計" in c), None)
             _surg_col = next((c for c in _dp_surg.columns if "件数" in c and "手術" in c), None)
             _los_col  = next((c for c in _dp_surg.columns if "在院" in c and "総計" in c), None)
