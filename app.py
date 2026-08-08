@@ -1814,19 +1814,15 @@ if st.session_state.get("_view_mode") == "home":
     # のため、画面本体（`_view_mode`）自体は削除せず残してある——`?go=map`
     # 等への直接アクセスは今まで通り動作する。カードだけを外しているので、
     # 準備が整った機能から順にカードを復活させれば再度導線を作れる。
-    # グループ1: 特定の病院を調べる ──────────────────────────
-    _landing_group_header("特定の病院を調べる", "病院名を入力して、個別の病院ページを開きます")
-    _mc1, _ = st.columns(2, gap="medium")
+    # 3枚になったので2グループに分けず、1行3等分で並べる
+    # （「等間隔で並べて」との指摘。1枚だけのグループが半分の幅で
+    # 余白を持て余していた見た目を解消する）。
+    _landing_group_header("病院を探す", "病院名・距離・設備条件など、探し方に合わせて選べます")
+    _mc1, _mc4, _mc5 = st.columns(3, gap="medium")
     with _mc1:
         st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
             "病院名の一部を入力して<br>候補をリストアップします",
             go="name_search"), unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # グループ2: 条件で絞り込む ──────────────────────────────
-    _landing_group_header("条件で絞り込む", "距離・設備・疾患などの条件で、全国の病院を横断的に絞り込みます")
-    _mc4, _mc5 = st.columns(2, gap="medium")
     with _mc4:
         st.markdown(_method_card(_ICON_CLOCK, "距離・所要時間で探す",
             "住所やランドマークから<br>N分以内の病院を一覧表示します",
