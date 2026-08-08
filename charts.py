@@ -185,6 +185,11 @@ _COL_FMT = {
     "救急搬送件数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "CT台数":           lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "MRI台数":          lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
+    # 手術総数・全身麻酔手術数は様式2データ由来で、年間10件以下は -1（＊マスク値）
+    # として保持されている（data_processor.py参照）。0と区別して表示する。
+    "手術総数":         lambda s: pd.to_numeric(s, errors="coerce").fillna(0).apply(lambda x: "*" if x == -1 else f"{int(x):,}"),
+    "全身麻酔手術数":   lambda s: pd.to_numeric(s, errors="coerce").fillna(0).apply(lambda x: "*" if x == -1 else f"{int(x):,}"),
+    "内視鏡手術支援機器台数": lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
 }
 
 

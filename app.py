@@ -5611,22 +5611,59 @@ with tab2:
 with tab3:
     st.markdown(f"**{pref}　{region}　{year}年度**")
 
+    # 手術総数・全身麻酔手術数は病院一覧（df/region_df）には無く、様式2由来の
+    # surgery_df を別途マージする必要がある（距離検索・条件検索と同じパターン）。
+    # 様式2は報告年度より公開が遅れる（年度によっては全く存在しない）ため、
+    # 選択中の年度に該当行が0件の場合は列ごとマージしない——マージすると
+    # 全病院NaN→表示側で0件に見え、「実際は手術している病院が0件と誤解される」
+    # 事故が起きる（実例: 近森病院の個別ページで発覚し、同根の問題としてここも
+    # 修正した）。
+    _rank_df = region_df
+    _rank_surg_years: list[int] = []
+    _rank_surg_state = st.session_state.get("surgery_df")
+    if _rank_surg_state is not None and not _rank_surg_state.empty:
+        if "報告年度" in _rank_surg_state.columns:
+            _rank_surg_years = sorted(_rank_surg_state["報告年度"].dropna().unique().tolist())
+            _rsy = _rank_surg_state[_rank_surg_state["報告年度"] == year]
+        else:
+            _rsy = _rank_surg_state
+        _rank_surg_need = [c for c in ["手術総数", "全身麻酔手術数"] if c in _rsy.columns]
+        if _rank_surg_need and not _rsy.empty:
+            _rjk = ("医療機関コード"
+                    if "医療機関コード" in _rsy.columns and "医療機関コード" in _rank_df.columns
+                    else "医療機関名")
+            _rsy_m = _rsy[[_rjk] + _rank_surg_need].drop_duplicates(_rjk).copy()
+            _rsy_m[_rjk] = _rsy_m[_rjk].astype(str).str.strip()
+            _rank_df = _rank_df.merge(_rsy_m, on=_rjk, how="left", suffixes=("", "_sy"))
+
     _RANK_OPTIONS = {
         "許可病床数":  {"col": "合計_許可病床数",  "show": ["合計_許可病床数", "合計_稼働病床数", "地域シェア(%)", "合計稼働率"], "labels": ["許可病床数", "稼働病床数", "地域シェア", "稼働率"]},
         "稼働率":      {"col": "合計稼働率",        "show": ["合計稼働率", "合計_許可病床数"],                                   "labels": ["稼働率",   "許可病床数"]},
         "医師数":      {"col": "常勤医師数",         "show": ["常勤医師数", "医師数_per100床"],                                   "labels": ["常勤医師数", "医師数/100床"]},
         "看護師数":    {"col": "常勤看護師数",       "show": ["常勤看護師数", "看護師数_per100床"],                               "labels": ["常勤看護師", "看護師/100床"]},
         "救急搬送":    {"col": "救急搬送件数",       "show": ["救急搬送件数", "合計_許可病床数"],                                 "labels": ["救急搬送件数", "許可病床数"]},
+        "手術件数":    {"col": "手術総数",           "show": ["手術総数", "合計_許可病床数"],                                     "labels": ["手術総数", "許可病床数"]},
+        "全身麻酔手術件数": {"col": "全身麻酔手術数", "show": ["全身麻酔手術数", "合計_許可病床数"],                               "labels": ["全身麻酔手術件数", "許可病床数"]},
         "CT":          {"col": "CT台数",             "show": ["CT台数", "合計_許可病床数"],                                       "labels": ["CT台数", "許可病床数"]},
         "MRI":         {"col": "MRI台数",            "show": ["MRI台数", "合計_許可病床数"],                                      "labels": ["MRI台数", "許可病床数"]},
+        "ダビンチ":    {"col": "内視鏡手術支援機器台数", "show": ["内視鏡手術支援機器台数", "合計_許可病床数"],                     "labels": ["内視鏡手術支援ロボット", "許可病床数"]},
     }
 
     rank_sel = st.radio("ランキング項目", list(_RANK_OPTIONS.keys()), horizontal=True, key="_rank_sel")
     _opt = _RANK_OPTIONS[rank_sel]
-    st.plotly_chart(
-        ranking_table_fig(region_df, hospital, rank_col=_opt["col"], show_cols=_opt["show"], col_labels=_opt["labels"]),
-        use_container_width=True,
-    )
+    if _opt["col"] not in _rank_df.columns:
+        if _opt["col"] in ("手術総数", "全身麻酔手術数") and _rank_surg_years and year not in _rank_surg_years:
+            st.info(
+                f"{year}年度の手術実績（様式2）はまだ公開されていません"
+                f"（現在公開されているのは{min(_rank_surg_years)}〜{max(_rank_surg_years)}年度分）。"
+            )
+        else:
+            st.info("この項目のデータがありません。")
+    else:
+        st.plotly_chart(
+            ranking_table_fig(_rank_df, hospital, rank_col=_opt["col"], show_cols=_opt["show"], col_labels=_opt["labels"]),
+            use_container_width=True,
+        )
 
 
 # ── TAB 4: 経年トレンド ────────────────────────────────────
@@ -5886,6 +5923,7 @@ with tab6:
             st.info("選択した病院・年度の病棟データが見つかりません。データを再読み込みしてください。")
         else:
             st.markdown('<div class="section-header">入院基本料別病床数</div>', unsafe_allow_html=True)
+            st.markdown(_source_tag("病床機能報告"), unsafe_allow_html=True)
             bed_tbl = detail_bed_type_table(hosp_ward, hospital)
             if not bed_tbl.empty:
                 st.dataframe(bed_tbl, hide_index=True, use_container_width=True)
@@ -6006,7 +6044,23 @@ with tab6:
             hosp_surg = surgery_df[_match_this_hospital(surgery_df)]
 
         if hosp_surg.empty:
-            st.info("この病院の手術データが見つかりません（手術件数0または非公表）。")
+            # 「0件または非公表」という表現は、選択年度の様式2データ自体が
+            # まだ存在しない場合（実例: 近森病院2025年度で発覚。surgery_df の
+            # 最新報告年度が2024までしか無く、実際は6,816件の実績がある活発な
+            # 病院なのに「0件かもしれない」と誤解を招く表示になっていた）と、
+            # 個別病院がその年度で本当に非公表・該当なしの場合を区別できず
+            # 誤解を招くため、まず年度自体がデータに存在するか確認する。
+            _surg_years = (
+                sorted(surgery_df["報告年度"].dropna().unique().tolist())
+                if "報告年度" in surgery_df.columns else []
+            )
+            if _surg_years and year not in _surg_years:
+                st.info(
+                    f"{year}年度の手術実績（様式2）はまだ公開されていません"
+                    f"（現在公開されているのは{min(_surg_years)}〜{max(_surg_years)}年度分）。"
+                )
+            else:
+                st.info("この病院の手術データが見つかりません（手術件数0または非公表）。")
         else:
             surg_row = hosp_surg.iloc[0]
 
