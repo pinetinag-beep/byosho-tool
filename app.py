@@ -2631,12 +2631,10 @@ if st.session_state.get("_view_mode") == "search":
         # 「検索項目が分かりにくくなった」と指摘されて判明）。他の検索ページと同じ
         # `*_filter_box`（ブランド緑の淡背景パネル）で囲う。
         with st.container(border=True, key="s_area_box"):
-            _sa, _sb, _sc = st.columns([1, 2, 2])
-            with _sa:
-                s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-                if st.session_state.get("_sel_year") not in s_years_list:
-                    st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
-                s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
+            # 都道府県・二次医療圏は「エリア」だが、年度は病床機能報告データ固有の
+            # 条件（DPCタブには存在しない）なので同じ行に並べず下の段に分けた
+            # （ユーザー指摘：「これは病床機能報告だけだから、下の段に移動して」）。
+            _sb, _sc = st.columns(2)
             with _sb:
                 s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
                 s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
@@ -2651,6 +2649,12 @@ if st.session_state.get("_view_mode") == "search":
                 if st.session_state.get("s_region") not in s_all_regions:
                     st.session_state["s_region"] = "全二次医療圏"
                 s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
+            _sa, _ = st.columns([1, 3])
+            with _sa:
+                s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+                if st.session_state.get("_sel_year") not in s_years_list:
+                    st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+                s_year = st.selectbox("📅 年度（病床機能報告）", s_years_list, key="_sel_year")
 
         # 病院名キーワード・出発地からの所要時間は、それぞれ専用画面
         # （「病院名で探す」「距離所要時間で探す」）と機能が重複しており、
