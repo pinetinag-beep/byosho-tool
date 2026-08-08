@@ -2600,8 +2600,8 @@ if st.session_state.get("_view_mode") == "search":
         # 約束してしまっていた。番号を外し、アプリ共通の .section-header に揃えた。
         st.markdown(
             '<div class="section-header">エリアを絞り込む'
-            "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
-            "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
+            "<span style='font-weight:400;font-size:0.78rem;color:var(--ink-muted);margin-left:12px;'>"
+            "（すべて省略で全国対象）</span>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -2676,8 +2676,8 @@ if st.session_state.get("_view_mode") == "search":
             # 空白帯ができていた。見出しのマージンに任せて両方とも削除した。
             st.markdown(
                 '<div class="section-header">詳細条件を選ぶ'
-                "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
-                "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
+                "<span style='font-weight:400;font-size:0.78rem;color:var(--ink-muted);margin-left:12px;'>"
+                "（複数タブはAND条件）</span>"
                 "</div>",
                 unsafe_allow_html=True,
             )
