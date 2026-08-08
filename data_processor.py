@@ -728,16 +728,28 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 
 def occupancy_rate(df: pd.DataFrame, bed_type: str = "合計") -> pd.Series:
     """
-    病床稼働率を計算する。
+    病床稼働率を計算する。戻り値は%スケール（0〜100。異常値もそのまま返す）。
 
     計算式: 延べ入院患者数 ÷ (許可病床数 × 365日) × 100
     出典: 病床機能報告 様式1（厚生労働省）定義に準拠
 
     優先順位:
-      1. 在棟延べ数が存在する場合: 在棟延べ数 ÷ (許可病床数 × 365)
-      2. 在棟延べ数が欠損の場合（サンプルデータ等）: 稼働病床数 ÷ 許可病床数（後方互換）
+      1. 在棟延べ数が存在する場合: 在棟延べ数 ÷ (許可病床数 × 365) × 100
+      2. 在棟延べ数が欠損の場合（サンプルデータ等）: 稼働病床数 ÷ 許可病床数 × 100（後方互換）
 
     ゼロ除算対策: 許可病床数 = 0 の行は np.nan に変換し、結果を 0 で補完する。
+
+    100%超の値（許可病床数に対して過大な報告値等、原データ自体の矛盾）は
+    意図的に補正しない。病床機能報告は病院の自己申告であり、このツールは
+    独自解釈による指標の補正を行わない方針のため（詳細はCLAUDE.md参照）。
+    ただし1.の在棟延べ数ベースの計算のみそのまま出す。2.のフォールバック
+    （稼働病床数ベース）はデータ構造上100%を超えることが想定されない値の
+    ため、従来通り100で頭打ちにする。
+
+    以前はdocstringに「×100」と書きながら実装は0〜1の比率のまま返しており、
+    消費側で比率前提（charts.pyのように呼び出し側で×100する）と%前提
+    （呼び出し側でそのまま%として扱う）が混在していた。実際に混乱を招く前に
+    docstring通りの%スケールに実装を揃えた（2026年8月）。
     """
     kyoka_col  = f"{bed_type}_許可病床数"
     zaitou_col = f"{bed_type}_在棟延べ数"
@@ -750,11 +762,11 @@ def occupancy_rate(df: pd.DataFrame, bed_type: str = "合計") -> pd.Series:
         zaitou = pd.to_numeric(df[zaitou_col], errors="coerce").fillna(0)
         # 在棟延べ数が全て 0 の場合はデータ欠損とみなしてフォールバック
         if zaitou.sum() > 0:
-            return (zaitou / 365 / kyoka).fillna(0)
+            return (zaitou / 365 / kyoka * 100).fillna(0)
 
     if kado_col in df.columns:
         kado = pd.to_numeric(df[kado_col], errors="coerce").fillna(0)
-        return (kado / kyoka).fillna(0).clip(0, 1)
+        return (kado / kyoka * 100).fillna(0).clip(0, 100)
 
     return pd.Series(0.0, index=df.index)
 

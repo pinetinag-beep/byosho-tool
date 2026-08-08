@@ -175,7 +175,9 @@ _COL_FMT = {
     "合計_許可病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "合計_稼働病床数":  lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "地域シェア(%)":    lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str) + "%",
-    "合計稼働率":       lambda s: (pd.to_numeric(s, errors="coerce") * 100).round(1).astype(str) + "%",
+    # occupancy_rate() は2026年8月以降%スケール（0〜100）を返す。ここで再度
+    # ×100すると二重掛けになるため注意（以前はここが唯一の×100箇所だった）。
+    "合計稼働率":       lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str) + "%",
     "常勤医師数":       lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "常勤看護師数":     lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
     "医師数_per100床":  lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str),
