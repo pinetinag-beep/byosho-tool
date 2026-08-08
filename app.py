@@ -1123,6 +1123,409 @@ def _build_dpc_hosp_info() -> pd.DataFrame:
     return hosp_uniq[["告示番号", "病院区分", "都道府県名", "二次医療圏名"]].reset_index(drop=True)
 
 
+def _render_dpc_search_tab():
+    """DPC疾患別の検索UI・集計・結果表を描画する。
+
+    「条件で病院を検索」画面の「DPCで探す」タブと、独立画面
+    `_view_mode == "dpc_search"` の両方から呼ばれる共通ロジック（重複実装を
+    避けるため関数化）。呼び出し側が st.form の外（with tabN: がフォームの
+    外側で書かれている場合、そのタブの中身は自動的にフォーム外扱いになる）で
+    呼ぶ前提のため、ここで st.form は使わない（MDC→疾患名・都道府県→二次医療圏の
+    カスケードを即時反映させるため）。
+
+    データが無い場合やまだ何も検索していない場合は st.stop() せず return する
+    （呼び出し元が「条件で病院を検索」画面の場合、st.stop() すると他タブの
+    結果表示まで止まってしまうため）。
+    """
+    _ds_idx = _load_dpc_disease_index(_DPC_SURG_MTIME)
+    if _ds_idx is None:
+        st.warning("DPCデータが読み込まれていません")
+        return
+
+    _ds_hosp_info = _build_dpc_hosp_info()
+
+    # ── MDC・疾患名は選択のたびに連動させたいため、即座に反映されるようにする
+    #    （フォーム内だと検索ボタンを押すまで反映されない）。
+    _dsf1, _dsf2 = st.columns([2, 4])
+    with _dsf1:
+        _ds_mdc_present = set(_ds_idx["options"]["MDC"].dropna().unique())
+        _ds_mdc_opts = ["すべて"] + [
+            f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
+        ]
+        if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
+            st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
+        _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
+
+    with _dsf2:
+        # インデックスは「件数が0でない」行だけで作ってあるので、ここでは
+        # MDCで絞るだけでよい。
+        _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
+        _ds_opts = _ds_idx["options"]
+        _ds_disease_src = (
+            _ds_opts if _ds_mdc_key is None else _ds_opts[_ds_opts["MDC"] == _ds_mdc_key]
+        )
+        _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
+        # セッションステート検証（MDC変更時に古い疾患名が残らないように）
+        # 複数疾患を選んで合算比較できるようにしている（例: 胃がん＋大腸がん）。
+        # 旧実装は単一選択(selectbox)で session_state に文字列が入っていたため、
+        # 残っていた場合はリストに移行する。MDCを変えた際に選択肢から消えた疾患も
+        # ここで落とす。
+        _prev = st.session_state.get("_dsc_disease")
+        if isinstance(_prev, str):
+            _prev = [_prev]
+        if _prev is None:
+            # 初回は先頭の疾患を選んでおく（旧・単一選択時と同じく、開いた直後から
+            # 結果が出ている状態にするため）
+            st.session_state["_dsc_disease"] = _ds_diseases[:1]
+        else:
+            _kept = [d for d in _prev if d in _ds_diseases]
+            if _kept != list(_prev):
+                st.session_state["_dsc_disease"] = _kept
+        _ds_disease_sel = st.multiselect(
+            "疾患名（複数選択可・合算して比較）",
+            _ds_diseases, key="_dsc_disease",
+            placeholder="疾患名を入力して選択",
+        )
+
+    # ── 地域絞り込み（都道府県→二次医療圏）は選択のたびに連動させたいため、
+    #    即座に反映されるようにする（フォーム内だと都道府県を選んでも選択肢が
+    #    すぐ現れず、検索ボタンを押すまで反映されない）。
+    _dsf4, _dsf5 = st.columns([3, 5])
+    with _dsf4:
+        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
+        _ds_pref_sel = None
+        _ds_region_sel = None
+        if _ds_geo_scope in ("都道府県", "二次医療圏"):
+            _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
+            _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
+            if _ds_geo_scope == "二次医療圏":
+                _ds_all_regions = sorted(
+                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
+                    if r
+                )
+                if _ds_all_regions:
+                    _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
+                else:
+                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
+
+    with _dsf5:
+        _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
+        # 旧デフォルト（出来高除外）のセッションを更新
+        if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
+            st.session_state["_dsc_kubun"] = _ds_all_kubun
+        _ds_kubun_sel = st.multiselect(
+            "病院区分",
+            _ds_all_kubun,
+            default=_ds_all_kubun,
+            key="_dsc_kubun",
+        )
+        _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
+
+    # 以前はここに st.form("dpc_search_form") ＋「検索する」ボタンがあったが、
+    # 下の結果表示は _ds_disease_sel（疾患名の選択）だけで即座に更新される作りで、
+    # ボタンの戻り値（_ds_search_submitted）はどこでも参照されていなかった＝
+    # 実質何もしない飾りだった。フォームで囲む効果も無かったので撤去した
+    # （st.tabs() をフォームの中で呼んだ都合上、このタブの中でネストした
+    # st.form を使うと「Forms cannot be nested in other forms」で落ちる制約もある）。
+    # ── フィルター行1: ランキング指標 + 手術有無 ──
+    _dsf3, _dsf3b = st.columns([2, 2])
+    with _dsf3:
+        _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数", "医療圏シェア"], key="_dsc_metric")
+
+    with _dsf3b:
+        _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
+
+    st.markdown("---")
+
+    # ── 検索・集計 ──
+    # 列名の判定はparquetのスキーマ（インデックスが保持）で行い、データは読まない。
+    _ds_all_cols = _ds_idx["columns"]
+    _ds_has_surg_detail = "件数_手術有" in _ds_all_cols
+    _ds_cnt_col_base = next((c for c in _ds_all_cols if "件数" in c and "総計" in c), None)
+    _ds_los_col_base = next((c for c in _ds_all_cols if "在院" in c and "総計" in c), None)
+
+    # 件数_総計 = Excelコード99 = 手術なし件数（真の総計ではない）
+    # 件数_手術有 = Excelコード97 = 手術あり件数
+    # 真の総計 = 件数_総計(code99) + 件数_手術有(code97)
+    if _ds_surg_sel == "手術あり" and _ds_has_surg_detail:
+        _ds_cnt_col = "件数_手術有"
+        _ds_los_col = "在院日数_手術有" if "在院日数_手術有" in _ds_all_cols else _ds_los_col_base
+    elif _ds_surg_sel == "手術なし":
+        _ds_cnt_col = _ds_cnt_col_base  # 件数_総計 = code99 = 手術なし
+        _ds_los_col = _ds_los_col_base
+    else:  # すべて
+        _ds_cnt_col = "_ds_cnt_total"
+        _ds_los_col = _ds_los_col_base
+
+    if _ds_cnt_col_base and _ds_disease_sel:
+        # 選択した疾患（複数可）でフィルター（最新年度のみ）
+        _ds_filtered = _load_dpc_surgery_by_disease(
+            tuple(_ds_disease_sel), _DPC_SURG_MTIME
+        ).copy()
+        if "年度" in _ds_filtered.columns:
+            _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
+
+        # すべて: 真の総計 = 手術なし(code99) + 手術あり(code97)
+        if _ds_surg_sel == "すべて":
+            _ds_filtered["_ds_cnt_total"] = (
+                _ds_filtered["件数_総計"].fillna(0)
+                + (_ds_filtered["件数_手術有"].fillna(0) if _ds_has_surg_detail else 0)
+            )
+
+        # 手術有無データがない疾患（MDC06以外）の場合は警告
+        if _ds_surg_sel != "すべて" and _ds_has_surg_detail:
+            _surg_avail = _ds_filtered["件数_手術有"].notna().any() if "件数_手術有" in _ds_filtered.columns else False
+            if not _surg_avail:
+                st.info(
+                    "選択した疾患には手術有無別データが公表されていません。"
+                    "「すべて」に切り替えると患者総数で比較できます。"
+                )
+
+        # 告示番号単位で集計
+        _ds_agg: dict = {_ds_cnt_col: "sum", "施設名": "first"}
+        _ds_result = _ds_filtered.groupby("告示番号", as_index=False).agg(_ds_agg)
+
+        # 平均在院日数は疾患ごとに違うため、複数疾患を合算するときは件数で
+        # 重み付けした加重平均にする（"first" や単純平均だと症例数の少ない疾患に
+        # 引っ張られて実態とズレる。実測で1.8〜5.8日の差が出た）。
+        # 単一疾患ならその疾患の値と一致する。
+        # 件数が -1（＊マスク値）の行は重みにできないので除外する。
+        if _ds_los_col and _ds_los_col in _ds_filtered.columns:
+            _w = _ds_filtered[["告示番号", _ds_cnt_col, _ds_los_col]].copy()
+            _w["_c"] = pd.to_numeric(_w[_ds_cnt_col], errors="coerce")
+            _w["_l"] = pd.to_numeric(_w[_ds_los_col], errors="coerce")
+            _w = _w[(_w["_c"] > 0) & _w["_l"].notna()]
+            if not _w.empty:
+                _w["_p"] = _w["_c"] * _w["_l"]
+                _wa = _w.groupby("告示番号", as_index=False).agg(
+                    _psum=("_p", "sum"), _csum=("_c", "sum")
+                )
+                _wa[_ds_los_col] = (_wa["_psum"] / _wa["_csum"]).round(1)
+                _ds_result = _ds_result.merge(
+                    _wa[["告示番号", _ds_los_col]], on="告示番号", how="left"
+                )
+            else:
+                _ds_result[_ds_los_col] = np.nan
+
+        # 選択した疾患ごとの件数を列として持たせる（合算値だけだと内訳が見えないため。
+        # 「検索条件に使ったデータは結果表とCSVに列として出す」方針のDPC版）。
+        # 疾患を1つしか選んでいない場合は「患者数」列と同じ値になるので付けない。
+        _ds_by_disease_cols: list[str] = []
+        if len(_ds_disease_sel) > 1 and "疾患名" in _ds_filtered.columns:
+            _piv = (
+                _ds_filtered.pivot_table(
+                    index="告示番号", columns="疾患名", values=_ds_cnt_col,
+                    aggfunc="sum", observed=True,
+                )
+                .reset_index()
+            )
+            _ren = {}
+            for _dn in _ds_disease_sel:
+                if _dn in _piv.columns:
+                    _ren[_dn] = f"疾患_{_dn}"
+            _piv = _piv.rename(columns=_ren)
+            _ds_by_disease_cols = [c for c in _ren.values()]
+            if _ds_by_disease_cols:
+                _ds_result = _ds_result.merge(
+                    _piv[["告示番号"] + _ds_by_disease_cols], on="告示番号", how="left"
+                )
+
+        # 病院情報（病院区分・都道府県名）をJOIN
+        if not _ds_hosp_info.empty:
+            _ds_result = _ds_result.merge(_ds_hosp_info, on="告示番号", how="left")
+        else:
+            _ds_result["病院区分"] = ""
+            _ds_result["都道府県名"] = ""
+
+        # 病院区分フィルター
+        if _ds_kubun_sel:
+            _ds_result = _ds_result[_ds_result["病院区分"].isin(_ds_kubun_sel)]
+
+        # 医療圏シェア: 同一二次医療圏内でこの病院の件数が占める割合
+        # （地域絞り込みの前、病院区分フィルター後の母集団で計算する）
+        if "二次医療圏名" in _ds_result.columns:
+            _share_base = _ds_result[
+                (_ds_result["二次医療圏名"] != "") & (_ds_result[_ds_cnt_col] >= 0)
+            ]
+            _region_totals = _share_base.groupby("二次医療圏名")[_ds_cnt_col].sum()
+
+            def _calc_share(row, _totals=_region_totals):
+                reg = row.get("二次医療圏名", "")
+                cnt = row.get(_ds_cnt_col)
+                if not reg or pd.isna(cnt) or cnt < 0:
+                    return np.nan
+                tot = _totals.get(reg, 0)
+                return round(cnt / tot * 100, 1) if tot > 0 else np.nan
+
+            _ds_result["医療圏シェア"] = _ds_result.apply(_calc_share, axis=1)
+
+        # 都道府県フィルター
+        if _ds_geo_scope in ("都道府県", "二次医療圏") and _ds_pref_sel:
+            _ds_result = _ds_result[_ds_result["都道府県名"] == _ds_pref_sel]
+
+        # 二次医療圏フィルター
+        if _ds_geo_scope == "二次医療圏" and _ds_region_sel:
+            _ds_result = _ds_result[_ds_result["二次医療圏名"] == _ds_region_sel]
+
+        # 非公表除外（0件を除く。-1はマスク値なので残す）
+        if _ds_hide_nan:
+            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna() & (_ds_result[_ds_cnt_col] != 0)]
+
+        # 平均在院日数カラムを作成
+        if _ds_los_col and _ds_los_col in _ds_result.columns:
+            _ds_result = _ds_result.rename(columns={_ds_los_col: "平均在院日数"})
+
+        # ソート
+        _sort_col_map = {"患者総数": _ds_cnt_col, "平均在院日数": "平均在院日数", "医療圏シェア": "医療圏シェア"}
+        _sort_col = _sort_col_map.get(_ds_metric, _ds_cnt_col)
+        _asc      = _ds_metric == "平均在院日数"
+        if _sort_col in _ds_result.columns:
+            _ds_result = _ds_result.sort_values(_sort_col, ascending=_asc, na_position="last")
+
+        _ds_result = _ds_result.reset_index(drop=True)
+        _ds_result.index += 1
+
+        # カラム表示設定
+        _total_n = len(_ds_result)
+        # -1（マスク値）を除いた実件数合計
+        _total_patients = int(_ds_result[_ds_cnt_col].clip(lower=0).sum()) if _ds_cnt_col in _ds_result.columns else 0
+        _ds_year = _ds_idx["max_year"]
+        if _ds_year:
+            st.markdown(_source_tag(_dpc_source(_ds_year)), unsafe_allow_html=True)
+        st.caption(
+            f"**{_total_n:,}病院** が対象 / 疾患（{len(_ds_disease_sel)}件）: "
+            + "、".join(_ds_disease_sel)
+            + (f" / 合計 {_total_patients:,}例（＊除く）" if not _ds_hide_nan else "")
+            + ("　※複数疾患の合算です。平均在院日数は件数で重み付けした加重平均。"
+               if len(_ds_disease_sel) > 1 else "")
+        )
+
+        _ds_show_cols = ["施設名", "病院区分", "都道府県名", "二次医療圏名", _ds_cnt_col]
+        _ds_col_cfg: dict = {
+            "施設名":      st.column_config.TextColumn("病院名"),
+            "病院区分":    st.column_config.TextColumn("区分"),
+            "都道府県名":   st.column_config.TextColumn("都道府県"),
+            "二次医療圏名": st.column_config.TextColumn("二次医療圏"),
+            _ds_cnt_col:  st.column_config.TextColumn("患者数"),
+        }
+        if "平均在院日数" in _ds_result.columns:
+            _ds_show_cols.append("平均在院日数")
+            _ds_col_cfg["平均在院日数"] = st.column_config.TextColumn("平均在院日数")
+        # 疾患ごとの内訳列（合計 → 平均在院日数 → シェア の後ろに並べる）
+        for _c in _ds_by_disease_cols:
+            if _c in _ds_result.columns:
+                _ds_show_cols.append(_c)
+                # 疾患名は長いものが多く、見出しが切れるとどの列か分からなくなる
+                _lb = _c.split("_", 1)[1]
+                _ds_col_cfg[_c] = st.column_config.TextColumn(
+                    _lb, width="medium" if len(_lb) > 8 else "small",
+                )
+        if "医療圏シェア" in _ds_result.columns:
+            _ds_show_cols.append("医療圏シェア")
+            _ds_col_cfg["医療圏シェア"] = st.column_config.TextColumn("医療圏シェア")
+
+        # -1（マスク値）を "*" に変換した表示用コピー
+        _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
+        # 疾患ごとの内訳列も件数と同じ書式（-1は＊マスク値、未該当は空欄）にする
+        for _c in [_ds_cnt_col, "平均在院日数"] + _ds_by_disease_cols:
+            if _c in _ds_disp.columns:
+                _is_los = (_c == "平均在院日数")
+                _v = pd.to_numeric(_ds_disp[_c], errors="coerce")
+                _ds_disp[_c] = _v.apply(
+                    lambda x, _l=_is_los: "*" if x == -1 else (
+                        "" if pd.isna(x) else (f"{x:.1f}日" if _l else f"{int(x):,}例")
+                    )
+                )
+        if "医療圏シェア" in _ds_disp.columns:
+            _ds_disp["医療圏シェア"] = _ds_result["医療圏シェア"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+            st.caption("※医療圏シェアは同一二次医療圏内（非公表・*病院を除く）での件数比率の参考値です")
+
+        # 前回選択した病院のバナーをテーブルの上に表示（地図モードと同じパターン）
+        _dsc_last = st.session_state.get("_dsc_last_selected")
+        if _dsc_last:
+            _dsc_c1, _dsc_c2 = st.columns([4, 1])
+            with _dsc_c1:
+                st.info(f"🏥 **{_dsc_last}** を選択中")
+            with _dsc_c2:
+                if st.button("詳細を見る →", key="_dsc_nav_btn", type="primary", use_container_width=True):
+                    # 病床報告データから最新行を取得してナビゲート
+                    _df_base = st.session_state.df
+                    if _df_base is not None:
+                        _hr_rows = _df_base[_df_base["医療機関名"] == _dsc_last].sort_values("報告年度", ascending=False)
+                        if not _hr_rows.empty:
+                            _hr = _hr_rows.iloc[0]
+                            st.session_state["_nav_jump"] = {
+                                "year":     int(_hr["報告年度"]),
+                                "pref":     str(_hr["都道府県名"]),
+                                "region":   str(_hr["二次医療圏名"]),
+                                "hospital": _dsc_last,
+                            }
+                            st.session_state["_hospital_chosen"] = True
+                            st.session_state["_view_mode"] = "detail"
+                            st.session_state.pop("_dsc_last_selected", None)
+                            st.rerun()
+
+        st.caption("💡 行をクリックして病院を選択 → 「詳細を見る」で病院詳細に移動できます")
+        _ds_evt = st.dataframe(
+            _ds_disp,
+            use_container_width=True,
+            column_config=_ds_col_cfg,
+            height=520,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="_dsc_table",
+        )
+
+        _ds_csv_df = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
+        for _c in [_ds_cnt_col, "平均在院日数"] + _ds_by_disease_cols:
+            if _c in _ds_csv_df.columns:
+                _v = pd.to_numeric(_ds_csv_df[_c], errors="coerce")
+                _ds_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else ("" if pd.isna(x) else x))
+        st.download_button(
+            "📥 CSV ダウンロード",
+            _ds_csv_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name="dpc_search.csv",
+            mime="text/csv",
+            key="dsc_csv_dl",
+        )
+
+        # 行選択 → DPC施設名からbyosho医療機関名を解決してセッションステートに保存
+        _ds_sel_rows = _ds_evt.selection.rows if hasattr(_ds_evt, "selection") else []
+        if _ds_sel_rows:
+            _sel_row      = _ds_disp.iloc[_ds_sel_rows[0]]
+            _sel_dpc_name = _sel_row["施設名"]
+            _sel_pref     = _sel_row.get("都道府県名", "") if "都道府県名" in _sel_row.index else ""
+            _nav_name     = _sel_dpc_name
+            _df_base      = st.session_state.df
+            if _df_base is not None:
+                _pref_hosps = (
+                    _df_base[_df_base["都道府県名"] == _sel_pref]["医療機関名"]
+                    if _sel_pref else _df_base["医療機関名"]
+                )
+                def _norm(s): return s.replace('　', '').replace(' ', '')
+                _dpc_norm = _norm(_sel_dpc_name)
+                # 1. 完全一致
+                if _sel_dpc_name in _pref_hosps.values:
+                    _nav_name = _sel_dpc_name
+                else:
+                    # 2. 部分一致（元の表記）
+                    _nav_name = next(
+                        (_h for _h in _pref_hosps if _h in _sel_dpc_name or _sel_dpc_name in _h),
+                        None
+                    )
+                    if _nav_name is None:
+                        # 3. 正規化（全角スペース除去）後の一致
+                        _nav_name = next(
+                            (_h for _h in _pref_hosps if _norm(_h) in _dpc_norm or _dpc_norm in _norm(_h)),
+                            _sel_dpc_name
+                        )
+            st.session_state["_dsc_last_selected"] = _nav_name
+            st.rerun()
+
+    elif _ds_cnt_col_base and not _ds_disease_sel:
+        st.info("疾患名を1つ以上選んでください（複数選べば合算した件数で比較できます）。")
+
+
 @st.cache_data(ttl=3600 * 24 * 7, show_spinner=False)
 def _gen_rv_ai_comments(records_json: str, api_key: str) -> dict:
     """機能方向性の短評をClaude APIで並列生成（全セッション共有・7日キャッシュ）"""
@@ -2133,1079 +2536,1087 @@ if st.session_state.get("_view_mode") == "clinic_search":
 if st.session_state.get("_view_mode") == "search":
     st.markdown("## 条件で病院を検索")
 
-    # ════════════════════════════════════════════════
-    # エリアを絞り込む
-    # ════════════════════════════════════════════════
-    # 年度・都道府県・二次医療圏は「どこを探すか」という主条件であり、
-    # 都道府県を選んだら二次医療圏の選択肢がすぐに絞り込まれてほしいため、
-    # st.form() の外に置いて即座に反映されるようにする（フォーム内だと
-    # 検索ボタンを押すまで選択肢が更新されない）。
-    #
-    # 見出しは以前「① エリアを絞り込む」という番号付きの色付きボックスだったが、
-    # エリアと絞り込み条件はどちらも省略可で相互依存もなく（実際この見出しの
-    # 補足自身が「すべて省略で全国対象」と書いている）、番号が存在しない順序を
-    # 約束してしまっていた。番号を外し、アプリ共通の .section-header に揃えた。
-    st.markdown(
-        '<div class="section-header">エリアを絞り込む'
-        "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
-        "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
-        "</div>",
-        unsafe_allow_html=True,
+    _outer_tab1, _outer_tab2 = st.tabs(
+        ["🔍 条件で絞り込む（病床機能報告）", "🩺 DPCで探す"]
     )
-    # 入力欄は「囲い（common region）」でまとめないと、見出しの細い縦バーだけでは
-    # どこからどこまでが1つのグループか読み取れない（見出しの背景塗りを外した際に
-    # 「検索項目が分かりにくくなった」と指摘されて判明）。他の検索ページと同じ
-    # `*_filter_box`（ブランド緑の淡背景パネル）で囲う。
-    with st.container(border=True, key="s_area_box"):
-        _sa, _sb, _sc = st.columns([1, 2, 2])
-        with _sa:
-            s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
-            if st.session_state.get("_sel_year") not in s_years_list:
-                st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
-            s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
-        with _sb:
-            s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
-            s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
-        with _sc:
-            if s_pref != "全都道府県":
-                s_all_regions = ["全二次医療圏"] + sorted(
-                    r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
-                    if r != "不明"
-                )
-            else:
-                s_all_regions = ["全二次医療圏"]
-            if st.session_state.get("s_region") not in s_all_regions:
-                st.session_state["s_region"] = "全二次医療圏"
-            s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
 
-    # st.form の既定の枠線は「病院名〜4タブ〜検索ボタン」という論理的に
-    # ひとまとまりでない範囲を囲ってしまい、グループの目印として誤解を招くため
-    # border=False にする。囲いは意味のある単位ごとに下で明示的に付ける。
-    with st.form("search_form", border=False):
-        # 病院名・所要時間もエリアと同じ「どの病院を対象にするか」の条件なので、
-        # 上のエリアボックスと同じ淡背景で続けて1グループに見せる（都道府県→
-        # 二次医療圏のカスケードを即時反映させるため、エリア側だけはフォームの
-        # 外に出す必要があり、囲いが2つに分かれるのはこの制約によるもの）。
-        with st.container(border=True, key="s_scope_box"):
-            s_kw = st.text_input(
-                "病院名キーワード",
-                placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
-                key="s_kw",
-            )
-
-            # 所要時間（折りたたみ）
-            _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
-            _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
-            with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
-                if not _tt_db_ok:
-                    st.caption("座標データ（locations_cache.parquet）が必要です")
-                s_tt_addr = st.text_input(
-                    "出発地（住所・ランドマーク）",
-                    placeholder="例: 東京都新宿区西新宿2丁目8",
-                    key="s_tt_addr",
-                    disabled=not _tt_db_ok,
-                )
-                if s_tt_addr and _tt_db_ok:
-                    _tt1, _tt2 = st.columns(2)
-                    with _tt1:
-                        s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
-                    with _tt2:
-                        s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
-                else:
-                    s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
-                    s_tt_max  = st.session_state.get("s_tt_max",  30)
-
+    with _outer_tab1:
         # ════════════════════════════════════════════════
-        # 詳細条件を選ぶ
+        # エリアを絞り込む
         # ════════════════════════════════════════════════
-        # 以前はここに margin-top:32px の空div と st.divider() を重ねていたが、
-        # .section-header 自身が上マージン30pxを持つため、合計で100px近い
-        # 空白帯ができていた。見出しのマージンに任せて両方とも削除した。
+        # 年度・都道府県・二次医療圏は「どこを探すか」という主条件であり、
+        # 都道府県を選んだら二次医療圏の選択肢がすぐに絞り込まれてほしいため、
+        # st.form() の外に置いて即座に反映されるようにする（フォーム内だと
+        # 検索ボタンを押すまで選択肢が更新されない）。
+        #
+        # 見出しは以前「① エリアを絞り込む」という番号付きの色付きボックスだったが、
+        # エリアと絞り込み条件はどちらも省略可で相互依存もなく（実際この見出しの
+        # 補足自身が「すべて省略で全国対象」と書いている）、番号が存在しない順序を
+        # 約束してしまっていた。番号を外し、アプリ共通の .section-header に揃えた。
         st.markdown(
-            '<div class="section-header">詳細条件を選ぶ'
+            '<div class="section-header">エリアを絞り込む'
             "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
-            "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
+            "都道府県・二次医療圏・病院名はそれぞれ単独でも組み合わせても使えます（すべて省略で全国対象）</span>"
             "</div>",
             unsafe_allow_html=True,
         )
-        st.markdown("""
-    <style>
-    /* 検索条件タブをフォルダ型に。
-       色は直書きせずアプリ共通トークン（app.py 冒頭の :root）を使う。
-       以前は Tailwind 既定の寒色グレー（#e5e7eb 等）を直書きしていて、
-       アプリの暖色系トークン（--line: #E8E4DB 等）と別系統に見えていた。 */
-    div[data-testid="stTabs"] > div:first-child {
-        gap: 4px;
-    }
-    div[data-testid="stTabs"] button[data-baseweb="tab"] {
-        font-size: 0.9rem !important;
-        font-weight: 600 !important;
-        padding: 8px 20px !important;
-        border-radius: 8px 8px 0 0 !important;
-        border: 1.5px solid var(--line) !important;
-        border-bottom: none !important;
-        background: var(--paper) !important;
-        color: var(--ink-muted) !important;
-        margin-bottom: -1px;
-    }
-    div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
-        background: var(--card) !important;
-        color: var(--ink) !important;
-        border-color: var(--line) !important;
-        /* パネル上辺の罫線を選択中タブの下辺で覆い、タブとパネルを繋げる */
-        border-bottom: 2px solid var(--card) !important;
-    }
-    /* パネル本体。旧指定の div[data-testid="stTabPanel"] は Streamlit の
-       DOMに存在せず（実測0件）、枠線・白背景・角丸が一度も適用されて
-       いなかった。role属性で指定する。 */
-    div[data-testid="stTabs"] [role="tabpanel"] {
-        border: 1.5px solid var(--line);
-        border-radius: 0 8px 8px 8px;
-        padding: 16px !important;
-        background: var(--card);
-    }
-    /* グローバルCSSのモバイル縮小指定（@media max-width:768px の
-       `.stTabs [role="tab"]`＝詳細度0,2,0）は、上のセレクタ
-       （0,2,2）に打ち消され効いていなかった。実測で375px幅では
-       タブ行がはみ出していたため、同じ詳細度で復元する。 */
-    @media (max-width: 768px) {
-        div[data-testid="stTabs"] button[data-baseweb="tab"] {
-            font-size: 0.79rem !important;
-            padding: 6px 10px !important;
+        # 入力欄は「囲い（common region）」でまとめないと、見出しの細い縦バーだけでは
+        # どこからどこまでが1つのグループか読み取れない（見出しの背景塗りを外した際に
+        # 「検索項目が分かりにくくなった」と指摘されて判明）。他の検索ページと同じ
+        # `*_filter_box`（ブランド緑の淡背景パネル）で囲う。
+        with st.container(border=True, key="s_area_box"):
+            _sa, _sb, _sc = st.columns([1, 2, 2])
+            with _sa:
+                s_years_list = [int(y) for y in sorted(df["報告年度"].dropna().unique(), reverse=True)]
+                if st.session_state.get("_sel_year") not in s_years_list:
+                    st.session_state["_sel_year"] = s_years_list[0] if s_years_list else None
+                s_year = st.selectbox("📅 年度", s_years_list, key="_sel_year")
+            with _sb:
+                s_all_prefs = ["全都道府県"] + _sort_prefs(df["都道府県名"].unique())
+                s_pref = st.selectbox("🗾 都道府県", s_all_prefs, key="s_pref")
+            with _sc:
+                if s_pref != "全都道府県":
+                    s_all_regions = ["全二次医療圏"] + sorted(
+                        r for r in df[df["都道府県名"] == s_pref]["二次医療圏名"].unique()
+                        if r != "不明"
+                    )
+                else:
+                    s_all_regions = ["全二次医療圏"]
+                if st.session_state.get("s_region") not in s_all_regions:
+                    st.session_state["s_region"] = "全二次医療圏"
+                s_region = st.selectbox("🏘️ 二次医療圏", s_all_regions, key="s_region")
+
+        # st.form の既定の枠線は「病院名〜4タブ〜検索ボタン」という論理的に
+        # ひとまとまりでない範囲を囲ってしまい、グループの目印として誤解を招くため
+        # border=False にする。囲いは意味のある単位ごとに下で明示的に付ける。
+        with st.form("search_form", border=False):
+            # 病院名・所要時間もエリアと同じ「どの病院を対象にするか」の条件なので、
+            # 上のエリアボックスと同じ淡背景で続けて1グループに見せる（都道府県→
+            # 二次医療圏のカスケードを即時反映させるため、エリア側だけはフォームの
+            # 外に出す必要があり、囲いが2つに分かれるのはこの制約によるもの）。
+            with st.container(border=True, key="s_scope_box"):
+                s_kw = st.text_input(
+                    "病院名キーワード",
+                    placeholder="例: 大学病院、聖路加、赤十字　（部分一致）",
+                    key="s_kw",
+                )
+
+                # 所要時間（折りたたみ）
+                _tt_db_ok = DB_PATH.exists() or _LOCS_PARQUET.exists()
+                _tt_has_input = bool(st.session_state.get("s_tt_addr", ""))
+                with st.expander("📍 出発地からの所要時間で絞り込む", expanded=_tt_has_input):
+                    if not _tt_db_ok:
+                        st.caption("座標データ（locations_cache.parquet）が必要です")
+                    s_tt_addr = st.text_input(
+                        "出発地（住所・ランドマーク）",
+                        placeholder="例: 東京都新宿区西新宿2丁目8",
+                        key="s_tt_addr",
+                        disabled=not _tt_db_ok,
+                    )
+                    if s_tt_addr and _tt_db_ok:
+                        _tt1, _tt2 = st.columns(2)
+                        with _tt1:
+                            s_tt_mode = st.radio("移動手段", ["車（OSRM）", "公共交通（近似）"], horizontal=True, key="s_tt_mode")
+                        with _tt2:
+                            s_tt_max = st.slider("上限（分）", 15, 90, 30, step=15, key="s_tt_max")
+                    else:
+                        s_tt_mode = st.session_state.get("s_tt_mode", "車（OSRM）")
+                        s_tt_max  = st.session_state.get("s_tt_max",  30)
+
+            # ════════════════════════════════════════════════
+            # 詳細条件を選ぶ
+            # ════════════════════════════════════════════════
+            # 以前はここに margin-top:32px の空div と st.divider() を重ねていたが、
+            # .section-header 自身が上マージン30pxを持つため、合計で100px近い
+            # 空白帯ができていた。見出しのマージンに任せて両方とも削除した。
+            st.markdown(
+                '<div class="section-header">詳細条件を選ぶ'
+                "<span style='font-weight:400;font-size:0.8rem;color:var(--ink-muted);margin-left:12px;'>"
+                "タブを切り替えて条件を設定（複数タブの条件はAND）</span>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("""
+        <style>
+        /* 検索条件タブをフォルダ型に。
+           色は直書きせずアプリ共通トークン（app.py 冒頭の :root）を使う。
+           以前は Tailwind 既定の寒色グレー（#e5e7eb 等）を直書きしていて、
+           アプリの暖色系トークン（--line: #E8E4DB 等）と別系統に見えていた。 */
+        div[data-testid="stTabs"] > div:first-child {
+            gap: 4px;
         }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-        _tab_equip, _tab_surg, _tab_kijun = st.tabs(
-            ["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"]
-        )
-
-        with _tab_equip:
-            _eq1, _eq2, _eq3 = st.columns(3)
-            # CT / MRI は以前「指定なし・あり・なし・スペック別」の4択ラジオ＋
-            # スペック3チェックという構成だったが、st.form 内ではラジオの選択に
-            # 応じてチェックボックスを出し分けられない（検索ボタンを押すまで
-            # 反映されない）ため、常に3つ表示して「↑スペック別を選んだ場合のみ
-            # 有効」と注記する形になっていた。＝常時表示なのに条件付きで無効、
-            # という分かりにくい状態だった。
-            #
-            # 「スペック別」という選択肢自体をなくし、スペックを選ぶこと＝そのCTを
-            # 持つ、という意味に変えることで条件分岐を解消した（無効になる入力欄が
-            # ゼロになり、注記も不要になった）。
-            with _eq1:
-                st.markdown("**CT**")
-                _CT_RADIO = ["指定なし", "CTあり", "CTなし"]
-                if st.session_state.get("ct_filter") not in _CT_RADIO:
-                    st.session_state["ct_filter"] = "指定なし"   # 旧「スペック別」等からの移行
-                ct_filter = st.radio(
-                    "CT", _CT_RADIO, key="ct_filter",
-                    label_visibility="collapsed", horizontal=True,
-                )
-                s_ct_specs = st.multiselect(
-                    "スペック（いずれか1台以上）",
-                    ["64列以上", "16〜64列", "16列未満"],
-                    key="s_ct_specs", placeholder="指定なし",
-                )
-                st.markdown("**MRI**")
-                _MRI_RADIO = ["指定なし", "MRIあり", "MRIなし"]
-                if st.session_state.get("mri_filter") not in _MRI_RADIO:
-                    st.session_state["mri_filter"] = "指定なし"
-                mri_filter = st.radio(
-                    "MRI", _MRI_RADIO, key="mri_filter",
-                    label_visibility="collapsed", horizontal=True,
-                )
-                s_mri_specs = st.multiselect(
-                    "スペック（いずれか1台以上）",
-                    ["3T以上", "1.5〜3T", "1.5T未満"],
-                    key="s_mri_specs", placeholder="指定なし",
-                )
-            with _eq2:
-                st.markdown("**放射線治療**")
-                s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
-                s_has_cyberknife = st.checkbox("サイバーナイフあり",             key="s_has_cyberknife")
-                s_has_gamma      = st.checkbox("ガンマナイフあり",               key="s_has_gamma")
-                st.markdown("**核医学**")
-                s_has_pet  = st.checkbox("PET / PET-CTあり", key="s_has_pet")
-                s_has_spect = st.checkbox("SPECTあり",       key="s_has_spect")
-            with _eq3:
-                st.markdown("**手術・カテーテル**")
-                s_has_robot_eq = st.checkbox("手術支援ロボットあり",          key="s_has_robot_eq")
-                s_has_angio    = st.checkbox("アンギオ（血管連続撮影）あり",  key="s_has_angio")
-                st.markdown("**その他**")
-                s_has_mammo = st.checkbox("マンモグラフィあり", key="s_has_mammo")
-
-        with _tab_surg:
-            _sg1, _sg2 = st.columns([1, 1])
-            with _sg1:
-                s_surg_mode = st.radio(
-                    "集計対象", ["手術（全数）", "全身麻酔の手術"], key="s_surg_mode",
-                    help="・手術（全数）→ データ列: 手術_[臓器名]\n・全身麻酔の手術 → データ列: 全麻_[臓器名]",
-                )
-                s_surg_logic = st.radio(
-                    "複数選択の扱い", ["AND（すべて該当）", "OR（いずれか該当）"], key="s_surg_logic",
-                )
-                st.caption("術式（1件以上）")
-                s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
-                s_ck_fuku    = st.checkbox("腹腔鏡下手術",     key="s_ck_fuku")
-                s_ck_kyou    = st.checkbox("胸腔鏡下手術",     key="s_ck_kyou")
-            with _sg2:
-                st.caption("臓器別（1件以上）")
-                _oa, _ob = st.columns(2)
-                with _oa:
-                    s_ck_hifuka  = st.checkbox("皮膚・皮下組織",   key="s_ck_hifuka")
-                    s_ck_kinkot  = st.checkbox("筋骨格系・四肢",   key="s_ck_kinkot")
-                    s_ck_shinkei = st.checkbox("神経系・頭蓋",     key="s_ck_shinkei")
-                    s_ck_me      = st.checkbox("眼",               key="s_ck_me")
-                    s_ck_jibika  = st.checkbox("耳鼻咽喉",         key="s_ck_jibika")
-                    s_ck_ganmen  = st.checkbox("顔面・口腔・頸部", key="s_ck_ganmen")
-                with _ob:
-                    s_ck_kyobu   = st.checkbox("胸部",             key="s_ck_kyobu")
-                    s_ck_shin    = st.checkbox("心・脈管",          key="s_ck_shin")
-                    s_ck_fukubu  = st.checkbox("腹部",             key="s_ck_fukubu")
-                    s_ck_nyo     = st.checkbox("尿路系・副腎",     key="s_ck_nyo")
-                    s_ck_seiki   = st.checkbox("性器",             key="s_ck_seiki")
-                    s_ck_shika   = st.checkbox("歯科",             key="s_ck_shika")
-
-        with _tab_kijun:
-            _sk_df_filt = _load_shisetsu_kijun()
-            if _sk_df_filt is not None:
-                # カテゴリ別届出グループ定義
-                _SK_SEARCH_GROUPS = [
-                    ("入院体制・病棟", [
-                        ("一般病棟入院基本料",          "一般病棟入院基本料"),
-                        ("特定機能病院",                "特定機能病院入院基本料"),
-                        ("地域包括ケア病棟",            "地域包括ケア病棟入院料"),
-                        ("地域包括医療病棟",            "地域包括医療病棟入院料"),
-                        ("回復期リハビリ病棟",          "回復期リハビリテーション病棟入院料"),
-                        ("緩和ケア病棟",                "緩和ケア病棟入院料"),
-                        ("療養病棟",                    "療養病棟入院基本料"),
-                        ("障害者施設等病棟",            "障害者施設等入院基本料"),
-                        ("急性期充実体制加算",          "急性期充実体制加算"),
-                        ("総合入院体制加算",            "総合入院体制加算"),
-                        ("精神病棟",                    "精神病棟入院基本料"),
-                    ]),
-                    ("看護体制・人員", [
-                        ("医師事務作業補助体制加算",    "医師事務作業補助体制加算"),
-                        ("看護補助加算",                "看護補助加算"),
-                        ("急性期看護補助体制加算",      "急性期看護補助体制加算"),
-                        ("夜間急性期看護補助体制加算",  "夜間急性期看護補助体制加算"),
-                        ("地域医療体制確保加算",        "地域医療体制確保加算"),
-                        ("夜間看護体制加算",            "夜間看護体制加算"),
-                    ]),
-                    ("救急・集中治療", [
-                        ("救急医療管理加算",            "救急医療管理加算"),
-                        ("救命救急入院料",              "救命救急入院料"),
-                        ("超急性期脳卒中加算(tPA)",     "超急性期脳卒中加算"),
-                        ("ICU",                         "集中治療室管理料"),
-                        ("HCU",                         "ハイケアユニット入院医療管理料"),
-                        ("NICU",                        "新生児集中治療室管理料"),
-                        ("脳卒中ケアユニット",          "脳卒中ケアユニット入院医療管理料"),
-                    ]),
-                    ("手術・麻酔・カテーテル", [
-                        ("麻酔管理料(Ⅰ)",              "麻酔管理料（Ⅰ）"),
-                        ("ロボット手術",                "ロボット支援下内視鏡手術用支援機器加算"),
-                        ("心臓カテーテル",              "心臓カテーテル法による諸検査"),
-                        ("経皮的冠動脈形成術",          "経皮的冠動脈形成術"),
-                        ("人工心肺",                    "人工心肺"),
-                        ("大動脈バルーンパンピング法",  "大動脈バルーンパンピング法"),
-                        ("体外衝撃波腎・尿管結石破砕術", "体外衝撃波腎・尿管結石破砕術"),
-                        ("周術期薬学管理料",            "周術期薬学管理料"),
-                        ("輸血管理料",                  "輸血管理料"),
-                    ]),
-                    ("放射線治療・画像診断", [
-                        ("放射線治療（体外照射）",      "放射線治療（体外照射）"),
-                        ("粒子線治療",                  "粒子線治療"),
-                        ("外来放射線照射診療料",        "外来放射線照射診療料"),
-                        ("放射線治療専任加算",          "放射線治療専任加算"),
-                        ("画像診断管理加算",            "画像診断管理加算"),
-                    ]),
-                    ("リハビリ", [
-                        ("脳血管疾患等リハビリ(Ⅰ)",    "脳血管疾患等リハビリテーション料（Ⅰ）"),
-                        ("脳血管疾患等リハビリ(Ⅱ)",    "脳血管疾患等リハビリテーション料（Ⅱ）"),
-                        ("運動器リハビリ(Ⅰ)",          "運動器リハビリテーション料（Ⅰ）"),
-                        ("呼吸器リハビリ(Ⅰ)",          "呼吸器リハビリテーション料（Ⅰ）"),
-                        ("心大血管リハビリ(Ⅰ)",        "心大血管疾患リハビリテーション料（Ⅰ）"),
-                        ("がん患者リハビリ",            "がん患者リハビリテーション料"),
-                        ("廃用症候群リハビリ(Ⅰ)",      "廃用症候群リハビリテーション料（Ⅰ）"),
-                    ]),
-                    ("がん", [
-                        ("がん患者指導管理料",          "がん患者指導管理料"),
-                        ("外来化学療法加算",            "外来化学療法加算"),
-                        ("外来腫瘍化学療法診療料",      "外来腫瘍化学療法診療料"),
-                        ("がん治療連携指導料",          "がん治療連携指導料"),
-                        ("がんゲノムプロファイリング",  "がんゲノムプロファイリング評価提供料"),
-                        ("がん拠点病院加算",            "がん拠点病院加算"),
-                    ]),
-                    ("産科・周産期・小児", [
-                        ("ハイリスク分娩管理加算",      "ハイリスク分娩管理加算"),
-                        ("ハイリスク妊娠管理加算",      "ハイリスク妊娠管理加算"),
-                        ("総合周産期母子医療センター",  "総合周産期母子医療センター"),
-                        ("周産期母子医療センター",      "周産期母子医療センター"),
-                        ("小児入院医療管理料",          "小児入院医療管理料"),
-                        ("新生児入院医療管理加算",      "新生児入院医療管理加算"),
-                    ]),
-                    ("精神・認知症", [
-                        ("精神科救急入院料",            "精神科救急入院料"),
-                        ("精神科急性期治療病棟",        "精神科急性期治療病棟入院料"),
-                        ("精神科リエゾン",              "精神科リエゾンチーム加算"),
-                        ("認知症ケア加算",              "認知症ケア加算"),
-                        ("精神科訪問看護",              "精神科訪問看護・指導料"),
-                        ("依存症集団療法",              "依存症集団療法"),
-                        ("通院・在宅精神療法",          "通院・在宅精神療法"),
-                    ]),
-                    ("感染症・透析・内視鏡", [
-                        ("感染対策向上加算",            "感染対策向上加算"),
-                        ("抗菌薬適正使用支援加算",      "抗菌薬適正使用支援加算"),
-                        ("人工腎臓（透析）",            "人工腎臓"),
-                        ("腹膜透析",                    "腹膜透析"),
-                        ("内視鏡的粘膜下層剥離術",      "内視鏡的粘膜下層剥離術"),
-                        ("消化器内視鏡",                "消化器内視鏡"),
-                    ]),
-                    ("栄養・褥瘡・糖尿病", [
-                        ("栄養サポートチーム加算",      "栄養サポートチーム加算"),
-                        ("褥瘡ハイリスク患者ケア加算",  "褥瘡ハイリスク患者ケア加算"),
-                        ("糖尿病合併症管理料",          "糖尿病合併症管理料"),
-                        ("糖尿病透析予防指導管理料",    "糖尿病透析予防指導管理料"),
-                        ("後発医薬品使用体制加算",      "後発医薬品使用体制加算"),
-                    ]),
-                    ("在宅・外来・地域連携", [
-                        ("在宅療養後方支援病院",        "在宅療養後方支援病院"),
-                        ("地域包括診療料",              "地域包括診療料"),
-                        ("在宅患者訪問診療料",          "在宅患者訪問診療料"),
-                        ("地域連携診療計画加算",        "地域連携診療計画加算"),
-                        ("在宅医療DX情報活用加算",      "在宅医療ＤＸ情報活用加算"),
-                        ("外来・在宅ベースアップ評価料", "外来・在宅ベースアップ評価料"),
-                    ]),
-                    ("入院管理・安全・データ", [
-                        ("データ提出加算",              "データ提出加算"),
-                        ("薬剤管理指導料",              "薬剤管理指導料"),
-                        ("医療安全対策加算",            "医療安全対策加算"),
-                        ("入退院支援加算",              "入退院支援加算"),
-                        ("院内トリアージ実施料",        "院内トリアージ実施料"),
-                        ("患者サポート体制充実加算",    "患者サポート体制充実加算"),
-                        ("術後疼痛管理チーム加算",      "術後疼痛管理チーム加算"),
-                        ("医療ＤＸ推進体制整備加算",    "医療ＤＸ推進体制整備加算"),
-                    ]),
-                ]
-                _sk_label_to_kw = {lb: kw for _, items in _SK_SEARCH_GROUPS for lb, kw in items}
-
-                # 「一般病棟入院基本料」等を選んだ直後に区分（急性期一般入院料１〜等）を
-                # 追加で絞り込めるようにする。地方厚生局によっては届出名称のみで区分を
-                # 公表していないため、選択時は病床機能報告データを直接参照して絞り込む。
-                _NYUIN_KUBUN_OPTIONS = {
-                    "一般病棟入院基本料": [
-                        "急性期病院Ａ一般入院料", "急性期病院Ｂ一般入院料",
-                        "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
-                        "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
-                        "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
-                        "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
-                    ],
-                    "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
-                    "障害者施設等病棟": [
-                        "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
-                        "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
-                        "障害者施設等特定入院基本料",
-                    ],
-                }
-
-                # 2列でグループ表示
-                _kg1, _kg2 = st.columns(2)
-                _s_kijun_sel: list[str] = []
-                for _gi, (_grp_name, _grp_items) in enumerate(_SK_SEARCH_GROUPS):
-                    _col = _kg1 if _gi % 2 == 0 else _kg2
-                    with _col:
-                        _sel = st.multiselect(
-                            _grp_name,
-                            options=[lb for lb, _ in _grp_items],
-                            key=f"s_kijun_g{_gi}",
-                            placeholder="選択…",
-                            label_visibility="visible",
-                        )
-                        _s_kijun_sel.extend(_sel)
-
-                # 「一般病棟入院基本料」等を選んだ場合のみ意味を持つ区分（急性期一般
-                # 入院料１〜等）の絞り込み。フォーム内では届出名称を選んだ直後に
-                # 区分ボックスを出し分けられない（検索ボタンを押すまで反映されない）
-                # ため、常に表示しておき、検索ボタン1回で完結するようにする。
-                st.markdown("---")
-                st.markdown(
-                    "<div style='font-size:0.82rem;font-weight:600;color:#b45309;'>"
-                    "🔎 区分で絞り込む（任意・左の届出名称も選んだ場合のみ有効）</div>",
-                    unsafe_allow_html=True,
-                )
-                _kb_cols = st.columns(len(_NYUIN_KUBUN_OPTIONS))
-                _s_kubun_sel: list[str] = []
-                for _kb_col, (_sel_label, _kopts) in zip(_kb_cols, _NYUIN_KUBUN_OPTIONS.items()):
-                    with _kb_col:
-                        _ksel = st.multiselect(
-                            _sel_label,
-                            options=_kopts,
-                            key=f"s_kubun_{_sel_label}",
-                            placeholder="指定なし（すべて含む）",
-                            help="病床機能報告データから直接絞り込みます",
-                        )
-                        _s_kubun_sel.extend(_ksel)
-
-                st.markdown("---")
-                _s_kijun_kw_text = st.text_input(
-                    "届出名称キーワード（部分一致・1語）",
-                    placeholder="例: ロボット支援下　または　ハイケアユニット",
-                    key="s_kijun_kw_text",
-                    help="受理届出名称に含まれる語句で検索（1フィールド・完全部分一致）",
-                )
-            else:
-                _sk_label_to_kw   = {}
-                _s_kijun_sel      = []
-                _s_kijun_kw_text  = ""
-                _s_kubun_sel      = []
-
-        # 学会認定施設タブは2026年8月、有料化スコープの見直しでUIから非表示にした
-        # （突合の一致率が学会によって63.1〜97.6%とばらつき、フルカバーできて
-        # いる学会も無いため「自信を持って正確」と言える対象から一旦外した、
-        # というユーザー判断。詳細はCLAUDE.mdの「学会認定施設データ」セクション
-        # 参照）。データ（gakkai_nintei_cache.parquet）・突合ロジック
-        # （build_gakkai_nintei.py）・フィルタリング処理は残してあり、
-        # _s_gakkai_sel を常に空にするだけで機能自体は削除していない。
-        # 一致率が改善した学会から順次UIへ復帰させることを想定している。
-        _s_gakkai_sel: list[tuple[str, str]] = []
-
-        st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-        _btn_col1, _btn_col2, _btn_col3 = st.columns([1, 1, 1])
-        with _btn_col2:
-            _search_submitted = st.form_submit_button(
-                "🔍 この条件で検索する", type="primary", use_container_width=True,
+        div[data-testid="stTabs"] button[data-baseweb="tab"] {
+            font-size: 0.9rem !important;
+            font-weight: 600 !important;
+            padding: 8px 20px !important;
+            border-radius: 8px 8px 0 0 !important;
+            border: 1.5px solid var(--line) !important;
+            border-bottom: none !important;
+            background: var(--paper) !important;
+            color: var(--ink-muted) !important;
+            margin-bottom: -1px;
+        }
+        div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+            background: var(--card) !important;
+            color: var(--ink) !important;
+            border-color: var(--line) !important;
+            /* パネル上辺の罫線を選択中タブの下辺で覆い、タブとパネルを繋げる */
+            border-bottom: 2px solid var(--card) !important;
+        }
+        /* パネル本体。旧指定の div[data-testid="stTabPanel"] は Streamlit の
+           DOMに存在せず（実測0件）、枠線・白背景・角丸が一度も適用されて
+           いなかった。role属性で指定する。 */
+        div[data-testid="stTabs"] [role="tabpanel"] {
+            border: 1.5px solid var(--line);
+            border-radius: 0 8px 8px 8px;
+            padding: 16px !important;
+            background: var(--card);
+        }
+        /* グローバルCSSのモバイル縮小指定（@media max-width:768px の
+           `.stTabs [role="tab"]`＝詳細度0,2,0）は、上のセレクタ
+           （0,2,2）に打ち消され効いていなかった。実測で375px幅では
+           タブ行がはみ出していたため、同じ詳細度で復元する。 */
+        @media (max-width: 768px) {
+            div[data-testid="stTabs"] button[data-baseweb="tab"] {
+                font-size: 0.79rem !important;
+                padding: 6px 10px !important;
+            }
+        }
+        </style>
+        """, unsafe_allow_html=True)
+            _tab_equip, _tab_surg, _tab_kijun = st.tabs(
+                ["🏥 医療設備", "✂️ 手術", "📋 施設基準届出"]
             )
 
-    # ── フィルタリング処理 ──
-    s_df = df[df["報告年度"] == s_year].copy()
+            with _tab_equip:
+                _eq1, _eq2, _eq3 = st.columns(3)
+                # CT / MRI は以前「指定なし・あり・なし・スペック別」の4択ラジオ＋
+                # スペック3チェックという構成だったが、st.form 内ではラジオの選択に
+                # 応じてチェックボックスを出し分けられない（検索ボタンを押すまで
+                # 反映されない）ため、常に3つ表示して「↑スペック別を選んだ場合のみ
+                # 有効」と注記する形になっていた。＝常時表示なのに条件付きで無効、
+                # という分かりにくい状態だった。
+                #
+                # 「スペック別」という選択肢自体をなくし、スペックを選ぶこと＝そのCTを
+                # 持つ、という意味に変えることで条件分岐を解消した（無効になる入力欄が
+                # ゼロになり、注記も不要になった）。
+                with _eq1:
+                    st.markdown("**CT**")
+                    _CT_RADIO = ["指定なし", "CTあり", "CTなし"]
+                    if st.session_state.get("ct_filter") not in _CT_RADIO:
+                        st.session_state["ct_filter"] = "指定なし"   # 旧「スペック別」等からの移行
+                    ct_filter = st.radio(
+                        "CT", _CT_RADIO, key="ct_filter",
+                        label_visibility="collapsed", horizontal=True,
+                    )
+                    s_ct_specs = st.multiselect(
+                        "スペック（いずれか1台以上）",
+                        ["64列以上", "16〜64列", "16列未満"],
+                        key="s_ct_specs", placeholder="指定なし",
+                    )
+                    st.markdown("**MRI**")
+                    _MRI_RADIO = ["指定なし", "MRIあり", "MRIなし"]
+                    if st.session_state.get("mri_filter") not in _MRI_RADIO:
+                        st.session_state["mri_filter"] = "指定なし"
+                    mri_filter = st.radio(
+                        "MRI", _MRI_RADIO, key="mri_filter",
+                        label_visibility="collapsed", horizontal=True,
+                    )
+                    s_mri_specs = st.multiselect(
+                        "スペック（いずれか1台以上）",
+                        ["3T以上", "1.5〜3T", "1.5T未満"],
+                        key="s_mri_specs", placeholder="指定なし",
+                    )
+                with _eq2:
+                    st.markdown("**放射線治療**")
+                    s_has_imrt       = st.checkbox("IMRT（強度変調放射線治療）あり", key="s_has_imrt")
+                    s_has_cyberknife = st.checkbox("サイバーナイフあり",             key="s_has_cyberknife")
+                    s_has_gamma      = st.checkbox("ガンマナイフあり",               key="s_has_gamma")
+                    st.markdown("**核医学**")
+                    s_has_pet  = st.checkbox("PET / PET-CTあり", key="s_has_pet")
+                    s_has_spect = st.checkbox("SPECTあり",       key="s_has_spect")
+                with _eq3:
+                    st.markdown("**手術・カテーテル**")
+                    s_has_robot_eq = st.checkbox("手術支援ロボットあり",          key="s_has_robot_eq")
+                    s_has_angio    = st.checkbox("アンギオ（血管連続撮影）あり",  key="s_has_angio")
+                    st.markdown("**その他**")
+                    s_has_mammo = st.checkbox("マンモグラフィあり", key="s_has_mammo")
 
-    if s_pref != "全都道府県":
-        s_df = s_df[s_df["都道府県名"] == s_pref]
-    if s_region != "全二次医療圏":
-        s_df = s_df[s_df["二次医療圏名"] == s_region]
-    if s_kw:
-        _norm_kw = _normalize_name(s_kw)
-        s_df = s_df[s_df["医療機関名"].apply(_normalize_name).str.contains(_norm_kw, na=False)]
+            with _tab_surg:
+                _sg1, _sg2 = st.columns([1, 1])
+                with _sg1:
+                    s_surg_mode = st.radio(
+                        "集計対象", ["手術（全数）", "全身麻酔の手術"], key="s_surg_mode",
+                        help="・手術（全数）→ データ列: 手術_[臓器名]\n・全身麻酔の手術 → データ列: 全麻_[臓器名]",
+                    )
+                    s_surg_logic = st.radio(
+                        "複数選択の扱い", ["AND（すべて該当）", "OR（いずれか該当）"], key="s_surg_logic",
+                    )
+                    st.caption("術式（1件以上）")
+                    s_ck_robot_s = st.checkbox("ロボット支援手術", key="s_ck_robot_s")
+                    s_ck_fuku    = st.checkbox("腹腔鏡下手術",     key="s_ck_fuku")
+                    s_ck_kyou    = st.checkbox("胸腔鏡下手術",     key="s_ck_kyou")
+                with _sg2:
+                    st.caption("臓器別（1件以上）")
+                    _oa, _ob = st.columns(2)
+                    with _oa:
+                        s_ck_hifuka  = st.checkbox("皮膚・皮下組織",   key="s_ck_hifuka")
+                        s_ck_kinkot  = st.checkbox("筋骨格系・四肢",   key="s_ck_kinkot")
+                        s_ck_shinkei = st.checkbox("神経系・頭蓋",     key="s_ck_shinkei")
+                        s_ck_me      = st.checkbox("眼",               key="s_ck_me")
+                        s_ck_jibika  = st.checkbox("耳鼻咽喉",         key="s_ck_jibika")
+                        s_ck_ganmen  = st.checkbox("顔面・口腔・頸部", key="s_ck_ganmen")
+                    with _ob:
+                        s_ck_kyobu   = st.checkbox("胸部",             key="s_ck_kyobu")
+                        s_ck_shin    = st.checkbox("心・脈管",          key="s_ck_shin")
+                        s_ck_fukubu  = st.checkbox("腹部",             key="s_ck_fukubu")
+                        s_ck_nyo     = st.checkbox("尿路系・副腎",     key="s_ck_nyo")
+                        s_ck_seiki   = st.checkbox("性器",             key="s_ck_seiki")
+                        s_ck_shika   = st.checkbox("歯科",             key="s_ck_shika")
 
-    # 検索条件に使ったデータを結果表・CSVに列として出すための解決用（未使用なら None）。
-    # 設備・手術は元から s_df に列があるが、施設基準届出・入院基本料区分・学会認定は
-    # 別データとの突合で絞り込んでいて列が残らないため、該当内容を後段で付与する。
-    _sk_label_resolver = None
-    _sk_all_labels: list[str] = []
-    _kubun_labels_map: dict[str, set] | None = None
-    _gk_labels_map: dict[str, set] | None = None
+            with _tab_kijun:
+                _sk_df_filt = _load_shisetsu_kijun()
+                if _sk_df_filt is not None:
+                    # カテゴリ別届出グループ定義
+                    _SK_SEARCH_GROUPS = [
+                        ("入院体制・病棟", [
+                            ("一般病棟入院基本料",          "一般病棟入院基本料"),
+                            ("特定機能病院",                "特定機能病院入院基本料"),
+                            ("地域包括ケア病棟",            "地域包括ケア病棟入院料"),
+                            ("地域包括医療病棟",            "地域包括医療病棟入院料"),
+                            ("回復期リハビリ病棟",          "回復期リハビリテーション病棟入院料"),
+                            ("緩和ケア病棟",                "緩和ケア病棟入院料"),
+                            ("療養病棟",                    "療養病棟入院基本料"),
+                            ("障害者施設等病棟",            "障害者施設等入院基本料"),
+                            ("急性期充実体制加算",          "急性期充実体制加算"),
+                            ("総合入院体制加算",            "総合入院体制加算"),
+                            ("精神病棟",                    "精神病棟入院基本料"),
+                        ]),
+                        ("看護体制・人員", [
+                            ("医師事務作業補助体制加算",    "医師事務作業補助体制加算"),
+                            ("看護補助加算",                "看護補助加算"),
+                            ("急性期看護補助体制加算",      "急性期看護補助体制加算"),
+                            ("夜間急性期看護補助体制加算",  "夜間急性期看護補助体制加算"),
+                            ("地域医療体制確保加算",        "地域医療体制確保加算"),
+                            ("夜間看護体制加算",            "夜間看護体制加算"),
+                        ]),
+                        ("救急・集中治療", [
+                            ("救急医療管理加算",            "救急医療管理加算"),
+                            ("救命救急入院料",              "救命救急入院料"),
+                            ("超急性期脳卒中加算(tPA)",     "超急性期脳卒中加算"),
+                            ("ICU",                         "集中治療室管理料"),
+                            ("HCU",                         "ハイケアユニット入院医療管理料"),
+                            ("NICU",                        "新生児集中治療室管理料"),
+                            ("脳卒中ケアユニット",          "脳卒中ケアユニット入院医療管理料"),
+                        ]),
+                        ("手術・麻酔・カテーテル", [
+                            ("麻酔管理料(Ⅰ)",              "麻酔管理料（Ⅰ）"),
+                            ("ロボット手術",                "ロボット支援下内視鏡手術用支援機器加算"),
+                            ("心臓カテーテル",              "心臓カテーテル法による諸検査"),
+                            ("経皮的冠動脈形成術",          "経皮的冠動脈形成術"),
+                            ("人工心肺",                    "人工心肺"),
+                            ("大動脈バルーンパンピング法",  "大動脈バルーンパンピング法"),
+                            ("体外衝撃波腎・尿管結石破砕術", "体外衝撃波腎・尿管結石破砕術"),
+                            ("周術期薬学管理料",            "周術期薬学管理料"),
+                            ("輸血管理料",                  "輸血管理料"),
+                        ]),
+                        ("放射線治療・画像診断", [
+                            ("放射線治療（体外照射）",      "放射線治療（体外照射）"),
+                            ("粒子線治療",                  "粒子線治療"),
+                            ("外来放射線照射診療料",        "外来放射線照射診療料"),
+                            ("放射線治療専任加算",          "放射線治療専任加算"),
+                            ("画像診断管理加算",            "画像診断管理加算"),
+                        ]),
+                        ("リハビリ", [
+                            ("脳血管疾患等リハビリ(Ⅰ)",    "脳血管疾患等リハビリテーション料（Ⅰ）"),
+                            ("脳血管疾患等リハビリ(Ⅱ)",    "脳血管疾患等リハビリテーション料（Ⅱ）"),
+                            ("運動器リハビリ(Ⅰ)",          "運動器リハビリテーション料（Ⅰ）"),
+                            ("呼吸器リハビリ(Ⅰ)",          "呼吸器リハビリテーション料（Ⅰ）"),
+                            ("心大血管リハビリ(Ⅰ)",        "心大血管疾患リハビリテーション料（Ⅰ）"),
+                            ("がん患者リハビリ",            "がん患者リハビリテーション料"),
+                            ("廃用症候群リハビリ(Ⅰ)",      "廃用症候群リハビリテーション料（Ⅰ）"),
+                        ]),
+                        ("がん", [
+                            ("がん患者指導管理料",          "がん患者指導管理料"),
+                            ("外来化学療法加算",            "外来化学療法加算"),
+                            ("外来腫瘍化学療法診療料",      "外来腫瘍化学療法診療料"),
+                            ("がん治療連携指導料",          "がん治療連携指導料"),
+                            ("がんゲノムプロファイリング",  "がんゲノムプロファイリング評価提供料"),
+                            ("がん拠点病院加算",            "がん拠点病院加算"),
+                        ]),
+                        ("産科・周産期・小児", [
+                            ("ハイリスク分娩管理加算",      "ハイリスク分娩管理加算"),
+                            ("ハイリスク妊娠管理加算",      "ハイリスク妊娠管理加算"),
+                            ("総合周産期母子医療センター",  "総合周産期母子医療センター"),
+                            ("周産期母子医療センター",      "周産期母子医療センター"),
+                            ("小児入院医療管理料",          "小児入院医療管理料"),
+                            ("新生児入院医療管理加算",      "新生児入院医療管理加算"),
+                        ]),
+                        ("精神・認知症", [
+                            ("精神科救急入院料",            "精神科救急入院料"),
+                            ("精神科急性期治療病棟",        "精神科急性期治療病棟入院料"),
+                            ("精神科リエゾン",              "精神科リエゾンチーム加算"),
+                            ("認知症ケア加算",              "認知症ケア加算"),
+                            ("精神科訪問看護",              "精神科訪問看護・指導料"),
+                            ("依存症集団療法",              "依存症集団療法"),
+                            ("通院・在宅精神療法",          "通院・在宅精神療法"),
+                        ]),
+                        ("感染症・透析・内視鏡", [
+                            ("感染対策向上加算",            "感染対策向上加算"),
+                            ("抗菌薬適正使用支援加算",      "抗菌薬適正使用支援加算"),
+                            ("人工腎臓（透析）",            "人工腎臓"),
+                            ("腹膜透析",                    "腹膜透析"),
+                            ("内視鏡的粘膜下層剥離術",      "内視鏡的粘膜下層剥離術"),
+                            ("消化器内視鏡",                "消化器内視鏡"),
+                        ]),
+                        ("栄養・褥瘡・糖尿病", [
+                            ("栄養サポートチーム加算",      "栄養サポートチーム加算"),
+                            ("褥瘡ハイリスク患者ケア加算",  "褥瘡ハイリスク患者ケア加算"),
+                            ("糖尿病合併症管理料",          "糖尿病合併症管理料"),
+                            ("糖尿病透析予防指導管理料",    "糖尿病透析予防指導管理料"),
+                            ("後発医薬品使用体制加算",      "後発医薬品使用体制加算"),
+                        ]),
+                        ("在宅・外来・地域連携", [
+                            ("在宅療養後方支援病院",        "在宅療養後方支援病院"),
+                            ("地域包括診療料",              "地域包括診療料"),
+                            ("在宅患者訪問診療料",          "在宅患者訪問診療料"),
+                            ("地域連携診療計画加算",        "地域連携診療計画加算"),
+                            ("在宅医療DX情報活用加算",      "在宅医療ＤＸ情報活用加算"),
+                            ("外来・在宅ベースアップ評価料", "外来・在宅ベースアップ評価料"),
+                        ]),
+                        ("入院管理・安全・データ", [
+                            ("データ提出加算",              "データ提出加算"),
+                            ("薬剤管理指導料",              "薬剤管理指導料"),
+                            ("医療安全対策加算",            "医療安全対策加算"),
+                            ("入退院支援加算",              "入退院支援加算"),
+                            ("院内トリアージ実施料",        "院内トリアージ実施料"),
+                            ("患者サポート体制充実加算",    "患者サポート体制充実加算"),
+                            ("術後疼痛管理チーム加算",      "術後疼痛管理チーム加算"),
+                            ("医療ＤＸ推進体制整備加算",    "医療ＤＸ推進体制整備加算"),
+                        ]),
+                    ]
+                    _sk_label_to_kw = {lb: kw for _, items in _SK_SEARCH_GROUPS for lb, kw in items}
 
-    # 施設基準届出フィルター
-    if _sk_df_filt is not None and (_s_kijun_sel or _s_kijun_kw_text.strip()):
-        _kw_list   = [_sk_label_to_kw[lb] for lb in _s_kijun_sel]
-        _text_kw   = _s_kijun_kw_text.strip()
-        _sk_sub    = _sk_df_filt.copy()
-        if _kw_list:
-            _sk_sub = _sk_sub[_sk_sub["受理届出名称"].apply(
-                lambda x: any(kw in str(x) for kw in _kw_list)
-            )]
-        if _text_kw:
-            _sk_sub = _sk_sub[_sk_sub["受理届出名称"].str.contains(_text_kw, na=False)]
-        # (都道府県コード, 正規化名称) の集合を構築
-        _sk_matched_set: dict[str, set[str]] = {}
-        for _, _r in _sk_sub[["都道府県コード", "医療機関名_正規化"]].drop_duplicates().iterrows():
-            _sk_matched_set.setdefault(_r["都道府県コード"], set()).add(_r["医療機関名_正規化"])
-        _pref_name_to_code = {v: k for k, v in PREF_CODE_MAP.items()}
-        def _in_sk(row):
-            _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
-            _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
-            if not _n or _c not in _sk_matched_set:
-                return False
-            _names = _sk_matched_set[_c]
-            return _n in _names or any(sn.endswith(_n) for sn in _names)
-        s_df = s_df[s_df.apply(_in_sk, axis=1)]
+                    # 「一般病棟入院基本料」等を選んだ直後に区分（急性期一般入院料１〜等）を
+                    # 追加で絞り込めるようにする。地方厚生局によっては届出名称のみで区分を
+                    # 公表していないため、選択時は病床機能報告データを直接参照して絞り込む。
+                    _NYUIN_KUBUN_OPTIONS = {
+                        "一般病棟入院基本料": [
+                            "急性期病院Ａ一般入院料", "急性期病院Ｂ一般入院料",
+                            "急性期一般入院料１", "急性期一般入院料２", "急性期一般入院料３",
+                            "急性期一般入院料４", "急性期一般入院料５", "急性期一般入院料６", "急性期一般入院料７",
+                            "地域一般入院料１", "地域一般入院料２", "地域一般入院料３",
+                            "一般病棟特別入院基本料", "特定一般病棟入院料１", "特定一般病棟入院料２",
+                        ],
+                        "療養病棟": ["療養病棟入院料１", "療養病棟入院料２", "療養病棟特別入院基本料"],
+                        "障害者施設等病棟": [
+                            "障害者施設等７対１入院基本料", "障害者施設等10対１入院基本料",
+                            "障害者施設等13対１入院基本料", "障害者施設等15対１入院基本料",
+                            "障害者施設等特定入院基本料",
+                        ],
+                    }
 
-        # どの届出に該当したかを結果表・CSVに出すため、病院ごとの該当ラベルを
-        # 引けるようにしておく（このフィルターはOR条件なので、返ってきた病院が
-        # 選択した届出のどれを持つのかは情報として意味がある）。
-        # 実際の列の付与は全フィルター適用後にまとめて行う（絞り込み済みの
-        # 小さいDataFrameに対して行う方が速いため）。
-        _sk_kw_to_label = {_sk_label_to_kw[lb]: lb for lb in _s_kijun_sel}
-        _sk_labels_by_pref: dict[str, dict[str, set]] = {}
-        for _, _r in _sk_sub[["都道府県コード", "医療機関名_正規化", "受理届出名称"]].drop_duplicates().iterrows():
-            _nm = str(_r["受理届出名称"])
-            _labs = {lb for kw, lb in _sk_kw_to_label.items() if kw in _nm}
-            if _text_kw and _text_kw in _nm:
-                _labs.add(f"「{_text_kw}」")
-            if _labs:
-                (_sk_labels_by_pref
-                    .setdefault(_r["都道府県コード"], {})
-                    .setdefault(_r["医療機関名_正規化"], set())
-                    .update(_labs))
+                    # 2列でグループ表示
+                    _kg1, _kg2 = st.columns(2)
+                    _s_kijun_sel: list[str] = []
+                    for _gi, (_grp_name, _grp_items) in enumerate(_SK_SEARCH_GROUPS):
+                        _col = _kg1 if _gi % 2 == 0 else _kg2
+                        with _col:
+                            _sel = st.multiselect(
+                                _grp_name,
+                                options=[lb for lb, _ in _grp_items],
+                                key=f"s_kijun_g{_gi}",
+                                placeholder="選択…",
+                                label_visibility="visible",
+                            )
+                            _s_kijun_sel.extend(_sel)
 
-        def _sk_labels_for(row):
-            """該当した届出ラベルの集合を返す（結合はしない。結果表では
-            項目ごとに列を分けるため、呼び出し側で集合を使う）。"""
-            _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
-            _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
-            _d = _sk_labels_by_pref.get(_c)
-            if not _n or not _d:
-                return set()
-            _labs: set = set()
-            if _n in _d:
-                _labs |= _d[_n]
-            for _sn, _v in _d.items():
-                if _sn.endswith(_n):
-                    _labs |= _v
-            return _labs
-        _sk_label_resolver = _sk_labels_for
-        # 列を作る対象（選択した届出名称＋キーワード指定があればその1列）
-        _sk_all_labels = list(_s_kijun_sel)
-        if _text_kw:
-            _sk_all_labels.append(f"「{_text_kw}」")
+                    # 「一般病棟入院基本料」等を選んだ場合のみ意味を持つ区分（急性期一般
+                    # 入院料１〜等）の絞り込み。フォーム内では届出名称を選んだ直後に
+                    # 区分ボックスを出し分けられない（検索ボタンを押すまで反映されない）
+                    # ため、常に表示しておき、検索ボタン1回で完結するようにする。
+                    st.markdown("---")
+                    st.markdown(
+                        "<div style='font-size:0.82rem;font-weight:600;color:#b45309;'>"
+                        "🔎 区分で絞り込む（任意・左の届出名称も選んだ場合のみ有効）</div>",
+                        unsafe_allow_html=True,
+                    )
+                    _kb_cols = st.columns(len(_NYUIN_KUBUN_OPTIONS))
+                    _s_kubun_sel: list[str] = []
+                    for _kb_col, (_sel_label, _kopts) in zip(_kb_cols, _NYUIN_KUBUN_OPTIONS.items()):
+                        with _kb_col:
+                            _ksel = st.multiselect(
+                                _sel_label,
+                                options=_kopts,
+                                key=f"s_kubun_{_sel_label}",
+                                placeholder="指定なし（すべて含む）",
+                                help="病床機能報告データから直接絞り込みます",
+                            )
+                            _s_kubun_sel.extend(_ksel)
 
-    # 入院基本料の区分フィルター（病床機能報告データから絞り込み。届出名称のみで
-    # 区分を公表しない地方厚生局があるため、こちらは全国データで確実に絞り込める）
-    if _s_kubun_sel:
-        _kubun_hosp_names: set = set()
-        # 該当した区分を病院名ごとに集める（結果表・CSVの列用）
-        _kubun_labels_map = {}
+                    st.markdown("---")
+                    _s_kijun_kw_text = st.text_input(
+                        "届出名称キーワード（部分一致・1語）",
+                        placeholder="例: ロボット支援下　または　ハイケアユニット",
+                        key="s_kijun_kw_text",
+                        help="受理届出名称に含まれる語句で検索（1フィールド・完全部分一致）",
+                    )
+                else:
+                    _sk_label_to_kw   = {}
+                    _s_kijun_sel      = []
+                    _s_kijun_kw_text  = ""
+                    _s_kubun_sel      = []
 
-        def _add_kubun(_name, _kubun):
-            if _name and _kubun:
-                _kubun_labels_map.setdefault(_name, set()).add(str(_kubun))
+            # 学会認定施設タブは2026年8月、有料化スコープの見直しでUIから非表示にした
+            # （突合の一致率が学会によって63.1〜97.6%とばらつき、フルカバーできて
+            # いる学会も無いため「自信を持って正確」と言える対象から一旦外した、
+            # というユーザー判断。詳細はCLAUDE.mdの「学会認定施設データ」セクション
+            # 参照）。データ（gakkai_nintei_cache.parquet）・突合ロジック
+            # （build_gakkai_nintei.py）・フィルタリング処理は残してあり、
+            # _s_gakkai_sel を常に空にするだけで機能自体は削除していない。
+            # 一致率が改善した学会から順次UIへ復帰させることを想定している。
+            _s_gakkai_sel: list[tuple[str, str]] = []
 
-        _ward_df_kubun = st.session_state.get("ward_df")
-        if _ward_df_kubun is not None and not _ward_df_kubun.empty:
-            _kubun_matched = _ward_df_kubun[
-                (_ward_df_kubun["入院基本料"].isin(_s_kubun_sel))
-                & (_ward_df_kubun["報告年度"] == s_year)
-            ]
-            _kubun_hosp_names |= set(_kubun_matched["医療機関名"].unique())
-            for _, _kr in _kubun_matched[["医療機関名", "入院基本料"]].drop_duplicates().iterrows():
-                _add_kubun(_kr["医療機関名"], _kr["入院基本料"])
+            st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+            _btn_col1, _btn_col2, _btn_col3 = st.columns([1, 1, 1])
+            with _btn_col2:
+                _search_submitted = st.form_submit_button(
+                    "🔍 この条件で検索する", type="primary", use_container_width=True,
+                )
 
-        # 診療報酬改定で新設された区分（例: 急性期病院Ａ/Ｂ一般入院料）は、
-        # 病床機能報告側にまだデータが無いため、施設基準届出の区分列からも
-        # 直接補完する（こちらは新設区分でも直近の届出があれば載っている）。
-        if _sk_df_filt is not None and "区分" in _sk_df_filt.columns:
-            _sk_kubun_matched = _sk_df_filt[_sk_df_filt["区分"].isin(_s_kubun_sel)]
-            if not _sk_kubun_matched.empty:
-                _pref_name_to_code_kb = {v: k for k, v in PREF_CODE_MAP.items()}
-                # 正規化名称 → 該当区分の集合（列表示用に区分名も保持する）
-                _sk_kubun_set: dict[str, dict[str, set]] = {}
-                for _, _r in _sk_kubun_matched[["都道府県コード", "医療機関名_正規化", "区分"]].drop_duplicates().iterrows():
-                    (_sk_kubun_set
+        # ── フィルタリング処理 ──
+        s_df = df[df["報告年度"] == s_year].copy()
+
+        if s_pref != "全都道府県":
+            s_df = s_df[s_df["都道府県名"] == s_pref]
+        if s_region != "全二次医療圏":
+            s_df = s_df[s_df["二次医療圏名"] == s_region]
+        if s_kw:
+            _norm_kw = _normalize_name(s_kw)
+            s_df = s_df[s_df["医療機関名"].apply(_normalize_name).str.contains(_norm_kw, na=False)]
+
+        # 検索条件に使ったデータを結果表・CSVに列として出すための解決用（未使用なら None）。
+        # 設備・手術は元から s_df に列があるが、施設基準届出・入院基本料区分・学会認定は
+        # 別データとの突合で絞り込んでいて列が残らないため、該当内容を後段で付与する。
+        _sk_label_resolver = None
+        _sk_all_labels: list[str] = []
+        _kubun_labels_map: dict[str, set] | None = None
+        _gk_labels_map: dict[str, set] | None = None
+
+        # 施設基準届出フィルター
+        if _sk_df_filt is not None and (_s_kijun_sel or _s_kijun_kw_text.strip()):
+            _kw_list   = [_sk_label_to_kw[lb] for lb in _s_kijun_sel]
+            _text_kw   = _s_kijun_kw_text.strip()
+            _sk_sub    = _sk_df_filt.copy()
+            if _kw_list:
+                _sk_sub = _sk_sub[_sk_sub["受理届出名称"].apply(
+                    lambda x: any(kw in str(x) for kw in _kw_list)
+                )]
+            if _text_kw:
+                _sk_sub = _sk_sub[_sk_sub["受理届出名称"].str.contains(_text_kw, na=False)]
+            # (都道府県コード, 正規化名称) の集合を構築
+            _sk_matched_set: dict[str, set[str]] = {}
+            for _, _r in _sk_sub[["都道府県コード", "医療機関名_正規化"]].drop_duplicates().iterrows():
+                _sk_matched_set.setdefault(_r["都道府県コード"], set()).add(_r["医療機関名_正規化"])
+            _pref_name_to_code = {v: k for k, v in PREF_CODE_MAP.items()}
+            def _in_sk(row):
+                _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
+                _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
+                if not _n or _c not in _sk_matched_set:
+                    return False
+                _names = _sk_matched_set[_c]
+                return _n in _names or any(sn.endswith(_n) for sn in _names)
+            s_df = s_df[s_df.apply(_in_sk, axis=1)]
+
+            # どの届出に該当したかを結果表・CSVに出すため、病院ごとの該当ラベルを
+            # 引けるようにしておく（このフィルターはOR条件なので、返ってきた病院が
+            # 選択した届出のどれを持つのかは情報として意味がある）。
+            # 実際の列の付与は全フィルター適用後にまとめて行う（絞り込み済みの
+            # 小さいDataFrameに対して行う方が速いため）。
+            _sk_kw_to_label = {_sk_label_to_kw[lb]: lb for lb in _s_kijun_sel}
+            _sk_labels_by_pref: dict[str, dict[str, set]] = {}
+            for _, _r in _sk_sub[["都道府県コード", "医療機関名_正規化", "受理届出名称"]].drop_duplicates().iterrows():
+                _nm = str(_r["受理届出名称"])
+                _labs = {lb for kw, lb in _sk_kw_to_label.items() if kw in _nm}
+                if _text_kw and _text_kw in _nm:
+                    _labs.add(f"「{_text_kw}」")
+                if _labs:
+                    (_sk_labels_by_pref
                         .setdefault(_r["都道府県コード"], {})
                         .setdefault(_r["医療機関名_正規化"], set())
-                        .add(str(_r["区分"])))
-                def _sk_kubun_labels(row):
-                    _c = _pref_name_to_code_kb.get(row.get("都道府県名", ""), "")
-                    _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
-                    _d = _sk_kubun_set.get(_c)
-                    if not _n or not _d:
-                        return set()
-                    _labs: set = set()
-                    if _n in _d:
-                        _labs |= _d[_n]
-                    for _sn, _v in _d.items():
-                        if _sn.endswith(_n):
-                            _labs |= _v
-                    return _labs
-                _extra_labs = s_df.apply(_sk_kubun_labels, axis=1)
-                _extra_matched = s_df[_extra_labs.map(bool)]
-                _kubun_hosp_names |= set(_extra_matched["医療機関名"].unique())
-                for _idx, _labs in _extra_labs.items():
-                    if _labs:
-                        _nm = s_df.at[_idx, "医療機関名"]
-                        _kubun_labels_map.setdefault(_nm, set()).update(_labs)
+                        .update(_labs))
 
-        s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
+            def _sk_labels_for(row):
+                """該当した届出ラベルの集合を返す（結合はしない。結果表では
+                項目ごとに列を分けるため、呼び出し側で集合を使う）。"""
+                _c = _pref_name_to_code.get(row.get("都道府県名", ""), "")
+                _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
+                _d = _sk_labels_by_pref.get(_c)
+                if not _n or not _d:
+                    return set()
+                _labs: set = set()
+                if _n in _d:
+                    _labs |= _d[_n]
+                for _sn, _v in _d.items():
+                    if _sn.endswith(_n):
+                        _labs |= _v
+                return _labs
+            _sk_label_resolver = _sk_labels_for
+            # 列を作る対象（選択した届出名称＋キーワード指定があればその1列）
+            _sk_all_labels = list(_s_kijun_sel)
+            if _text_kw:
+                _sk_all_labels.append(f"「{_text_kw}」")
 
-    # 学会認定施設フィルター（医療機関コードで突合済みのため直接絞り込む）
-    if _s_gakkai_sel:
-        _gk_mask = pd.Series(False, index=_gk_df_filt.index)
-        for _society, _cat in _s_gakkai_sel:
-            _gk_mask |= (_gk_df_filt["学会名"] == _society) & (_gk_df_filt["区分"] == _cat)
-        _gk_hit = _gk_df_filt.loc[_gk_mask & _gk_df_filt["医療機関コード"].notna()]
-        _gk_codes = set(_gk_hit["医療機関コード"].unique())
-        # 医療機関コード → 「学会名－区分」の集合（結果表・CSVの列用）
-        _gk_labels_map = {}
-        for _, _r in _gk_hit[["医療機関コード", "学会名", "区分"]].drop_duplicates().iterrows():
-            _gk_labels_map.setdefault(_r["医療機関コード"], set()).add(f"{_r['学会名']}－{_r['区分']}")
-        if "医療機関コード" in s_df.columns:
-            s_df = s_df[s_df["医療機関コード"].isin(_gk_codes)]
-        else:
-            s_df = s_df.iloc[0:0]
+        # 入院基本料の区分フィルター（病床機能報告データから絞り込み。届出名称のみで
+        # 区分を公表しない地方厚生局があるため、こちらは全国データで確実に絞り込める）
+        if _s_kubun_sel:
+            _kubun_hosp_names: set = set()
+            # 該当した区分を病院名ごとに集める（結果表・CSVの列用）
+            _kubun_labels_map = {}
 
-    # 手術データをマージ
-    _ORGAN_LABELS = [
-        "皮膚・皮下組織", "筋骨格系・四肢・体幹", "神経系・頭蓋", "眼",
-        "耳鼻咽喉", "顔面・口腔・頸部", "胸部", "心・脈管",
-        "腹部", "尿路系・副腎", "性器", "歯科",
-    ]
-    _surg_cols_all = (
-        ["手術総数", "全身麻酔手術数", "ロボット支援手術数",
-         "腹腔鏡下手術数", "胸腔鏡下手術数", "悪性腫瘍手術数",
-         "脳血管内手術数", "人工心肺手術数"]
-        + [f"手術_{lb}" for lb in _ORGAN_LABELS]
-        + [f"全麻_{lb}" for lb in _ORGAN_LABELS]
-    )
-    _surg_state = st.session_state.get("surgery_df")
+            def _add_kubun(_name, _kubun):
+                if _name and _kubun:
+                    _kubun_labels_map.setdefault(_name, set()).add(str(_kubun))
 
-    if _surg_state is not None and not _surg_state.empty:
-        _sy = _surg_state[_surg_state["報告年度"] == s_year] if "報告年度" in _surg_state.columns else _surg_state
-        if not _sy.empty:
-            _avail = [c for c in _surg_cols_all if c in _sy.columns]
-            if _avail:
-                _join = "医療機関コード" if ("医療機関コード" in _sy.columns and "医療機関コード" in s_df.columns) else "医療機関名"
-                _sy_m = _sy[[_join] + _avail].copy()
-                _sy_m[_join] = _sy_m[_join].astype(str).str.strip()
-                if _join == "医療機関コード" and "医療機関コード" in s_df.columns:
-                    s_df = s_df.copy()
-                    s_df["医療機関コード"] = s_df["医療機関コード"].astype(str).str.strip()
-                s_df = s_df.merge(
-                    _sy_m.drop_duplicates(_join),
-                    on=_join, how="left", suffixes=("", "_sy"),
-                )
-            for c in _avail:
-                s_df[c] = pd.to_numeric(s_df[c], errors="coerce").fillna(0).astype(int)
+            _ward_df_kubun = st.session_state.get("ward_df")
+            if _ward_df_kubun is not None and not _ward_df_kubun.empty:
+                _kubun_matched = _ward_df_kubun[
+                    (_ward_df_kubun["入院基本料"].isin(_s_kubun_sel))
+                    & (_ward_df_kubun["報告年度"] == s_year)
+                ]
+                _kubun_hosp_names |= set(_kubun_matched["医療機関名"].unique())
+                for _, _kr in _kubun_matched[["医療機関名", "入院基本料"]].drop_duplicates().iterrows():
+                    _add_kubun(_kr["医療機関名"], _kr["入院基本料"])
 
-    # ── 臓器別手術フィルター ──
-    _organ_prefix = "全麻_" if s_surg_mode == "全身麻酔の手術" else "手術_"
-    _organ_checks = [
-        (s_ck_hifuka,  "皮膚・皮下組織"),
-        (s_ck_kinkot,  "筋骨格系・四肢・体幹"),
-        (s_ck_shinkei, "神経系・頭蓋"),
-        (s_ck_me,      "眼"),
-        (s_ck_jibika,  "耳鼻咽喉"),
-        (s_ck_ganmen,  "顔面・口腔・頸部"),
-        (s_ck_kyobu,   "胸部"),
-        (s_ck_shin,    "心・脈管"),
-        (s_ck_fukubu,  "腹部"),
-        (s_ck_nyo,     "尿路系・副腎"),
-        (s_ck_seiki,   "性器"),
-        (s_ck_shika,   "歯科"),
-    ]
+            # 診療報酬改定で新設された区分（例: 急性期病院Ａ/Ｂ一般入院料）は、
+            # 病床機能報告側にまだデータが無いため、施設基準届出の区分列からも
+            # 直接補完する（こちらは新設区分でも直近の届出があれば載っている）。
+            if _sk_df_filt is not None and "区分" in _sk_df_filt.columns:
+                _sk_kubun_matched = _sk_df_filt[_sk_df_filt["区分"].isin(_s_kubun_sel)]
+                if not _sk_kubun_matched.empty:
+                    _pref_name_to_code_kb = {v: k for k, v in PREF_CODE_MAP.items()}
+                    # 正規化名称 → 該当区分の集合（列表示用に区分名も保持する）
+                    _sk_kubun_set: dict[str, dict[str, set]] = {}
+                    for _, _r in _sk_kubun_matched[["都道府県コード", "医療機関名_正規化", "区分"]].drop_duplicates().iterrows():
+                        (_sk_kubun_set
+                            .setdefault(_r["都道府県コード"], {})
+                            .setdefault(_r["医療機関名_正規化"], set())
+                            .add(str(_r["区分"])))
+                    def _sk_kubun_labels(row):
+                        _c = _pref_name_to_code_kb.get(row.get("都道府県名", ""), "")
+                        _n = _normalize_hospital_for_match(row.get("医療機関名", ""))
+                        _d = _sk_kubun_set.get(_c)
+                        if not _n or not _d:
+                            return set()
+                        _labs: set = set()
+                        if _n in _d:
+                            _labs |= _d[_n]
+                        for _sn, _v in _d.items():
+                            if _sn.endswith(_n):
+                                _labs |= _v
+                        return _labs
+                    _extra_labs = s_df.apply(_sk_kubun_labels, axis=1)
+                    _extra_matched = s_df[_extra_labs.map(bool)]
+                    _kubun_hosp_names |= set(_extra_matched["医療機関名"].unique())
+                    for _idx, _labs in _extra_labs.items():
+                        if _labs:
+                            _nm = s_df.at[_idx, "医療機関名"]
+                            _kubun_labels_map.setdefault(_nm, set()).update(_labs)
 
-    _organ_cols_exist = any(f"手術_{lb}" in s_df.columns for lb in _ORGAN_LABELS)
-    _shiki_cols_exist = any(c in s_df.columns for c in ["ロボット支援手術数", "腹腔鏡下手術数", "胸腔鏡下手術数"])
-    _any_organ_checked = any(ck for ck, _ in _organ_checks)
-    _any_shiki_checked = s_ck_robot_s or s_ck_fuku or s_ck_kyou
+            s_df = s_df[s_df["医療機関名"].isin(_kubun_hosp_names)]
 
-    _surg_filter_used = _any_organ_checked or _any_shiki_checked
-    _surg_no_data = _surg_state is None or (hasattr(_surg_state, "empty") and _surg_state.empty)
-    _surg_no_year = (
-        not _surg_no_data
-        and "報告年度" in _surg_state.columns
-        and (not (_surg_state["報告年度"] == s_year).any())
-    )
+        # 学会認定施設フィルター（医療機関コードで突合済みのため直接絞り込む）
+        if _s_gakkai_sel:
+            _gk_mask = pd.Series(False, index=_gk_df_filt.index)
+            for _society, _cat in _s_gakkai_sel:
+                _gk_mask |= (_gk_df_filt["学会名"] == _society) & (_gk_df_filt["区分"] == _cat)
+            _gk_hit = _gk_df_filt.loc[_gk_mask & _gk_df_filt["医療機関コード"].notna()]
+            _gk_codes = set(_gk_hit["医療機関コード"].unique())
+            # 医療機関コード → 「学会名－区分」の集合（結果表・CSVの列用）
+            _gk_labels_map = {}
+            for _, _r in _gk_hit[["医療機関コード", "学会名", "区分"]].drop_duplicates().iterrows():
+                _gk_labels_map.setdefault(_r["医療機関コード"], set()).add(f"{_r['学会名']}－{_r['区分']}")
+            if "医療機関コード" in s_df.columns:
+                s_df = s_df[s_df["医療機関コード"].isin(_gk_codes)]
+            else:
+                s_df = s_df.iloc[0:0]
 
-    if _surg_filter_used and (_surg_no_data or _surg_no_year):
-        _reason = f"{s_year}年度の手術データがありません" if _surg_no_year else "手術データが読み込まれていません"
-        st.warning(f"⚠️ {_reason}。手術フィルターは無効です（絞り込みは行われません）。")
-    elif _any_organ_checked and not _organ_cols_exist:
-        st.warning(
-            "⚠️ 臓器別の手術データはまだ読み込まれていません。\n\n"
-            "**「起動_build.bat」を再実行**して DuckDB を再ビルドしてください。"
+        # 手術データをマージ
+        _ORGAN_LABELS = [
+            "皮膚・皮下組織", "筋骨格系・四肢・体幹", "神経系・頭蓋", "眼",
+            "耳鼻咽喉", "顔面・口腔・頸部", "胸部", "心・脈管",
+            "腹部", "尿路系・副腎", "性器", "歯科",
+        ]
+        _surg_cols_all = (
+            ["手術総数", "全身麻酔手術数", "ロボット支援手術数",
+             "腹腔鏡下手術数", "胸腔鏡下手術数", "悪性腫瘍手術数",
+             "脳血管内手術数", "人工心肺手術数"]
+            + [f"手術_{lb}" for lb in _ORGAN_LABELS]
+            + [f"全麻_{lb}" for lb in _ORGAN_LABELS]
+        )
+        _surg_state = st.session_state.get("surgery_df")
+
+        if _surg_state is not None and not _surg_state.empty:
+            _sy = _surg_state[_surg_state["報告年度"] == s_year] if "報告年度" in _surg_state.columns else _surg_state
+            if not _sy.empty:
+                _avail = [c for c in _surg_cols_all if c in _sy.columns]
+                if _avail:
+                    _join = "医療機関コード" if ("医療機関コード" in _sy.columns and "医療機関コード" in s_df.columns) else "医療機関名"
+                    _sy_m = _sy[[_join] + _avail].copy()
+                    _sy_m[_join] = _sy_m[_join].astype(str).str.strip()
+                    if _join == "医療機関コード" and "医療機関コード" in s_df.columns:
+                        s_df = s_df.copy()
+                        s_df["医療機関コード"] = s_df["医療機関コード"].astype(str).str.strip()
+                    s_df = s_df.merge(
+                        _sy_m.drop_duplicates(_join),
+                        on=_join, how="left", suffixes=("", "_sy"),
+                    )
+                for c in _avail:
+                    s_df[c] = pd.to_numeric(s_df[c], errors="coerce").fillna(0).astype(int)
+
+        # ── 臓器別手術フィルター ──
+        _organ_prefix = "全麻_" if s_surg_mode == "全身麻酔の手術" else "手術_"
+        _organ_checks = [
+            (s_ck_hifuka,  "皮膚・皮下組織"),
+            (s_ck_kinkot,  "筋骨格系・四肢・体幹"),
+            (s_ck_shinkei, "神経系・頭蓋"),
+            (s_ck_me,      "眼"),
+            (s_ck_jibika,  "耳鼻咽喉"),
+            (s_ck_ganmen,  "顔面・口腔・頸部"),
+            (s_ck_kyobu,   "胸部"),
+            (s_ck_shin,    "心・脈管"),
+            (s_ck_fukubu,  "腹部"),
+            (s_ck_nyo,     "尿路系・副腎"),
+            (s_ck_seiki,   "性器"),
+            (s_ck_shika,   "歯科"),
+        ]
+
+        _organ_cols_exist = any(f"手術_{lb}" in s_df.columns for lb in _ORGAN_LABELS)
+        _shiki_cols_exist = any(c in s_df.columns for c in ["ロボット支援手術数", "腹腔鏡下手術数", "胸腔鏡下手術数"])
+        _any_organ_checked = any(ck for ck, _ in _organ_checks)
+        _any_shiki_checked = s_ck_robot_s or s_ck_fuku or s_ck_kyou
+
+        _surg_filter_used = _any_organ_checked or _any_shiki_checked
+        _surg_no_data = _surg_state is None or (hasattr(_surg_state, "empty") and _surg_state.empty)
+        _surg_no_year = (
+            not _surg_no_data
+            and "報告年度" in _surg_state.columns
+            and (not (_surg_state["報告年度"] == s_year).any())
         )
 
-    # ── 臓器・術式フィルター（OR / AND 切り替え）──
-    _organ_col_checks = [(ck, f"{_organ_prefix}{lb}") for ck, lb in _organ_checks]
-    _shiki_col_checks = [
-        (s_ck_robot_s, "ロボット支援手術数"),
-        (s_ck_fuku,    "腹腔鏡下手術数"),
-        (s_ck_kyou,    "胸腔鏡下手術数"),
-    ]
-    _active_surg_checks = [
-        (ck, col)
-        for ck, col in _organ_col_checks + _shiki_col_checks
-        if ck and col in s_df.columns
-    ]
-
-    if _active_surg_checks:
-        if s_surg_logic == "OR（いずれか該当）":
-            _or_mask = pd.Series(False, index=s_df.index)
-            for _, _col in _active_surg_checks:
-                _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
-                _or_mask = _or_mask | (_v != 0)  # -1（マスク値）も「あり」として含む
-            s_df = s_df[_or_mask]
-        else:  # AND（すべて該当）
-            for _, _col in _active_surg_checks:
-                _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
-                s_df = s_df[_v != 0]  # -1（マスク値）も「あり」として含む
-
-    def _spec_or_mask(_df, _cols):
-        """指定したスペック列のいずれかが1台以上ならTrueのマスクを返す。
-        マルチセレクトは「いずれか」と読むのが自然なためORで判定する
-        （旧実装はチェックボックスをANDで積んでいたため、2つ選ぶと
-        「両方の種類のCTを持つ病院」という滅多にない条件になっていた）。"""
-        _m = pd.Series(False, index=_df.index)
-        for _c in _cols:
-            _m = _m | (pd.to_numeric(_df[_c], errors="coerce").fillna(0) > 0)
-        return _m
-
-    # ── CT フィルター ──
-    _CT_SPEC_COLS = ["CT_64列以上", "CT_16〜64列", "CT_16列未満", "CT_その他"]
-    if ct_filter == "CTあり":
-        if "CT台数" in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) > 0]
-        else:
-            _ct_avail = [c for c in _CT_SPEC_COLS if c in s_df.columns]
-            if _ct_avail:
-                _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
-                s_df = s_df[_ct_sum > 0]
-    elif ct_filter == "CTなし":
-        if "CT台数" in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) == 0]
-        else:
-            _ct_avail = [c for c in _CT_SPEC_COLS if c in s_df.columns]
-            if _ct_avail:
-                _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
-                s_df = s_df[_ct_sum == 0]
-    # スペック指定は「そのCTを持つ」という意味なので、あり/なしの指定とは独立に
-    # AND で効く（「CTなし」と併用すれば矛盾して0件になるのは論理的に正しい）。
-    if s_ct_specs:
-        _cols = [f"CT_{_s}" for _s in s_ct_specs if f"CT_{_s}" in s_df.columns]
-        if _cols:
-            s_df = s_df[_spec_or_mask(s_df, _cols)]
-
-    # ── MRI フィルター ──
-    _MRI_SPEC_COLS = ["MRI_3T以上", "MRI_1.5〜3T", "MRI_1.5T未満"]
-    if mri_filter == "MRIあり":
-        if "MRI台数" in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) > 0]
-        else:
-            _mri_avail = [c for c in _MRI_SPEC_COLS if c in s_df.columns]
-            if _mri_avail:
-                _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
-                s_df = s_df[_mri_sum > 0]
-    elif mri_filter == "MRIなし":
-        if "MRI台数" in s_df.columns:
-            s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) == 0]
-        else:
-            _mri_avail = [c for c in _MRI_SPEC_COLS if c in s_df.columns]
-            if _mri_avail:
-                _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
-                s_df = s_df[_mri_sum == 0]
-    if s_mri_specs:
-        _cols = [f"MRI_{_s}" for _s in s_mri_specs if f"MRI_{_s}" in s_df.columns]
-        if _cols:
-            s_df = s_df[_spec_or_mask(s_df, _cols)]
-    if s_has_pet:
-        _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
-        _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
-        s_df = s_df[(_pet_v > 0) | (_petct_v > 0)]
-    if s_has_spect and "SPECT台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["SPECT台数"], errors="coerce").fillna(0) > 0]
-    if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["内視鏡手術支援機器台数"], errors="coerce").fillna(0) > 0]
-    if s_has_angio and "血管連続撮影装置台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["血管連続撮影装置台数"], errors="coerce").fillna(0) > 0]
-    if s_has_imrt and "IMRT台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["IMRT台数"], errors="coerce").fillna(0) > 0]
-    if s_has_cyberknife and "サイバーナイフ台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["サイバーナイフ台数"], errors="coerce").fillna(0) > 0]
-    if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["ガンマナイフ台数"], errors="coerce").fillna(0) > 0]
-    if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
-        s_df = s_df[pd.to_numeric(s_df["マンモグラフィ台数"], errors="coerce").fillna(0) > 0]
-
-    # ── 所要時間フィルター ──
-    _tt_applied = False
-    _tt_dist_col: dict[str, float] = {}   # {医療機関名: 分}
-    _tt_km_col:   dict[str, float] = {}   # {医療機関名: km}
-    if s_tt_addr and (DB_PATH.exists() or _LOCS_PARQUET.exists()):
-        _origin = _cached_geocode_address(s_tt_addr)
-        if _origin is None:
-            st.warning(f"⚠️ 出発地「{s_tt_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
-        else:
-            _all_coords = load_all_hospital_coords(
-                db_path=str(DB_PATH) if DB_PATH.exists() else None,
-                parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
+        if _surg_filter_used and (_surg_no_data or _surg_no_year):
+            _reason = f"{s_year}年度の手術データがありません" if _surg_no_year else "手術データが読み込まれていません"
+            st.warning(f"⚠️ {_reason}。手術フィルターは無効です（絞り込みは行われません）。")
+        elif _any_organ_checked and not _organ_cols_exist:
+            st.warning(
+                "⚠️ 臓器別の手術データはまだ読み込まれていません。\n\n"
+                "**「起動_build.bat」を再実行**して DuckDB を再ビルドしてください。"
             )
-            _hosp_names = s_df["医療機関名"].tolist()
-            # 正規化名でも検索（施設名と医療機関名の表記ゆれ対策）
-            def _tt_lookup(name):
-                return _all_coords.get(name) or _all_coords.get(_normalize_name(name))
-            _known_pairs = [(n, _tt_lookup(n)) for n in _hosp_names if _tt_lookup(n)]
-            _no_coord = [n for n in _hosp_names if not _tt_lookup(n)]
-            if _no_coord:
-                st.caption(f"ℹ️ 座標未取得のため除外対象外: {len(_no_coord)}病院")
 
-            if _known_pairs:
-                _dests = [coords for _, coords in _known_pairs]
-                _max_sec = s_tt_max * 60
+        # ── 臓器・術式フィルター（OR / AND 切り替え）──
+        _organ_col_checks = [(ck, f"{_organ_prefix}{lb}") for ck, lb in _organ_checks]
+        _shiki_col_checks = [
+            (s_ck_robot_s, "ロボット支援手術数"),
+            (s_ck_fuku,    "腹腔鏡下手術数"),
+            (s_ck_kyou,    "胸腔鏡下手術数"),
+        ]
+        _active_surg_checks = [
+            (ck, col)
+            for ck, col in _organ_col_checks + _shiki_col_checks
+            if ck and col in s_df.columns
+        ]
 
-                if s_tt_mode == "車（OSRM）":
-                    with st.spinner("OSRM で所要時間を計算中..."):
-                        _durations = osrm_durations(_origin[0], _origin[1], _dests)
-                    _transit_note = False
-                else:
-                    _speed_kmph = 25.0
-                    _durations = [
-                        haversine_km(_origin[0], _origin[1], lat, lon) / _speed_kmph * 3600
-                        for lat, lon in _dests
-                    ]
-                    _transit_note = True
+        if _active_surg_checks:
+            if s_surg_logic == "OR（いずれか該当）":
+                _or_mask = pd.Series(False, index=s_df.index)
+                for _, _col in _active_surg_checks:
+                    _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
+                    _or_mask = _or_mask | (_v != 0)  # -1（マスク値）も「あり」として含む
+                s_df = s_df[_or_mask]
+            else:  # AND（すべて該当）
+                for _, _col in _active_surg_checks:
+                    _v = pd.to_numeric(s_df[_col], errors="coerce").fillna(0)
+                    s_df = s_df[_v != 0]  # -1（マスク値）も「あり」として含む
 
-                _keep_names: set[str] = set()
-                for (name, (lat, lon)), dur in zip(_known_pairs, _durations):
-                    km = haversine_km(_origin[0], _origin[1], lat, lon)
-                    _tt_km_col[name] = round(km, 1)
-                    if dur is not None:
-                        mins = round(dur / 60, 1)
-                        _tt_dist_col[name] = mins
-                        if dur <= _max_sec:
-                            _keep_names.add(name)
+        def _spec_or_mask(_df, _cols):
+            """指定したスペック列のいずれかが1台以上ならTrueのマスクを返す。
+            マルチセレクトは「いずれか」と読むのが自然なためORで判定する
+            （旧実装はチェックボックスをANDで積んでいたため、2つ選ぶと
+            「両方の種類のCTを持つ病院」という滅多にない条件になっていた）。"""
+            _m = pd.Series(False, index=_df.index)
+            for _c in _cols:
+                _m = _m | (pd.to_numeric(_df[_c], errors="coerce").fillna(0) > 0)
+            return _m
+
+        # ── CT フィルター ──
+        _CT_SPEC_COLS = ["CT_64列以上", "CT_16〜64列", "CT_16列未満", "CT_その他"]
+        if ct_filter == "CTあり":
+            if "CT台数" in s_df.columns:
+                s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) > 0]
+            else:
+                _ct_avail = [c for c in _CT_SPEC_COLS if c in s_df.columns]
+                if _ct_avail:
+                    _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
+                    s_df = s_df[_ct_sum > 0]
+        elif ct_filter == "CTなし":
+            if "CT台数" in s_df.columns:
+                s_df = s_df[pd.to_numeric(s_df["CT台数"], errors="coerce").fillna(0) == 0]
+            else:
+                _ct_avail = [c for c in _CT_SPEC_COLS if c in s_df.columns]
+                if _ct_avail:
+                    _ct_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _ct_avail)
+                    s_df = s_df[_ct_sum == 0]
+        # スペック指定は「そのCTを持つ」という意味なので、あり/なしの指定とは独立に
+        # AND で効く（「CTなし」と併用すれば矛盾して0件になるのは論理的に正しい）。
+        if s_ct_specs:
+            _cols = [f"CT_{_s}" for _s in s_ct_specs if f"CT_{_s}" in s_df.columns]
+            if _cols:
+                s_df = s_df[_spec_or_mask(s_df, _cols)]
+
+        # ── MRI フィルター ──
+        _MRI_SPEC_COLS = ["MRI_3T以上", "MRI_1.5〜3T", "MRI_1.5T未満"]
+        if mri_filter == "MRIあり":
+            if "MRI台数" in s_df.columns:
+                s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) > 0]
+            else:
+                _mri_avail = [c for c in _MRI_SPEC_COLS if c in s_df.columns]
+                if _mri_avail:
+                    _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
+                    s_df = s_df[_mri_sum > 0]
+        elif mri_filter == "MRIなし":
+            if "MRI台数" in s_df.columns:
+                s_df = s_df[pd.to_numeric(s_df["MRI台数"], errors="coerce").fillna(0) == 0]
+            else:
+                _mri_avail = [c for c in _MRI_SPEC_COLS if c in s_df.columns]
+                if _mri_avail:
+                    _mri_sum = sum(pd.to_numeric(s_df[c], errors="coerce").fillna(0) for c in _mri_avail)
+                    s_df = s_df[_mri_sum == 0]
+        if s_mri_specs:
+            _cols = [f"MRI_{_s}" for _s in s_mri_specs if f"MRI_{_s}" in s_df.columns]
+            if _cols:
+                s_df = s_df[_spec_or_mask(s_df, _cols)]
+        if s_has_pet:
+            _pet_v   = pd.to_numeric(s_df["PET台数"],   errors="coerce").fillna(0) if "PET台数"   in s_df.columns else pd.Series(0, index=s_df.index)
+            _petct_v = pd.to_numeric(s_df["PETCT台数"], errors="coerce").fillna(0) if "PETCT台数" in s_df.columns else pd.Series(0, index=s_df.index)
+            s_df = s_df[(_pet_v > 0) | (_petct_v > 0)]
+        if s_has_spect and "SPECT台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["SPECT台数"], errors="coerce").fillna(0) > 0]
+        if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["内視鏡手術支援機器台数"], errors="coerce").fillna(0) > 0]
+        if s_has_angio and "血管連続撮影装置台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["血管連続撮影装置台数"], errors="coerce").fillna(0) > 0]
+        if s_has_imrt and "IMRT台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["IMRT台数"], errors="coerce").fillna(0) > 0]
+        if s_has_cyberknife and "サイバーナイフ台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["サイバーナイフ台数"], errors="coerce").fillna(0) > 0]
+        if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["ガンマナイフ台数"], errors="coerce").fillna(0) > 0]
+        if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
+            s_df = s_df[pd.to_numeric(s_df["マンモグラフィ台数"], errors="coerce").fillna(0) > 0]
+
+        # ── 所要時間フィルター ──
+        _tt_applied = False
+        _tt_dist_col: dict[str, float] = {}   # {医療機関名: 分}
+        _tt_km_col:   dict[str, float] = {}   # {医療機関名: km}
+        if s_tt_addr and (DB_PATH.exists() or _LOCS_PARQUET.exists()):
+            _origin = _cached_geocode_address(s_tt_addr)
+            if _origin is None:
+                st.warning(f"⚠️ 出発地「{s_tt_addr}」の座標が取得できませんでした。住所をより具体的に入力してください。")
+            else:
+                _all_coords = load_all_hospital_coords(
+                    db_path=str(DB_PATH) if DB_PATH.exists() else None,
+                    parquet_path=str(_LOCS_PARQUET) if _LOCS_PARQUET.exists() else None,
+                )
+                _hosp_names = s_df["医療機関名"].tolist()
+                # 正規化名でも検索（施設名と医療機関名の表記ゆれ対策）
+                def _tt_lookup(name):
+                    return _all_coords.get(name) or _all_coords.get(_normalize_name(name))
+                _known_pairs = [(n, _tt_lookup(n)) for n in _hosp_names if _tt_lookup(n)]
+                _no_coord = [n for n in _hosp_names if not _tt_lookup(n)]
+                if _no_coord:
+                    st.caption(f"ℹ️ 座標未取得のため除外対象外: {len(_no_coord)}病院")
+
+                if _known_pairs:
+                    _dests = [coords for _, coords in _known_pairs]
+                    _max_sec = s_tt_max * 60
+
+                    if s_tt_mode == "車（OSRM）":
+                        with st.spinner("OSRM で所要時間を計算中..."):
+                            _durations = osrm_durations(_origin[0], _origin[1], _dests)
+                        _transit_note = False
                     else:
-                        _tt_dist_col[name] = None
+                        _speed_kmph = 25.0
+                        _durations = [
+                            haversine_km(_origin[0], _origin[1], lat, lon) / _speed_kmph * 3600
+                            for lat, lon in _dests
+                        ]
+                        _transit_note = True
 
-                s_df = s_df[s_df["医療機関名"].isin(_keep_names)]
-                _tt_applied = True
+                    _keep_names: set[str] = set()
+                    for (name, (lat, lon)), dur in zip(_known_pairs, _durations):
+                        km = haversine_km(_origin[0], _origin[1], lat, lon)
+                        _tt_km_col[name] = round(km, 1)
+                        if dur is not None:
+                            mins = round(dur / 60, 1)
+                            _tt_dist_col[name] = mins
+                            if dur <= _max_sec:
+                                _keep_names.add(name)
+                        else:
+                            _tt_dist_col[name] = None
 
-                if _transit_note:
-                    st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
+                    s_df = s_df[s_df["医療機関名"].isin(_keep_names)]
+                    _tt_applied = True
 
-    # ── 表示列の決定 ──
-    _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
-    if "合計稼働率" in s_df.columns:
-        _base.append("合計稼働率")
-    _any_surg = any(ck for ck, _ in _organ_checks) or s_ck_robot_s or s_ck_fuku or s_ck_kyou
-    _sshow = []
-    if _any_surg and "手術総数" in s_df.columns:
-        _sshow.append("手術総数")
-    if _any_surg and s_surg_mode == "全身麻酔の手術" and "全身麻酔手術数" in s_df.columns:
-        _sshow.append("全身麻酔手術数")
-    if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
-        _sshow.append("ロボット支援手術数")
-    if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
-        _sshow.append("腹腔鏡下手術数")
-    if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
-        _sshow.append("胸腔鏡下手術数")
-    _checked_organ_cols = [f"{_organ_prefix}{lb}" for _ck, lb in _organ_checks if _ck]
-    _organ_show = [c for c in _checked_organ_cols if c in s_df.columns]
-    _eshow = []
-    # 絞り込みに使った列を結果表に出す。あり/なしを指定したら合計台数列、
-    # スペックを選んだらそのスペック列（両方指定なら両方出す）。
-    if ct_filter in ("CTあり", "CTなし") and "CT台数" in s_df.columns:
-        _eshow.append("CT台数")
-    _eshow += [f"CT_{_s}" for _s in s_ct_specs if f"CT_{_s}" in s_df.columns]
-    if mri_filter in ("MRIあり", "MRIなし") and "MRI台数" in s_df.columns:
-        _eshow.append("MRI台数")
-    _eshow += [f"MRI_{_s}" for _s in s_mri_specs if f"MRI_{_s}" in s_df.columns]
-    if s_has_pet:
-        _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
-    if s_has_spect and "SPECT台数" in s_df.columns:
-        _eshow.append("SPECT台数")
-    if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
-        _eshow.append("内視鏡手術支援機器台数")
-    if s_has_angio and "血管連続撮影装置台数" in s_df.columns:
-        _eshow.append("血管連続撮影装置台数")
-    if s_has_imrt and "IMRT台数" in s_df.columns:
-        _eshow.append("IMRT台数")
-    if s_has_cyberknife and "サイバーナイフ台数" in s_df.columns:
-        _eshow.append("サイバーナイフ台数")
-    if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
-        _eshow.append("ガンマナイフ台数")
-    if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
-        _eshow.append("マンモグラフィ台数")
+                    if _transit_note:
+                        st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
 
-    # 別データとの突合で絞り込んだ条件（施設基準届出・入院基本料区分・学会認定）は
-    # s_df に列が残らないため、ここで「何に該当したか」を列として付与する。
-    # 全フィルター適用後の小さいDataFrameに対して行う（速度のため）。
-    #
-    # いずれもOR条件なので病院ごとに該当項目が異なる。1列に「／」で連結すると
-    # 表計算ソフトで項目ごとの絞り込み・集計ができないため、**選択した項目ごとに
-    # 列を分け**、該当を「○」で示す（列名は既存の CT_64列以上 等と同じ
-    # 「接頭辞_項目名」の形式に揃える）。
-    _fshow = []
+        # ── 表示列の決定 ──
+        _base = ["医療機関名", "都道府県名", "二次医療圏名", "合計_許可病床数"]
+        if "合計稼働率" in s_df.columns:
+            _base.append("合計稼働率")
+        _any_surg = any(ck for ck, _ in _organ_checks) or s_ck_robot_s or s_ck_fuku or s_ck_kyou
+        _sshow = []
+        if _any_surg and "手術総数" in s_df.columns:
+            _sshow.append("手術総数")
+        if _any_surg and s_surg_mode == "全身麻酔の手術" and "全身麻酔手術数" in s_df.columns:
+            _sshow.append("全身麻酔手術数")
+        if s_ck_robot_s and "ロボット支援手術数" in s_df.columns:
+            _sshow.append("ロボット支援手術数")
+        if s_ck_fuku and "腹腔鏡下手術数" in s_df.columns:
+            _sshow.append("腹腔鏡下手術数")
+        if s_ck_kyou and "胸腔鏡下手術数" in s_df.columns:
+            _sshow.append("胸腔鏡下手術数")
+        _checked_organ_cols = [f"{_organ_prefix}{lb}" for _ck, lb in _organ_checks if _ck]
+        _organ_show = [c for c in _checked_organ_cols if c in s_df.columns]
+        _eshow = []
+        # 絞り込みに使った列を結果表に出す。あり/なしを指定したら合計台数列、
+        # スペックを選んだらそのスペック列（両方指定なら両方出す）。
+        if ct_filter in ("CTあり", "CTなし") and "CT台数" in s_df.columns:
+            _eshow.append("CT台数")
+        _eshow += [f"CT_{_s}" for _s in s_ct_specs if f"CT_{_s}" in s_df.columns]
+        if mri_filter in ("MRIあり", "MRIなし") and "MRI台数" in s_df.columns:
+            _eshow.append("MRI台数")
+        _eshow += [f"MRI_{_s}" for _s in s_mri_specs if f"MRI_{_s}" in s_df.columns]
+        if s_has_pet:
+            _eshow += [c for c in ["PET台数", "PETCT台数"] if c in s_df.columns]
+        if s_has_spect and "SPECT台数" in s_df.columns:
+            _eshow.append("SPECT台数")
+        if s_has_robot_eq and "内視鏡手術支援機器台数" in s_df.columns:
+            _eshow.append("内視鏡手術支援機器台数")
+        if s_has_angio and "血管連続撮影装置台数" in s_df.columns:
+            _eshow.append("血管連続撮影装置台数")
+        if s_has_imrt and "IMRT台数" in s_df.columns:
+            _eshow.append("IMRT台数")
+        if s_has_cyberknife and "サイバーナイフ台数" in s_df.columns:
+            _eshow.append("サイバーナイフ台数")
+        if s_has_gamma and "ガンマナイフ台数" in s_df.columns:
+            _eshow.append("ガンマナイフ台数")
+        if s_has_mammo and "マンモグラフィ台数" in s_df.columns:
+            _eshow.append("マンモグラフィ台数")
 
-    def _add_hit_columns(prefix, labels, hit_sets):
-        """labels の項目ごとに列を作り、hit_sets（各行の該当ラベル集合）から○を立てる。"""
-        for _lb in labels:
-            _col = f"{prefix}_{_lb}"
-            if _col in s_df.columns:      # 万一の列名衝突を避ける
-                _col = f"{_col}（条件）"
-            s_df[_col] = hit_sets.map(lambda _s, _l=_lb: "○" if _l in _s else "")
-            _fshow.append(_col)
+        # 別データとの突合で絞り込んだ条件（施設基準届出・入院基本料区分・学会認定）は
+        # s_df に列が残らないため、ここで「何に該当したか」を列として付与する。
+        # 全フィルター適用後の小さいDataFrameに対して行う（速度のため）。
+        #
+        # いずれもOR条件なので病院ごとに該当項目が異なる。1列に「／」で連結すると
+        # 表計算ソフトで項目ごとの絞り込み・集計ができないため、**選択した項目ごとに
+        # 列を分け**、該当を「○」で示す（列名は既存の CT_64列以上 等と同じ
+        # 「接頭辞_項目名」の形式に揃える）。
+        _fshow = []
 
-    if _sk_label_resolver is not None and _sk_all_labels:
-        _sk_hits = (
-            s_df.apply(_sk_label_resolver, axis=1) if not s_df.empty
-            else pd.Series(dtype=object, index=s_df.index)
-        )
-        _add_hit_columns("届出", _sk_all_labels, _sk_hits)
-    if _kubun_labels_map is not None:
-        _kb_hits = s_df["医療機関名"].map(lambda n: _kubun_labels_map.get(n, set()))
-        _add_hit_columns("区分", _s_kubun_sel, _kb_hits)
-    if _gk_labels_map is not None and "医療機関コード" in s_df.columns:
-        _gk_hits = s_df["医療機関コード"].map(lambda c: _gk_labels_map.get(c, set()))
-        _add_hit_columns("学会", [f"{_s}－{_c}" for _s, _c in _s_gakkai_sel], _gk_hits)
+        def _add_hit_columns(prefix, labels, hit_sets):
+            """labels の項目ごとに列を作り、hit_sets（各行の該当ラベル集合）から○を立てる。"""
+            for _lb in labels:
+                _col = f"{prefix}_{_lb}"
+                if _col in s_df.columns:      # 万一の列名衝突を避ける
+                    _col = f"{_col}（条件）"
+                s_df[_col] = hit_sets.map(lambda _s, _l=_lb: "○" if _l in _s else "")
+                _fshow.append(_col)
 
-    # ── 表示項目（比較したい列）──────────────────────────────
-    # 「リストを作る条件」と「表示したい項目」は別物。上の _eshow/_fshow は
-    # 絞り込みに使った条件が何に該当したかを示す“確認用”の列で、比較のために
-    # 見たい項目はユーザーが自由に選べる必要がある。
-    # ウィジェット自体は結果表の直上に置く（条件フォームとは分離する）ため、
-    # 値は session_state から先に読む。
-    # 比較用の派生指標を「単位を名前に明示した列」として作る。
-    # 既存の `合計稼働率`（data_processor.occupancy_rate）は 0〜1 の比率を返すが、
-    # 消費側が比率前提（charts.py は ×100 している）と%前提（region_vision の
-    # しきい値判定）で混在しているため、共有列には手を触れず別名で持つ。
-    # 計算式は病床機能報告の報告値のみから算出（独自の補正は入れない）:
-    #   稼働率(%) = 在棟延べ数 ÷ 365 ÷ 許可病床数 × 100
-    _kyoka_d = pd.to_numeric(s_df.get("合計_許可病床数"), errors="coerce").replace(0, np.nan)
-    if "合計_在棟延べ数" in s_df.columns:
-        s_df["稼働率(%)"] = (
-            pd.to_numeric(s_df["合計_在棟延べ数"], errors="coerce") / 365 / _kyoka_d * 100
-        ).round(1)
-    if "常勤医師数" in s_df.columns:
-        s_df["常勤医師数/100床"] = (
-            pd.to_numeric(s_df["常勤医師数"], errors="coerce") / _kyoka_d * 100
-        ).round(1)
-    if "常勤看護師数" in s_df.columns:
-        s_df["常勤看護師数/100床"] = (
-            pd.to_numeric(s_df["常勤看護師数"], errors="coerce") / _kyoka_d * 100
-        ).round(1)
+        if _sk_label_resolver is not None and _sk_all_labels:
+            _sk_hits = (
+                s_df.apply(_sk_label_resolver, axis=1) if not s_df.empty
+                else pd.Series(dtype=object, index=s_df.index)
+            )
+            _add_hit_columns("届出", _sk_all_labels, _sk_hits)
+        if _kubun_labels_map is not None:
+            _kb_hits = s_df["医療機関名"].map(lambda n: _kubun_labels_map.get(n, set()))
+            _add_hit_columns("区分", _s_kubun_sel, _kb_hits)
+        if _gk_labels_map is not None and "医療機関コード" in s_df.columns:
+            _gk_hits = s_df["医療機関コード"].map(lambda c: _gk_labels_map.get(c, set()))
+            _add_hit_columns("学会", [f"{_s}－{_c}" for _s, _c in _s_gakkai_sel], _gk_hits)
 
-    _DISP_PRESETS = {
-        "病床構成": ["合計_許可病床数", "合計_稼働病床数", "稼働率(%)",
-                     "高度急性期_許可病床数", "急性期_許可病床数",
-                     "回復期_許可病床数", "慢性期_許可病床数"],
-        "スタッフ": ["常勤医師数", "非常勤医師数", "常勤看護師数", "非常勤看護師数",
-                     "常勤医師数/100床", "常勤看護師数/100床"],
-        "リハビリ職": ["常勤理学療法士数", "常勤作業療法士数", "常勤言語聴覚士数"],
-        "医療設備": ["CT台数", "MRI台数", "PET台数", "PETCT台数", "SPECT台数",
-                     "血管連続撮影装置台数", "内視鏡手術支援機器台数", "マンモグラフィ台数"],
-        "診療実績": ["合計_在棟延べ数", "救急搬送件数"],
-        "所在地":   ["住所", "url"],
-    }
-    _sel_presets  = st.session_state.get("_s_disp_presets", [])
-    _sel_cols     = st.session_state.get("_s_disp_cols", [])
-    _show_hit_col = st.session_state.get("_s_show_hits", True)
+        # ── 表示項目（比較したい列）──────────────────────────────
+        # 「リストを作る条件」と「表示したい項目」は別物。上の _eshow/_fshow は
+        # 絞り込みに使った条件が何に該当したかを示す“確認用”の列で、比較のために
+        # 見たい項目はユーザーが自由に選べる必要がある。
+        # ウィジェット自体は結果表の直上に置く（条件フォームとは分離する）ため、
+        # 値は session_state から先に読む。
+        # 比較用の派生指標を「単位を名前に明示した列」として作る。
+        # 既存の `合計稼働率`（data_processor.occupancy_rate）は 0〜1 の比率を返すが、
+        # 消費側が比率前提（charts.py は ×100 している）と%前提（region_vision の
+        # しきい値判定）で混在しているため、共有列には手を触れず別名で持つ。
+        # 計算式は病床機能報告の報告値のみから算出（独自の補正は入れない）:
+        #   稼働率(%) = 在棟延べ数 ÷ 365 ÷ 許可病床数 × 100
+        _kyoka_d = pd.to_numeric(s_df.get("合計_許可病床数"), errors="coerce").replace(0, np.nan)
+        if "合計_在棟延べ数" in s_df.columns:
+            s_df["稼働率(%)"] = (
+                pd.to_numeric(s_df["合計_在棟延べ数"], errors="coerce") / 365 / _kyoka_d * 100
+            ).round(1)
+        if "常勤医師数" in s_df.columns:
+            s_df["常勤医師数/100床"] = (
+                pd.to_numeric(s_df["常勤医師数"], errors="coerce") / _kyoka_d * 100
+            ).round(1)
+        if "常勤看護師数" in s_df.columns:
+            s_df["常勤看護師数/100床"] = (
+                pd.to_numeric(s_df["常勤看護師数"], errors="coerce") / _kyoka_d * 100
+            ).round(1)
 
-    _user_cols: list[str] = []
-    for _p in _sel_presets:
-        for _c in _DISP_PRESETS.get(_p, []):
+        _DISP_PRESETS = {
+            "病床構成": ["合計_許可病床数", "合計_稼働病床数", "稼働率(%)",
+                         "高度急性期_許可病床数", "急性期_許可病床数",
+                         "回復期_許可病床数", "慢性期_許可病床数"],
+            "スタッフ": ["常勤医師数", "非常勤医師数", "常勤看護師数", "非常勤看護師数",
+                         "常勤医師数/100床", "常勤看護師数/100床"],
+            "リハビリ職": ["常勤理学療法士数", "常勤作業療法士数", "常勤言語聴覚士数"],
+            "医療設備": ["CT台数", "MRI台数", "PET台数", "PETCT台数", "SPECT台数",
+                         "血管連続撮影装置台数", "内視鏡手術支援機器台数", "マンモグラフィ台数"],
+            "診療実績": ["合計_在棟延べ数", "救急搬送件数"],
+            "所在地":   ["住所", "url"],
+        }
+        _sel_presets  = st.session_state.get("_s_disp_presets", [])
+        _sel_cols     = st.session_state.get("_s_disp_cols", [])
+        _show_hit_col = st.session_state.get("_s_show_hits", True)
+
+        _user_cols: list[str] = []
+        for _p in _sel_presets:
+            for _c in _DISP_PRESETS.get(_p, []):
+                if _c in s_df.columns and _c not in _user_cols:
+                    _user_cols.append(_c)
+        for _c in _sel_cols:
             if _c in s_df.columns and _c not in _user_cols:
                 _user_cols.append(_c)
-    for _c in _sel_cols:
-        if _c in s_df.columns and _c not in _user_cols:
-            _user_cols.append(_c)
 
-    _disp = _base + _user_cols + _sshow + _organ_show + _eshow
-    if _show_hit_col:
-        _disp += _fshow
-    # 同じ列が複数の由来で入りうるので順序を保って重複を除く
-    _disp = list(dict.fromkeys(_disp))
+        _disp = _base + _user_cols + _sshow + _organ_show + _eshow
+        if _show_hit_col:
+            _disp += _fshow
+        # 同じ列が複数の由来で入りうるので順序を保って重複を除く
+        _disp = list(dict.fromkeys(_disp))
 
-    result_s = (
-        s_df[_disp]
-        .sort_values("合計_許可病床数", ascending=False)
-        .reset_index(drop=True)
-    )
-
-    # 所要時間列を追加（フィルター適用時）
-    if _tt_applied:
-        result_s["直線距離(km)"] = result_s["医療機関名"].map(_tt_km_col)
-        result_s["所要時間(分)"] = result_s["医療機関名"].map(_tt_dist_col)
-        result_s = result_s.sort_values("所要時間(分)").reset_index(drop=True)
-
-    # ── 結果表示 ──
-    st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
-    # ①②を外したのに「③」だけ残っていたため、他の検索ページと同じ
-    # .section-header に揃える（配色も緑の直書きをやめトークン経由にする）。
-    st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
-    st.markdown(_source_tag(_byosho_source(s_year)), unsafe_allow_html=True)
-    st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
-
-    # ── 表示項目の選択 ─────────────────────────────────────
-    # 検索条件（上のフォーム）とは別の操作。ここでの変更は検索ボタンを押さずに
-    # 即座に表に反映される。束（プリセット）で大まかに選び、個別列で足し引きする。
-    _cand_cols = [
-        c for c in s_df.columns
-        if c not in _base and c not in ("医療機関コード", "報告年度") and c not in _fshow
-    ]
-    with st.container(border=True, key="s_disp_box"):
-        st.markdown(
-            "<div style='font-size:0.82rem;font-weight:700;color:var(--brand-deep);"
-            "margin-bottom:8px;'>📊 表示する項目（比較したい指標を選ぶ）"
-            "<span style='font-weight:400;color:var(--ink-muted);margin-left:10px;'>"
-            "検索条件とは別に、いつでも変更できます</span></div>",
-            unsafe_allow_html=True,
+        result_s = (
+            s_df[_disp]
+            .sort_values("合計_許可病床数", ascending=False)
+            .reset_index(drop=True)
         )
-        _dc1, _dc2 = st.columns([1, 2])
-        with _dc1:
-            st.multiselect(
-                "まとめて追加", options=list(_DISP_PRESETS.keys()),
-                key="_s_disp_presets", placeholder="束で選ぶ",
-            )
-        with _dc2:
-            st.multiselect(
-                "個別に追加", options=_cand_cols,
-                key="_s_disp_cols", placeholder="列名を入力して検索",
-            )
-        if _fshow:
-            st.checkbox(
-                f"絞り込み条件の該当列（○印 {len(_fshow)}列）も表示する",
-                key="_s_show_hits", value=True,
-                help="どの条件に該当してヒットしたかを示す確認用の列です",
-            )
 
-    _col_cfg = {
-        "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%,d 床"),
-        "合計稼働率":       st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
-        "稼働率(%)":        st.column_config.NumberColumn(
-            "稼働率(%)", format="%.1f%%",
-            help="許可病床数は年度の7月1日時点、分子の在棟延べ数は前年度（前年4月〜当年3月）の実績です",
-        ),
-        "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%,d 台"),
-        "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%,d 台"),
-        "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%,d 台"),
-        "MRI_3T以上":       st.column_config.NumberColumn("MRI 3T以上",       format="%,d 台"),
-        "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%,d 台"),
-        "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%,d 台"),
-        "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%,d 台"),
-    }
-    for _c in _sshow:
-        _col_cfg[_c] = st.column_config.TextColumn()
-    for _c in _organ_show:
-        _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
-        _col_cfg[_c] = st.column_config.TextColumn(_label)
-    for _c in _eshow:
-        if _c not in _col_cfg:
-            _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
-    # 該当条件の列は値が「○」だけなので狭くしたいが、見出し（項目名）が切れると
-    # どの条件の列か分からなくなるため、ラベルが長いものだけ幅を広げる
-    for _c in _fshow:
-        _label = _c.split("_", 1)[1] if "_" in _c else _c
-        _col_cfg[_c] = st.column_config.TextColumn(
-            _label, width="medium" if len(_label) > 10 else "small",
+        # 所要時間列を追加（フィルター適用時）
+        if _tt_applied:
+            result_s["直線距離(km)"] = result_s["医療機関名"].map(_tt_km_col)
+            result_s["所要時間(分)"] = result_s["医療機関名"].map(_tt_dist_col)
+            result_s = result_s.sort_values("所要時間(分)").reset_index(drop=True)
+
+        # ── 結果表示 ──
+        st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+        # ①②を外したのに「③」だけ残っていたため、他の検索ページと同じ
+        # .section-header に揃える（配色も緑の直書きをやめトークン経由にする）。
+        st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
+        st.markdown(_source_tag(_byosho_source(s_year)), unsafe_allow_html=True)
+        st.markdown(f"**{len(result_s):,} 件の病院が見つかりました**")
+
+        # ── 表示項目の選択 ─────────────────────────────────────
+        # 検索条件（上のフォーム）とは別の操作。ここでの変更は検索ボタンを押さずに
+        # 即座に表に反映される。束（プリセット）で大まかに選び、個別列で足し引きする。
+        _cand_cols = [
+            c for c in s_df.columns
+            if c not in _base and c not in ("医療機関コード", "報告年度") and c not in _fshow
+        ]
+        with st.container(border=True, key="s_disp_box"):
+            st.markdown(
+                "<div style='font-size:0.82rem;font-weight:700;color:var(--brand-deep);"
+                "margin-bottom:8px;'>📊 表示する項目（比較したい指標を選ぶ）"
+                "<span style='font-weight:400;color:var(--ink-muted);margin-left:10px;'>"
+                "検索条件とは別に、いつでも変更できます</span></div>",
+                unsafe_allow_html=True,
+            )
+            _dc1, _dc2 = st.columns([1, 2])
+            with _dc1:
+                st.multiselect(
+                    "まとめて追加", options=list(_DISP_PRESETS.keys()),
+                    key="_s_disp_presets", placeholder="束で選ぶ",
+                )
+            with _dc2:
+                st.multiselect(
+                    "個別に追加", options=_cand_cols,
+                    key="_s_disp_cols", placeholder="列名を入力して検索",
+                )
+            if _fshow:
+                st.checkbox(
+                    f"絞り込み条件の該当列（○印 {len(_fshow)}列）も表示する",
+                    key="_s_show_hits", value=True,
+                    help="どの条件に該当してヒットしたかを示す確認用の列です",
+                )
+
+        _col_cfg = {
+            "合計_許可病床数":  st.column_config.NumberColumn("許可病床数（床）", format="%,d 床"),
+            "合計稼働率":       st.column_config.ProgressColumn("稼働率", format="%.1f%%", min_value=0, max_value=100),
+            "稼働率(%)":        st.column_config.NumberColumn(
+                "稼働率(%)", format="%.1f%%",
+                help="許可病床数は年度の7月1日時点、分子の在棟延べ数は前年度（前年4月〜当年3月）の実績です",
+            ),
+            "CT_64列以上":      st.column_config.NumberColumn("CT 64列以上",      format="%,d 台"),
+            "CT_16〜64列":      st.column_config.NumberColumn("CT 16〜64列",      format="%,d 台"),
+            "CT_16列未満":      st.column_config.NumberColumn("CT 16列未満",      format="%,d 台"),
+            "MRI_3T以上":       st.column_config.NumberColumn("MRI 3T以上",       format="%,d 台"),
+            "MRI_1.5〜3T":      st.column_config.NumberColumn("MRI 1.5〜3T",      format="%,d 台"),
+            "MRI_1.5T未満":     st.column_config.NumberColumn("MRI 1.5T未満",     format="%,d 台"),
+            "内視鏡手術支援機器台数": st.column_config.NumberColumn("手術支援ロボット", format="%,d 台"),
+        }
+        for _c in _sshow:
+            _col_cfg[_c] = st.column_config.TextColumn()
+        for _c in _organ_show:
+            _label = _c.replace("手術_", "").replace("全麻_", "全麻:")
+            _col_cfg[_c] = st.column_config.TextColumn(_label)
+        for _c in _eshow:
+            if _c not in _col_cfg:
+                _col_cfg[_c] = st.column_config.NumberColumn(format="%,d 台")
+        # 該当条件の列は値が「○」だけなので狭くしたいが、見出し（項目名）が切れると
+        # どの条件の列か分からなくなるため、ラベルが長いものだけ幅を広げる
+        for _c in _fshow:
+            _label = _c.split("_", 1)[1] if "_" in _c else _c
+            _col_cfg[_c] = st.column_config.TextColumn(
+                _label, width="medium" if len(_label) > 10 else "small",
+            )
+        if _tt_applied:
+            _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
+            _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
+
+        # -1（マスク値）を表示用に "*" へ変換（手術列のみ）
+        result_s_disp = result_s.copy()
+        for _c in _sshow + _organ_show:
+            if _c in result_s_disp.columns:
+                _v = pd.to_numeric(result_s_disp[_c], errors="coerce").fillna(0)
+                result_s_disp[_c] = _v.apply(
+                    lambda x: "*" if x == -1 else (f"{int(x):,}" if x > 0 else "0")
+                )
+
+        st.dataframe(result_s_disp, hide_index=True, use_container_width=True, column_config=_col_cfg)
+
+        # CSVダウンロード（CSV も -1 → "*"）
+        _csv_df = result_s.copy()
+        for _c in _sshow + _organ_show:
+            if _c in _csv_df.columns:
+                _v = pd.to_numeric(_csv_df[_c], errors="coerce").fillna(0)
+                _csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else int(x))
+        st.download_button(
+            "📥 CSV ダウンロード",
+            _csv_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"hospital_search_{s_year}.csv",
+            mime="text/csv",
+            key="s_csv_dl",
         )
-    if _tt_applied:
-        _col_cfg["直線距離(km)"] = st.column_config.NumberColumn("直線距離", format="%.1f km")
-        _col_cfg["所要時間(分)"] = st.column_config.NumberColumn("所要時間", format="%.1f 分")
 
-    # -1（マスク値）を表示用に "*" へ変換（手術列のみ）
-    result_s_disp = result_s.copy()
-    for _c in _sshow + _organ_show:
-        if _c in result_s_disp.columns:
-            _v = pd.to_numeric(result_s_disp[_c], errors="coerce").fillna(0)
-            result_s_disp[_c] = _v.apply(
-                lambda x: "*" if x == -1 else (f"{int(x):,}" if x > 0 else "0")
-            )
-
-    st.dataframe(result_s_disp, hide_index=True, use_container_width=True, column_config=_col_cfg)
-
-    # CSVダウンロード（CSV も -1 → "*"）
-    _csv_df = result_s.copy()
-    for _c in _sshow + _organ_show:
-        if _c in _csv_df.columns:
-            _v = pd.to_numeric(_csv_df[_c], errors="coerce").fillna(0)
-            _csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else int(x))
-    st.download_button(
-        "📥 CSV ダウンロード",
-        _csv_df.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"hospital_search_{s_year}.csv",
-        mime="text/csv",
-        key="s_csv_dl",
-    )
+    with _outer_tab2:
+        _render_dpc_search_tab()
 
 
     # 検索モードはここで終了
@@ -4147,399 +4558,9 @@ if st.session_state.get("_view_mode") == "dpc_search":
             st.session_state["_view_mode"] = "home"
             st.rerun()
 
-    # 選択肢（MDC・疾患名）と年度・列名だけの軽量インデックス。明細は疾患を
-    # 選んでから該当分だけ読む（634万行を保持しないため）。
-    _ds_idx = _load_dpc_disease_index(_DPC_SURG_MTIME)
-    if _ds_idx is None:
-        st.warning("DPCデータが読み込まれていません")
-        _render_footer()
-        st.stop()
-
-    _ds_hosp_info = _build_dpc_hosp_info()
-
-    # ── MDC・疾患名は選択のたびに連動させたいため、フォームの外に置いて
-    #    即座に反映されるようにする（MDCを変えると疾患名の選択肢がすぐに
-    #    絞り込まれる。フォーム内だと検索ボタンを押すまで反映されない）。
-    _dsf1, _dsf2 = st.columns([2, 4])
-    with _dsf1:
-        _ds_mdc_present = set(_ds_idx["options"]["MDC"].dropna().unique())
-        _ds_mdc_opts = ["すべて"] + [
-            f"{k}　{v}" for k, v in MDC_LABELS.items() if k in _ds_mdc_present
-        ]
-        if st.session_state.get("_dsc_mdc") not in _ds_mdc_opts:
-            st.session_state["_dsc_mdc"] = _ds_mdc_opts[0]
-        _ds_mdc_sel  = st.selectbox("MDC（診断群分類）", _ds_mdc_opts, key="_dsc_mdc")
-
-    with _dsf2:
-        # インデックスは「件数が0でない」行だけで作ってあるので、ここでは
-        # MDCで絞るだけでよい。
-        _ds_mdc_key = _ds_mdc_sel[:5].strip() if _ds_mdc_sel != "すべて" else None
-        _ds_opts = _ds_idx["options"]
-        _ds_disease_src = (
-            _ds_opts if _ds_mdc_key is None else _ds_opts[_ds_opts["MDC"] == _ds_mdc_key]
-        )
-        _ds_diseases = sorted(_ds_disease_src["疾患名"].dropna().unique().tolist())
-        # セッションステート検証（MDC変更時に古い疾患名が残らないように）
-        # 複数疾患を選んで合算比較できるようにしている（例: 胃がん＋大腸がん）。
-        # 旧実装は単一選択(selectbox)で session_state に文字列が入っていたため、
-        # 残っていた場合はリストに移行する。MDCを変えた際に選択肢から消えた疾患も
-        # ここで落とす。
-        _prev = st.session_state.get("_dsc_disease")
-        if isinstance(_prev, str):
-            _prev = [_prev]
-        if _prev is None:
-            # 初回は先頭の疾患を選んでおく（旧・単一選択時と同じく、開いた直後から
-            # 結果が出ている状態にするため）
-            st.session_state["_dsc_disease"] = _ds_diseases[:1]
-        else:
-            _kept = [d for d in _prev if d in _ds_diseases]
-            if _kept != list(_prev):
-                st.session_state["_dsc_disease"] = _kept
-        _ds_disease_sel = st.multiselect(
-            "疾患名（複数選択可・合算して比較）",
-            _ds_diseases, key="_dsc_disease",
-            placeholder="疾患名を入力して選択",
-        )
-
-    # ── 地域絞り込み（都道府県→二次医療圏）は選択のたびに連動させたいため、
-    #    フォームの外に置いて即座に反映されるようにする（フォーム内だと
-    #    都道府県を選んでも選択肢がすぐ現れず、検索ボタンを押すまで反映されない）。
-    _dsf4, _dsf5 = st.columns([3, 5])
-    with _dsf4:
-        _ds_geo_scope = st.radio("地域絞り込み", ["全国", "都道府県", "二次医療圏"], horizontal=True, key="_dsc_scope")
-        _ds_pref_sel = None
-        _ds_region_sel = None
-        if _ds_geo_scope in ("都道府県", "二次医療圏"):
-            _ds_all_prefs = sorted(_ds_hosp_info["都道府県名"].dropna().unique().tolist())
-            _ds_pref_sel  = st.selectbox("都道府県を選択", _ds_all_prefs, key="_dsc_pref")
-            if _ds_geo_scope == "二次医療圏":
-                _ds_all_regions = sorted(
-                    r for r in _ds_hosp_info[_ds_hosp_info["都道府県名"] == _ds_pref_sel]["二次医療圏名"].unique()
-                    if r
-                )
-                if _ds_all_regions:
-                    _ds_region_sel = st.selectbox("二次医療圏を選択", _ds_all_regions, key="_dsc_region")
-                else:
-                    st.caption("この都道府県はDPCと病床機能報告の突合データがありません")
-
-    with _dsf5:
-        _ds_all_kubun = ["DPC算定病院", "DPC準備病院", "出来高算定病院"]
-        # 旧デフォルト（出来高除外）のセッションを更新
-        if st.session_state.get("_dsc_kubun") == ["DPC算定病院", "DPC準備病院"]:
-            st.session_state["_dsc_kubun"] = _ds_all_kubun
-        _ds_kubun_sel = st.multiselect(
-            "病院区分",
-            _ds_all_kubun,
-            default=_ds_all_kubun,
-            key="_dsc_kubun",
-        )
-        _ds_hide_nan = st.checkbox("非公表（10例未満等）の病院を除く", value=True, key="_dsc_hide_nan")
-
-    with st.form("dpc_search_form"):
-        # ── フィルター行1: ランキング指標 + 手術有無 ──
-        _dsf3, _dsf3b = st.columns([2, 2])
-        with _dsf3:
-            _ds_metric = st.selectbox("ランキング指標", ["患者総数", "平均在院日数", "医療圏シェア"], key="_dsc_metric")
-
-        with _dsf3b:
-            _ds_surg_sel = st.radio("手術有無", ["すべて", "手術あり", "手術なし"], horizontal=False, key="_dsc_surg")
-
-        st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
-        _ds_btn_col1, _ds_btn_col2, _ds_btn_col3 = st.columns([1, 1, 1])
-        with _ds_btn_col2:
-            _ds_search_submitted = st.form_submit_button(
-                "🔍 この条件で検索する", type="primary", use_container_width=True,
-            )
-
-    st.markdown("---")
-
-    # ── 検索・集計 ──
-    # 列名の判定はparquetのスキーマ（インデックスが保持）で行い、データは読まない。
-    _ds_all_cols = _ds_idx["columns"]
-    _ds_has_surg_detail = "件数_手術有" in _ds_all_cols
-    _ds_cnt_col_base = next((c for c in _ds_all_cols if "件数" in c and "総計" in c), None)
-    _ds_los_col_base = next((c for c in _ds_all_cols if "在院" in c and "総計" in c), None)
-
-    # 件数_総計 = Excelコード99 = 手術なし件数（真の総計ではない）
-    # 件数_手術有 = Excelコード97 = 手術あり件数
-    # 真の総計 = 件数_総計(code99) + 件数_手術有(code97)
-    if _ds_surg_sel == "手術あり" and _ds_has_surg_detail:
-        _ds_cnt_col = "件数_手術有"
-        _ds_los_col = "在院日数_手術有" if "在院日数_手術有" in _ds_all_cols else _ds_los_col_base
-    elif _ds_surg_sel == "手術なし":
-        _ds_cnt_col = _ds_cnt_col_base  # 件数_総計 = code99 = 手術なし
-        _ds_los_col = _ds_los_col_base
-    else:  # すべて
-        _ds_cnt_col = "_ds_cnt_total"
-        _ds_los_col = _ds_los_col_base
-
-    if _ds_cnt_col_base and _ds_disease_sel:
-        # 選択した疾患（複数可）でフィルター（最新年度のみ）
-        _ds_filtered = _load_dpc_surgery_by_disease(
-            tuple(_ds_disease_sel), _DPC_SURG_MTIME
-        ).copy()
-        if "年度" in _ds_filtered.columns:
-            _ds_filtered = _ds_filtered[_ds_filtered["年度"] == _ds_filtered["年度"].max()]
-
-        # すべて: 真の総計 = 手術なし(code99) + 手術あり(code97)
-        if _ds_surg_sel == "すべて":
-            _ds_filtered["_ds_cnt_total"] = (
-                _ds_filtered["件数_総計"].fillna(0)
-                + (_ds_filtered["件数_手術有"].fillna(0) if _ds_has_surg_detail else 0)
-            )
-
-        # 手術有無データがない疾患（MDC06以外）の場合は警告
-        if _ds_surg_sel != "すべて" and _ds_has_surg_detail:
-            _surg_avail = _ds_filtered["件数_手術有"].notna().any() if "件数_手術有" in _ds_filtered.columns else False
-            if not _surg_avail:
-                st.info(
-                    "選択した疾患には手術有無別データが公表されていません。"
-                    "「すべて」に切り替えると患者総数で比較できます。"
-                )
-
-        # 告示番号単位で集計
-        _ds_agg: dict = {_ds_cnt_col: "sum", "施設名": "first"}
-        _ds_result = _ds_filtered.groupby("告示番号", as_index=False).agg(_ds_agg)
-
-        # 平均在院日数は疾患ごとに違うため、複数疾患を合算するときは件数で
-        # 重み付けした加重平均にする（"first" や単純平均だと症例数の少ない疾患に
-        # 引っ張られて実態とズレる。実測で1.8〜5.8日の差が出た）。
-        # 単一疾患ならその疾患の値と一致する。
-        # 件数が -1（＊マスク値）の行は重みにできないので除外する。
-        if _ds_los_col and _ds_los_col in _ds_filtered.columns:
-            _w = _ds_filtered[["告示番号", _ds_cnt_col, _ds_los_col]].copy()
-            _w["_c"] = pd.to_numeric(_w[_ds_cnt_col], errors="coerce")
-            _w["_l"] = pd.to_numeric(_w[_ds_los_col], errors="coerce")
-            _w = _w[(_w["_c"] > 0) & _w["_l"].notna()]
-            if not _w.empty:
-                _w["_p"] = _w["_c"] * _w["_l"]
-                _wa = _w.groupby("告示番号", as_index=False).agg(
-                    _psum=("_p", "sum"), _csum=("_c", "sum")
-                )
-                _wa[_ds_los_col] = (_wa["_psum"] / _wa["_csum"]).round(1)
-                _ds_result = _ds_result.merge(
-                    _wa[["告示番号", _ds_los_col]], on="告示番号", how="left"
-                )
-            else:
-                _ds_result[_ds_los_col] = np.nan
-
-        # 選択した疾患ごとの件数を列として持たせる（合算値だけだと内訳が見えないため。
-        # 「検索条件に使ったデータは結果表とCSVに列として出す」方針のDPC版）。
-        # 疾患を1つしか選んでいない場合は「患者数」列と同じ値になるので付けない。
-        _ds_by_disease_cols: list[str] = []
-        if len(_ds_disease_sel) > 1 and "疾患名" in _ds_filtered.columns:
-            _piv = (
-                _ds_filtered.pivot_table(
-                    index="告示番号", columns="疾患名", values=_ds_cnt_col,
-                    aggfunc="sum", observed=True,
-                )
-                .reset_index()
-            )
-            _ren = {}
-            for _dn in _ds_disease_sel:
-                if _dn in _piv.columns:
-                    _ren[_dn] = f"疾患_{_dn}"
-            _piv = _piv.rename(columns=_ren)
-            _ds_by_disease_cols = [c for c in _ren.values()]
-            if _ds_by_disease_cols:
-                _ds_result = _ds_result.merge(
-                    _piv[["告示番号"] + _ds_by_disease_cols], on="告示番号", how="left"
-                )
-
-        # 病院情報（病院区分・都道府県名）をJOIN
-        if not _ds_hosp_info.empty:
-            _ds_result = _ds_result.merge(_ds_hosp_info, on="告示番号", how="left")
-        else:
-            _ds_result["病院区分"] = ""
-            _ds_result["都道府県名"] = ""
-
-        # 病院区分フィルター
-        if _ds_kubun_sel:
-            _ds_result = _ds_result[_ds_result["病院区分"].isin(_ds_kubun_sel)]
-
-        # 医療圏シェア: 同一二次医療圏内でこの病院の件数が占める割合
-        # （地域絞り込みの前、病院区分フィルター後の母集団で計算する）
-        if "二次医療圏名" in _ds_result.columns:
-            _share_base = _ds_result[
-                (_ds_result["二次医療圏名"] != "") & (_ds_result[_ds_cnt_col] >= 0)
-            ]
-            _region_totals = _share_base.groupby("二次医療圏名")[_ds_cnt_col].sum()
-
-            def _calc_share(row, _totals=_region_totals):
-                reg = row.get("二次医療圏名", "")
-                cnt = row.get(_ds_cnt_col)
-                if not reg or pd.isna(cnt) or cnt < 0:
-                    return np.nan
-                tot = _totals.get(reg, 0)
-                return round(cnt / tot * 100, 1) if tot > 0 else np.nan
-
-            _ds_result["医療圏シェア"] = _ds_result.apply(_calc_share, axis=1)
-
-        # 都道府県フィルター
-        if _ds_geo_scope in ("都道府県", "二次医療圏") and _ds_pref_sel:
-            _ds_result = _ds_result[_ds_result["都道府県名"] == _ds_pref_sel]
-
-        # 二次医療圏フィルター
-        if _ds_geo_scope == "二次医療圏" and _ds_region_sel:
-            _ds_result = _ds_result[_ds_result["二次医療圏名"] == _ds_region_sel]
-
-        # 非公表除外（0件を除く。-1はマスク値なので残す）
-        if _ds_hide_nan:
-            _ds_result = _ds_result[_ds_result[_ds_cnt_col].notna() & (_ds_result[_ds_cnt_col] != 0)]
-
-        # 平均在院日数カラムを作成
-        if _ds_los_col and _ds_los_col in _ds_result.columns:
-            _ds_result = _ds_result.rename(columns={_ds_los_col: "平均在院日数"})
-
-        # ソート
-        _sort_col_map = {"患者総数": _ds_cnt_col, "平均在院日数": "平均在院日数", "医療圏シェア": "医療圏シェア"}
-        _sort_col = _sort_col_map.get(_ds_metric, _ds_cnt_col)
-        _asc      = _ds_metric == "平均在院日数"
-        if _sort_col in _ds_result.columns:
-            _ds_result = _ds_result.sort_values(_sort_col, ascending=_asc, na_position="last")
-
-        _ds_result = _ds_result.reset_index(drop=True)
-        _ds_result.index += 1
-
-        # カラム表示設定
-        _total_n = len(_ds_result)
-        # -1（マスク値）を除いた実件数合計
-        _total_patients = int(_ds_result[_ds_cnt_col].clip(lower=0).sum()) if _ds_cnt_col in _ds_result.columns else 0
-        _ds_year = _ds_idx["max_year"]
-        if _ds_year:
-            st.markdown(_source_tag(_dpc_source(_ds_year)), unsafe_allow_html=True)
-        st.caption(
-            f"**{_total_n:,}病院** が対象 / 疾患（{len(_ds_disease_sel)}件）: "
-            + "、".join(_ds_disease_sel)
-            + (f" / 合計 {_total_patients:,}例（＊除く）" if not _ds_hide_nan else "")
-            + ("　※複数疾患の合算です。平均在院日数は件数で重み付けした加重平均。"
-               if len(_ds_disease_sel) > 1 else "")
-        )
-
-        _ds_show_cols = ["施設名", "病院区分", "都道府県名", "二次医療圏名", _ds_cnt_col]
-        _ds_col_cfg: dict = {
-            "施設名":      st.column_config.TextColumn("病院名"),
-            "病院区分":    st.column_config.TextColumn("区分"),
-            "都道府県名":   st.column_config.TextColumn("都道府県"),
-            "二次医療圏名": st.column_config.TextColumn("二次医療圏"),
-            _ds_cnt_col:  st.column_config.TextColumn("患者数"),
-        }
-        if "平均在院日数" in _ds_result.columns:
-            _ds_show_cols.append("平均在院日数")
-            _ds_col_cfg["平均在院日数"] = st.column_config.TextColumn("平均在院日数")
-        # 疾患ごとの内訳列（合計 → 平均在院日数 → シェア の後ろに並べる）
-        for _c in _ds_by_disease_cols:
-            if _c in _ds_result.columns:
-                _ds_show_cols.append(_c)
-                # 疾患名は長いものが多く、見出しが切れるとどの列か分からなくなる
-                _lb = _c.split("_", 1)[1]
-                _ds_col_cfg[_c] = st.column_config.TextColumn(
-                    _lb, width="medium" if len(_lb) > 8 else "small",
-                )
-        if "医療圏シェア" in _ds_result.columns:
-            _ds_show_cols.append("医療圏シェア")
-            _ds_col_cfg["医療圏シェア"] = st.column_config.TextColumn("医療圏シェア")
-
-        # -1（マスク値）を "*" に変換した表示用コピー
-        _ds_disp = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
-        # 疾患ごとの内訳列も件数と同じ書式（-1は＊マスク値、未該当は空欄）にする
-        for _c in [_ds_cnt_col, "平均在院日数"] + _ds_by_disease_cols:
-            if _c in _ds_disp.columns:
-                _is_los = (_c == "平均在院日数")
-                _v = pd.to_numeric(_ds_disp[_c], errors="coerce")
-                _ds_disp[_c] = _v.apply(
-                    lambda x, _l=_is_los: "*" if x == -1 else (
-                        "" if pd.isna(x) else (f"{x:.1f}日" if _l else f"{int(x):,}例")
-                    )
-                )
-        if "医療圏シェア" in _ds_disp.columns:
-            _ds_disp["医療圏シェア"] = _ds_result["医療圏シェア"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
-            st.caption("※医療圏シェアは同一二次医療圏内（非公表・*病院を除く）での件数比率の参考値です")
-
-        # 前回選択した病院のバナーをテーブルの上に表示（地図モードと同じパターン）
-        _dsc_last = st.session_state.get("_dsc_last_selected")
-        if _dsc_last:
-            _dsc_c1, _dsc_c2 = st.columns([4, 1])
-            with _dsc_c1:
-                st.info(f"🏥 **{_dsc_last}** を選択中")
-            with _dsc_c2:
-                if st.button("詳細を見る →", key="_dsc_nav_btn", type="primary", use_container_width=True):
-                    # 病床報告データから最新行を取得してナビゲート
-                    _df_base = st.session_state.df
-                    if _df_base is not None:
-                        _hr_rows = _df_base[_df_base["医療機関名"] == _dsc_last].sort_values("報告年度", ascending=False)
-                        if not _hr_rows.empty:
-                            _hr = _hr_rows.iloc[0]
-                            st.session_state["_nav_jump"] = {
-                                "year":     int(_hr["報告年度"]),
-                                "pref":     str(_hr["都道府県名"]),
-                                "region":   str(_hr["二次医療圏名"]),
-                                "hospital": _dsc_last,
-                            }
-                            st.session_state["_hospital_chosen"] = True
-                            st.session_state["_view_mode"] = "detail"
-                            st.session_state.pop("_dsc_last_selected", None)
-                            st.rerun()
-
-        st.caption("💡 行をクリックして病院を選択 → 「詳細を見る」で病院詳細に移動できます")
-        _ds_evt = st.dataframe(
-            _ds_disp,
-            use_container_width=True,
-            column_config=_ds_col_cfg,
-            height=520,
-            on_select="rerun",
-            selection_mode="single-row",
-            key="_dsc_table",
-        )
-
-        _ds_csv_df = _ds_result[[c for c in _ds_show_cols if c in _ds_result.columns]].copy()
-        for _c in [_ds_cnt_col, "平均在院日数"] + _ds_by_disease_cols:
-            if _c in _ds_csv_df.columns:
-                _v = pd.to_numeric(_ds_csv_df[_c], errors="coerce")
-                _ds_csv_df[_c] = _v.apply(lambda x: "*" if x == -1 else ("" if pd.isna(x) else x))
-        st.download_button(
-            "📥 CSV ダウンロード",
-            _ds_csv_df.to_csv(index=False).encode("utf-8-sig"),
-            file_name="dpc_search.csv",
-            mime="text/csv",
-            key="dsc_csv_dl",
-        )
-
-        # 行選択 → DPC施設名からbyosho医療機関名を解決してセッションステートに保存
-        _ds_sel_rows = _ds_evt.selection.rows if hasattr(_ds_evt, "selection") else []
-        if _ds_sel_rows:
-            _sel_row      = _ds_disp.iloc[_ds_sel_rows[0]]
-            _sel_dpc_name = _sel_row["施設名"]
-            _sel_pref     = _sel_row.get("都道府県名", "") if "都道府県名" in _sel_row.index else ""
-            _nav_name     = _sel_dpc_name
-            _df_base      = st.session_state.df
-            if _df_base is not None:
-                _pref_hosps = (
-                    _df_base[_df_base["都道府県名"] == _sel_pref]["医療機関名"]
-                    if _sel_pref else _df_base["医療機関名"]
-                )
-                def _norm(s): return s.replace('　', '').replace(' ', '')
-                _dpc_norm = _norm(_sel_dpc_name)
-                # 1. 完全一致
-                if _sel_dpc_name in _pref_hosps.values:
-                    _nav_name = _sel_dpc_name
-                else:
-                    # 2. 部分一致（元の表記）
-                    _nav_name = next(
-                        (_h for _h in _pref_hosps if _h in _sel_dpc_name or _sel_dpc_name in _h),
-                        None
-                    )
-                    if _nav_name is None:
-                        # 3. 正規化（全角スペース除去）後の一致
-                        _nav_name = next(
-                            (_h for _h in _pref_hosps if _norm(_h) in _dpc_norm or _dpc_norm in _norm(_h)),
-                            _sel_dpc_name
-                        )
-            st.session_state["_dsc_last_selected"] = _nav_name
-            st.rerun()
-
-    elif _ds_cnt_col_base and not _ds_disease_sel:
-        st.info("疾患名を1つ以上選んでください（複数選べば合算した件数で比較できます）。")
+    # 検索UI・集計・結果表は「条件で病院を検索」画面の「DPCで探す」タブと共通
+    # （_render_dpc_search_tab に集約。重複実装を避けるため）。
+    _render_dpc_search_tab()
 
     _render_footer()
     st.stop()
