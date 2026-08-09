@@ -6075,27 +6075,34 @@ with tab6:
                 "人工心肺手術数": "人工心肺",
             }
 
+            def _surg_disp(v):
+                """手術件数表示用（-1は＊マスク値、それ以外はカンマ区切り整数）"""
+                n = _si(v)
+                return "*" if n == -1 else f"{n:,}"
+
             kpi_cols = st.columns(4)
             for (col, label), kpi in zip(list(SURG_COLS.items())[:4], kpi_cols):
-                val = _si(surg_row.get(col, 0))
-                kpi.metric(label, f"{val:,}件")
+                kpi.metric(label, f"{_surg_disp(surg_row.get(col, 0))}件")
 
             kpi_cols2 = st.columns(4)
             for (col, label), kpi in zip(list(SURG_COLS.items())[4:], kpi_cols2):
-                val = _si(surg_row.get(col, 0))
-                kpi.metric(label, f"{val:,}件")
+                kpi.metric(label, f"{_surg_disp(surg_row.get(col, 0))}件")
 
             total = _si(surg_row.get("手術総数", 0))
             if total > 0:
                 import plotly.graph_objects as go
                 detail_cols = {k: v for k, v in SURG_COLS.items() if k != "手術総数"}
-                vals = [_si(surg_row.get(c, 0)) for c in detail_cols]
+                raw_vals = [_si(surg_row.get(c, 0)) for c in detail_cols]
+                # マスク値(-1)は棒の長さとしては描画できないため0扱いにし、
+                # ラベル文字列側だけ"*"で表示する
+                vals = [0 if v == -1 else v for v in raw_vals]
                 labels = list(detail_cols.values())
                 pcts = [round(v / total * 100, 1) for v in vals]
                 fig_surg = go.Figure(go.Bar(
                     x=vals, y=labels, orientation="h",
                     marker_color="#3498db",
-                    text=[f"{v:,}件 ({p}%)" for v, p in zip(vals, pcts)],
+                    text=[f"{'*' if rv == -1 else f'{v:,}'}件 ({p}%)"
+                          for rv, v, p in zip(raw_vals, vals, pcts)],
                     textposition="auto",
                 ))
                 fig_surg.update_layout(
