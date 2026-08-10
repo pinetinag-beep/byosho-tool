@@ -454,13 +454,14 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
     min-height: 158px;
     transition: box-shadow .15s, transform .15s, border-color .15s;
     margin-bottom: 4px;
+    text-align: center;
 }
 .method-card:hover {
     box-shadow: 0 4px 18px rgba(70,60,35,.12);
     border-color: var(--brand-line);
     transform: translateY(-1px);
 }
-.method-card .mc-icon { line-height: 1; margin-bottom: 12px; }
+.method-card .mc-icon { line-height: 1; margin-bottom: 12px; display: flex; justify-content: center; }
 .method-card .mc-icon svg { stroke: var(--brand); width: 30px; height: 30px; }
 .method-card .mc-title { font-size: 0.98rem; font-weight: 700; margin-bottom: 7px; }
 .method-card .mc-desc  { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.7; }
