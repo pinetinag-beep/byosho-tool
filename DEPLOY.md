@@ -239,6 +239,11 @@ sudo certbot --nginx -d <ドメイン名>
 
 ## 今後の更新フロー（データ更新・コード変更の反映）
 
+Streamlit Community Cloudと違い、VPSはgit pushしただけでは自動反映されない（自動
+再デプロイの仕組みが無いため）。反映方法は3案検討し、**まずは①手動から開始**する
+と決めた（2026年8月）。落ち着いたら②（Claudeへの権限付与）や③（Webhook等での
+自動化）への移行も検討する。
+
 ```bash
 cd ~/byosho-tool
 git pull
