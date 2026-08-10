@@ -107,7 +107,7 @@ def _cached_geocode_address(text: str):
 # ── ページ設定 ─────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="病床機能報告 分析ツール",
+    page_title="MedilenZ",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -336,7 +336,7 @@ def _render_footer():
 
     st.markdown(
         "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
-        "© 病床機能報告 分析ツール — データ出典: 厚生労働省「病床機能報告」</div>",
+        "© MedilenZ — データ出典: 厚生労働省「病床機能報告」</div>",
         unsafe_allow_html=True,
     )
 
@@ -2064,9 +2064,9 @@ if st.session_state.get("_view_mode") == "home":
   <p style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.18em;margin:0 0 10px;">
     地域の医療をひらく、公的データのまど
   </p>
-  <h1 style="font-size:2.3rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.25;
-             letter-spacing:0.01em;">
-    全国の医療機関の情報を調べる
+  <h1 style="font-size:3rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.1;
+             letter-spacing:-0.01em;font-family:'Helvetica Neue',Arial,sans-serif;">
+    Medilen<span style="color:#12886D;">Z</span>
   </h1>
   <p style="font-size:0.98rem;font-weight:500;color:#6E6A5E;margin:0;">どうやって探しますか？</p>
 </div>""",
