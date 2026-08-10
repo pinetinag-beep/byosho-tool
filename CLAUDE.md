@@ -154,6 +154,7 @@ python build_byosho_r7.py --dir byosho_file_R7 --year 2025 \
 - ファイル数が少なく容量も小さい生データ（学会認定施設のような数個〜数十個のPDF/Excel）はそのままリポジトリに含めてよい。
 - 迷ったら上の表の既存パターンに揃える（新しい命名規則を都度発明しない）。
 - **処理後にフォルダを削除し忘れると、gitignore対象でもディスクを圧迫したまま残り続ける**（2026年8月、`byosho_file_R6`を`git checkout`で復元して処理した後に削除し忘れ、321MBが放置されていたのが実例）。生データフォルダを扱う作業の最後には必ず削除まで確認すること。
+- **【2026年8月・git履歴のクリーンアップ実施】** 過去にこの規則が無かったため、`byosho_file_R4`〜`R7`・`DPC_file_R4`/`R5`の生データフォルダが**すべて一度git履歴に直接commitされてから後で削除される**、という運用になっていた（`.gitignore`されていても、過去にcommitされた分は履歴の中に残り続ける）。結果として`.git`が1.3GBまで肥大化していたため、`git filter-repo --path <各フォルダ> --invert-paths`で該当パスを全履歴から除去し、287MB（約78%削減）まで圧縮した。全commitのハッシュが変わるため、事前に`git bundle create`でフルバックアップを取ってから実施し、`origin`への`git push --force`で反映した（`git filter-repo`はデフォルトでoriginリモートを自動削除するため、実行後に`git remote add origin <URL>`で再設定し、`git branch --set-upstream-to=origin/master master`でtracking関係も再設定する必要がある）。**今後は上記の命名規則（gitignore対象は最初からcommitしない）を徹底し、この種の履歴肥大化を再発させないこと。**
 
 ## アーキテクチャ
 
