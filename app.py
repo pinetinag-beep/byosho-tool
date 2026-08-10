@@ -2106,10 +2106,10 @@ if st.session_state.get("_view_mode") == "home":
     _ICON_CLOCK   = _svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')
     _ICON_SLIDERS = _svg('<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>')
 
-    def _landing_group_header(title, desc):
+    def _landing_group_header(title, desc=""):
         st.markdown(
             f"<div class='landing-group-title'>{title}</div>"
-            f"<div class='landing-group-desc'>{desc}</div>",
+            + (f"<div class='landing-group-desc'>{desc}</div>" if desc else ""),
             unsafe_allow_html=True,
         )
 
@@ -2126,7 +2126,9 @@ if st.session_state.get("_view_mode") == "home":
     # 3枚になったので2グループに分けず、1行3等分で並べる
     # （「等間隔で並べて」との指摘。1枚だけのグループが半分の幅で
     # 余白を持て余していた見た目を解消する）。
-    _landing_group_header("病院を探す", "病院名・距離・設備条件など、探し方に合わせて選べます")
+    # カード自体の見た目（アイコン・タイトル・説明文）で探し方が分かるため、
+    # グループ見出しの補足説明は不要と指摘され削除した（2026年8月）。
+    _landing_group_header("病院を探す")
     _mc1, _mc4, _mc5 = st.columns(3, gap="medium")
     with _mc1:
         st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
