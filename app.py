@@ -248,90 +248,91 @@ def _render_footer():
 """, unsafe_allow_html=True)
 
     with _fb:
-        with st.expander("🔧 管理者"):
-            st.caption("データの再読み込み / キャッシュ管理")
-            if st.button("キャッシュをクリアして再読み込み", use_container_width=True, key="_ftr_cache_clear"):
-                st.cache_data.clear()
-                for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
-                    st.session_state.pop(key, None)
-                st.rerun()
-            st.divider()
-            st.caption("🔬 手術データの取り込み（様式2）")
-            _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")
-            _y2_hint = "2021年は7地域ファイルを全て選択" if _y2_year_sel == 2021 else "全国1ファイルを選択"
-            _y2_files = st.file_uploader(
-                f"Excelファイルを選択（{_y2_hint}）",
-                type=["xlsx", "xls"],
-                accept_multiple_files=True,
-                key="_ftr_yoshiki2_upload",
-            )
-            if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_ftr_yoshiki2_import"):
-                _prog = st.progress(0, text="処理開始...")
-                _status = st.empty()
-                try:
-                    _parts = []
-                    for _i, _f in enumerate(_y2_files):
-                        _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
-                        _fb_bytes = _f.read()
-                        _part = load_mhlw_yoshiki2(_fb_bytes, year=_y2_year_sel)
-                        _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
-                        _parts.append(_part)
-                    _prog.progress(1.0, text="集計中...")
-                    if not _parts:
-                        _prog.empty()
-                        st.error("データが空です。")
-                    else:
-                        _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
-                        _existing = st.session_state.get("surgery_df")
-                        if _existing is not None and not _existing.empty:
-                            _existing = _existing[_existing["報告年度"] != _y2_year_sel]
-                            _merged = pd.concat([_existing, _surg_new], ignore_index=True)
-                        else:
-                            _merged = _surg_new
-                        st.session_state["surgery_df"] = _merged
-                        import io as _io2
-                        _pbuf = _io2.BytesIO()
-                        _merged.to_parquet(_pbuf, index=False)
-                        st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
-                        _prog.empty()
-                        _status.empty()
-                        st.success(f"✅ {_y2_year_sel}年: {len(_surg_new):,} 病院取り込み完了")
-                except Exception as _e:
-                    st.error(f"エラー: {_e}")
-            if st.session_state.get("_yoshiki2_parquet"):
-                st.download_button(
-                    "📥 surgery_cache.parquet をダウンロード",
-                    data=st.session_state["_yoshiki2_parquet"],
-                    file_name="surgery_cache.parquet",
-                    mime="application/octet-stream",
-                    use_container_width=True,
-                    type="primary",
-                    key="_ftr_dl_parquet",
+        if os.environ.get("BYOSHO_HIDE_ADMIN") != "1":
+            with st.expander("🔧 管理者"):
+                st.caption("データの再読み込み / キャッシュ管理")
+                if st.button("キャッシュをクリアして再読み込み", use_container_width=True, key="_ftr_cache_clear"):
+                    st.cache_data.clear()
+                    for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
+                        st.session_state.pop(key, None)
+                    st.rerun()
+                st.divider()
+                st.caption("🔬 手術データの取り込み（様式2）")
+                _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")
+                _y2_hint = "2021年は7地域ファイルを全て選択" if _y2_year_sel == 2021 else "全国1ファイルを選択"
+                _y2_files = st.file_uploader(
+                    f"Excelファイルを選択（{_y2_hint}）",
+                    type=["xlsx", "xls"],
+                    accept_multiple_files=True,
+                    key="_ftr_yoshiki2_upload",
                 )
-            st.divider()
-            st.caption("📊 DPC・病床機能・施設基準届出 統合表")
-            _df_for_export = st.session_state.get("df")
-            if _df_for_export is not None and not _df_for_export.empty:
-                if st.button("統合表を生成する", use_container_width=True, key="_ftr_gen_integrated"):
-                    with st.spinner("生成中..."):
-                        try:
-                            _xl_bytes = _build_integrated_excel(_df_for_export)
-                            st.session_state["_integrated_excel"] = _xl_bytes
-                        except Exception as _e:
-                            st.error(f"エラー: {_e}")
-                if st.session_state.get("_integrated_excel"):
-                    _yr = int(_df_for_export["報告年度"].max())
+                if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_ftr_yoshiki2_import"):
+                    _prog = st.progress(0, text="処理開始...")
+                    _status = st.empty()
+                    try:
+                        _parts = []
+                        for _i, _f in enumerate(_y2_files):
+                            _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
+                            _fb_bytes = _f.read()
+                            _part = load_mhlw_yoshiki2(_fb_bytes, year=_y2_year_sel)
+                            _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
+                            _parts.append(_part)
+                        _prog.progress(1.0, text="集計中...")
+                        if not _parts:
+                            _prog.empty()
+                            st.error("データが空です。")
+                        else:
+                            _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
+                            _existing = st.session_state.get("surgery_df")
+                            if _existing is not None and not _existing.empty:
+                                _existing = _existing[_existing["報告年度"] != _y2_year_sel]
+                                _merged = pd.concat([_existing, _surg_new], ignore_index=True)
+                            else:
+                                _merged = _surg_new
+                            st.session_state["surgery_df"] = _merged
+                            import io as _io2
+                            _pbuf = _io2.BytesIO()
+                            _merged.to_parquet(_pbuf, index=False)
+                            st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
+                            _prog.empty()
+                            _status.empty()
+                            st.success(f"✅ {_y2_year_sel}年: {len(_surg_new):,} 病院取り込み完了")
+                    except Exception as _e:
+                        st.error(f"エラー: {_e}")
+                if st.session_state.get("_yoshiki2_parquet"):
                     st.download_button(
-                        "📥 統合表 Excel をダウンロード",
-                        data=st.session_state["_integrated_excel"],
-                        file_name=f"医療機関統合表_{_yr}年度.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "📥 surgery_cache.parquet をダウンロード",
+                        data=st.session_state["_yoshiki2_parquet"],
+                        file_name="surgery_cache.parquet",
+                        mime="application/octet-stream",
                         use_container_width=True,
                         type="primary",
-                        key="_ftr_dl_integrated",
+                        key="_ftr_dl_parquet",
                     )
-            else:
-                st.caption("データ読み込み後に使用できます")
+                st.divider()
+                st.caption("📊 DPC・病床機能・施設基準届出 統合表")
+                _df_for_export = st.session_state.get("df")
+                if _df_for_export is not None and not _df_for_export.empty:
+                    if st.button("統合表を生成する", use_container_width=True, key="_ftr_gen_integrated"):
+                        with st.spinner("生成中..."):
+                            try:
+                                _xl_bytes = _build_integrated_excel(_df_for_export)
+                                st.session_state["_integrated_excel"] = _xl_bytes
+                            except Exception as _e:
+                                st.error(f"エラー: {_e}")
+                    if st.session_state.get("_integrated_excel"):
+                        _yr = int(_df_for_export["報告年度"].max())
+                        st.download_button(
+                            "📥 統合表 Excel をダウンロード",
+                            data=st.session_state["_integrated_excel"],
+                            file_name=f"医療機関統合表_{_yr}年度.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            type="primary",
+                            key="_ftr_dl_integrated",
+                        )
+                else:
+                    st.caption("データ読み込み後に使用できます")
 
     st.markdown(
         "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
