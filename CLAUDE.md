@@ -234,7 +234,15 @@ parse_chubu_shisetsu_pdf.py ← 施設基準届出「届出受理医療機関名
 
 **ユーザー環境の注意点：**
 - Pythonの実行は `py` コマンドを使う（`python` はMicrosoft Store stubで動かない）
-- 作業フォルダ: `C:\Users\inter\OneDrive\Desktop\byosho_tool`
+- 作業フォルダ: `C:\Users\inter\OneDrive\Desktop\byosho_tool`（＝gitリポジトリのローカルclone。新しくダウンロードした生データも、このフォルダ直下に保存する）
+
+**新しい生データをダウンロードした時、デスクトップ上でどこに置くか**（命名規則の詳細は「生データフォルダの管理規則」セクション参照）:
+- 作業フォルダ直下に、データ種別ごとに決まった名前のフォルダを作って保存する（毎回フォルダ名を考えず、この命名規則に揃える）
+  - 病床機能報告：`byosho_file_R{令和年度}`（例: 令和8年度なら `byosho_file_R8`）
+  - DPC：`DPC_file_R{令和年度}`
+  - 施設基準届出（全件スナップショット）：`shisetsu_raw`（既存フォルダに上書き保存）
+  - 施設基準届出（新規・失効の差分）：`shisetsu_new_{今日の日付YYYYMMDD}`
+- **処理が終わって新しいparquetがpush・反映されたら、`byosho_file_R*` / `DPC_file_R*` / `shisetsu_new_*` のフォルダはデスクトップから削除してOK**（`.gitignore`対象＝そもそもGitHubには上がらない一時作業フォルダなので、ローカルに残しておく必要が無い。容量も数百MB単位になりがちなので消してディスクを空けること）。`shisetsu_raw` と `gakkai_nintei_raw` はリポジトリに含めているフォルダなので削除しない。
 
 **指示の例（住所データを追加する場合）：**
 
