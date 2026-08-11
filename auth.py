@@ -102,6 +102,84 @@ def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
                   "お手数ですがサポートまでご連絡ください。")
 
 
+def _render_landing_content() -> None:
+    """未ログイン時のLPコンテンツ（機能紹介・使い方・利用条件）。"""
+    st.markdown(
+        """
+<div style="max-width:760px;margin:0 auto 8px;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:8px 0 28px;">
+    <div style="flex:1;min-width:200px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">🏥</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">全国の病院を比較</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        厚労省「病床機能報告」を中心に、DPC・手術実績・医療設備・スタッフ数などのデータを統合。
+        地域内の競合病院や全国の病院と横並びで比較できます。
+      </div>
+    </div>
+    <div style="flex:1;min-width:200px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">🔍</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">条件で病院を検索</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        CT/MRI台数・手術件数・救急搬送件数など、豊富な条件で全国の病院を絞り込み検索できます。
+      </div>
+    </div>
+    <div style="flex:1;min-width:200px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">📍</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">距離・所要時間で探す</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        住所やランドマークから、移動手段別にN分以内の病院を一覧表示します。
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#EAF4F0;border:1px solid #BFDFD4;border-radius:14px;
+              padding:20px 24px;margin:0 0 28px;">
+    <div style="font-weight:800;color:#26251F;margin-bottom:10px;">使い方</div>
+    <ol style="margin:0;padding-left:20px;color:#4b5563;font-size:0.9rem;line-height:1.9;">
+      <li>下の「新規申込み」タブでメールアドレスを入力</li>
+      <li>Stripeの決済ページでお支払い（月額500円）</li>
+      <li>決済完了後、自動でアカウントが発行され、ログイン情報がメールで届きます</li>
+      <li>メールに記載のIDとパスワードで「ログイン」タブからログイン</li>
+    </ol>
+  </div>
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("利用条件・特定商取引法に基づく表示"):
+        st.markdown(
+            """
+**料金プラン**：月額500円（税込）
+
+**お支払い方法**：クレジットカード決済（Stripe）
+
+**お支払い時期**：お申し込み時に決済、以降は毎月自動更新（同日課金）
+
+**サービス提供時期**：決済完了後、即時にご利用いただけます
+
+**解約について**：現在、解約手続きはご自身では行えません。解約をご希望の場合は
+info@medilenz.jp までご連絡ください。デジタルサービスの性質上、お支払い済みの
+期間分の返金には原則対応しておりません。
+
+---
+
+**特定商取引法に基づく表示**
+
+| 項目 | 内容 |
+|---|---|
+| 販売業者 | MedilenZ |
+| 運営統括責任者 | 高橋 信一 |
+| 所在地 | ご請求いただければ遅滞なく開示いたします |
+| 電話番号 | ご請求いただければ遅滞なく開示いたします |
+| メールアドレス | info@medilenz.jp |
+| 販売価格 | 月額500円（税込） |
+"""
+        )
+
+
 def require_login(authenticator: stauth.Authenticate) -> None:
     """ログイン必須ゲート。未ログインならログイン/申込み画面を表示してst.stop()する。
 
@@ -128,6 +206,8 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 </div>""",
         unsafe_allow_html=True,
     )
+
+    _render_landing_content()
 
     _tab_login, _tab_register = st.tabs(["ログイン", "新規申込み"])
 
