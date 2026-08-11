@@ -131,6 +131,28 @@ window.parent.document.documentElement.classList.add("notranslate");
 </script>
 """, height=0)
 
+# ── Google Analytics（GA4）────────────────────────────────
+# 本番ドメイン（medilenz.jp）でのアクセスのみ計測する（ローカル開発・
+# Streamlit Cloudのテスト版アクセスを計測に混入させないため、ホスト名で
+# 判定してから読み込む）。毎rerunでこのcomponents.htmlは再実行されるが、
+# window.parent.__gaLoaded で多重読み込みを防止する
+# （notranslate/Enterキー無効化と同じガード方式）。
+components.html("""
+<script>
+if (window.parent.location.hostname === 'medilenz.jp' && !window.parent.__gaLoaded) {
+    window.parent.__gaLoaded = true;
+    const s = window.parent.document.createElement('script');
+    s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id=G-8Y6SDBSCMQ';
+    window.parent.document.head.appendChild(s);
+    window.parent.dataLayer = window.parent.dataLayer || [];
+    window.parent.gtag = function(){ window.parent.dataLayer.push(arguments); };
+    window.parent.gtag('js', new Date());
+    window.parent.gtag('config', 'G-8Y6SDBSCMQ');
+}
+</script>
+""", height=0)
+
 # ── 検索フォーム内でのEnterキー送信を無効化 ───────────────────
 # st.form() はHTMLの<form>と同様、テキスト入力欄でEnterを押すとボタン
 # クリックと同じく送信されてしまう（標準のブラウザ挙動）。「検索ボタンを
