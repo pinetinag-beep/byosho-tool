@@ -22,6 +22,7 @@ from data_processor import (
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
+from auth import require_login, get_authenticator
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -179,17 +180,15 @@ if (!window.parent.__enterGuardInstalled) {
 </script>
 """, height=0)
 
-# ── Google Analytics ───────────────────────────────────────
-st.markdown("""
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-8Y6SDBSCMQ"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-8Y6SDBSCMQ');
-</script>
-""", unsafe_allow_html=True)
+# ── ログイン必須ゲート ──────────────────────────────────────
+# 未ログインの場合はここでログイン/新規登録画面を表示してst.stop()する。
+# 以降のデータ読み込み・画面描画はログイン済みユーザーにしか到達しない。
+# stauth.Authenticateは1回のスクリプト実行につき1個だけ生成すること
+# （内部のCookie管理コンポーネントが固定keyを使うため、複数回生成すると
+# Streamlitの重複keyエラーになる）。_render_header()のログアウトボタンも
+# この同じインスタンスを使い回す。
+_authenticator = get_authenticator()
+require_login(_authenticator)
 
 
 def _render_header():
@@ -198,6 +197,18 @@ def _render_header():
     _hospital = st.session_state.get("_sel_hospital", "")
     _pref     = st.session_state.get("_sel_pref", "")
     _region   = st.session_state.get("_sel_region", "")
+
+    _uc1, _uc2 = st.columns([8.5, 1.5])
+    with _uc1:
+        _user_email = st.session_state.get("username", "")
+        if _user_email:
+            st.markdown(
+                f"<div style='font-size:0.72rem;color:#9ca3af;padding:6px 0 0;'>"
+                f"{_user_email}</div>",
+                unsafe_allow_html=True,
+            )
+    with _uc2:
+        _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
 
     if mode == "home":
         st.markdown(

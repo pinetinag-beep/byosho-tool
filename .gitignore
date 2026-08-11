@@ -26,6 +26,9 @@ __pycache__/
 data/*.duckdb
 data/*.duckdb.wal
 
+# ユーザー認証情報（パスワードハッシュ・Cookie署名鍵を含むため必ず除外）
+data/auth_config.yaml
+
 # 一時ファイル
 _probe.xlsx
 _yshiki2.xlsx
