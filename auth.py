@@ -118,7 +118,7 @@ def _render_landing_content() -> None:
     </h2>
     <p style="font-size:0.92rem;color:#6E6A5E;max-width:560px;margin:0 auto;line-height:1.8;">
       病床機能報告・DPC・施設基準届出など、バラバラな公的統計をMedilenZが横断的に統合。
-      競合病院との比較や複数地域の分析が、ひとつの画面で完結します。
+      競合病院との比較や地域内でのポジション把握が、ひとつの画面で完結します。
     </p>
   </div>
 
@@ -127,7 +127,7 @@ def _render_landing_content() -> None:
     <div>📊 病床機能報告 <strong style="color:#26251F;">4年分</strong>（令和4〜7年度）</div>
     <div>🩺 DPC <strong style="color:#26251F;">3年分</strong>（令和4〜6年度）</div>
     <div>📍 施設基準届出 <strong style="color:#26251F;">全国47都道府県</strong></div>
-    <div>🏥 対応病院 <strong style="color:#26251F;">8,000件以上</strong></div>
+    <div>🏥 対応病院 <strong style="color:#26251F;">7,000件以上</strong></div>
   </div>
 </div>""",
         unsafe_allow_html=True,
@@ -156,11 +156,11 @@ def _render_landing_content() -> None:
     </div>
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
                 border-radius:14px;padding:20px;">
-      <div style="font-size:1.4rem;">🗺️</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">複数地域を一括分析</div>
+      <div style="font-size:1.4rem;">📈</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">経年トレンドで推移を把握</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        医療系コンサルタント向けに、都道府県・二次医療圏をまたいだ地域比較・
-        経年トレンドを一画面で確認できます。
+        病床数・稼働率・手術件数などの推移を年度ごとに確認可能。自院や
+        気になる病院の変化を追えます。
       </div>
     </div>
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
@@ -168,8 +168,8 @@ def _render_landing_content() -> None:
       <div style="font-size:1.4rem;">🔍</div>
       <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">条件で全国から検索</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        CT/MRI台数・手術件数・救急搬送件数・DPC疾患名・距離所要時間など、
-        豊富な条件で病院を絞り込めます。
+        CT/MRI台数・手術件数・救急搬送件数・DPC疾患名など、豊富な条件で
+        全国の病院を絞り込めます。住所からの距離・所要時間での検索にも対応。
       </div>
     </div>
   </div>
