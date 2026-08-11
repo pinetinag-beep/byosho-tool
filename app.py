@@ -180,200 +180,6 @@ if (!window.parent.__enterGuardInstalled) {
 </script>
 """, height=0)
 
-# ── ログイン必須ゲート ──────────────────────────────────────
-# 未ログインの場合はここでログイン/新規登録画面を表示してst.stop()する。
-# 以降のデータ読み込み・画面描画はログイン済みユーザーにしか到達しない。
-# stauth.Authenticateは1回のスクリプト実行につき1個だけ生成すること
-# （内部のCookie管理コンポーネントが固定keyを使うため、複数回生成すると
-# Streamlitの重複keyエラーになる）。_render_header()のログアウトボタンも
-# この同じインスタンスを使い回す。
-_authenticator = get_authenticator()
-require_login(_authenticator)
-
-
-def _render_header():
-    """パンくずナビゲーションヘッダー（ステップ表示なし）"""
-    mode = st.session_state.get("_view_mode", "home")
-    _hospital = st.session_state.get("_sel_hospital", "")
-    _pref     = st.session_state.get("_sel_pref", "")
-    _region   = st.session_state.get("_sel_region", "")
-
-    _uc1, _uc2 = st.columns([8.5, 1.5])
-    with _uc1:
-        _user_email = st.session_state.get("username", "")
-        if _user_email:
-            st.markdown(
-                f"<div style='font-size:0.72rem;color:#9ca3af;padding:6px 0 0;'>"
-                f"{_user_email}</div>",
-                unsafe_allow_html=True,
-            )
-    with _uc2:
-        _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
-
-    if mode == "home":
-        st.markdown(
-            "<div style='padding:10px 0 2px;'>"
-            "<span style='font-size:1.05rem;font-weight:800;color:#111827;'>"
-            "🏥 ホーム</span></div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        _hc1, _hc2 = st.columns([1.2, 8.8])
-        with _hc1:
-            if st.button("← ホーム", key="_hdr_home_btn"):
-                st.session_state["_view_mode"] = "home"
-                st.session_state["_hospital_chosen"] = False
-                st.rerun()
-        with _hc2:
-            _sep = "<span style='color:#d1d5db;margin:0 5px;'>›</span>"
-            _parts = ["<span style='color:#9ca3af;'>🏥 ホーム</span>"]
-            if mode == "detail":
-                if _pref:     _parts.append(f"<span style='color:#6b7280;'>{_pref}</span>")
-                if _region:   _parts.append(f"<span style='color:#6b7280;'>{_region}</span>")
-                if _hospital: _parts.append(f"<strong style='color:#111827;'>{_hospital}</strong>")
-            elif mode == "map":
-                _ms_pref = st.session_state.get("_ms_pref", "")
-                if _ms_pref: _parts.append(f"<span style='color:#6b7280;'>{_ms_pref}</span>")
-                _parts.append("<span style='color:#111827;font-weight:600;'>地図で探す</span>")
-            elif mode == "distance":
-                _parts.append("<span style='color:#111827;font-weight:600;'>距離・所要時間で探す</span>")
-            elif mode == "search":
-                _parts.append("<span style='color:#111827;font-weight:600;'>設備・手術条件で探す</span>")
-            elif mode == "region_vision":
-                _rv_p = st.session_state.get("_rv_sel_pref", "")
-                _rv_r = st.session_state.get("_rv_sel_region", "")
-                if _rv_p: _parts.append(f"<span style='color:#6b7280;'>{_rv_p}</span>")
-                if _rv_r: _parts.append(f"<span style='color:#6b7280;'>{_rv_r}</span>")
-                _parts.append("<span style='color:#111827;font-weight:600;'>地域医療構想分析</span>")
-            st.markdown(
-                f"<div style='padding:7px 0 0;font-size:0.82rem;'>{_sep.join(_parts)}</div>",
-                unsafe_allow_html=True,
-            )
-
-    st.markdown(
-        "<hr style='margin:4px 0 14px;border:none;border-top:1px solid #f3f4f6;'>",
-        unsafe_allow_html=True,
-    )
-
-
-def _render_footer():
-    """全ページ共通のフッター"""
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("---")
-
-    _fa, _fb = st.columns(2)
-    with _fa:
-        with st.expander("⚠️ 免責事項"):
-            st.markdown("""
-<div style="font-size:0.85rem; color:#555; line-height:1.6;">
-
-本ツールは、厚生労働省が公表する**病床機能報告**のデータをもとに集計・分析を行うものです。
-
-**ご利用にあたっての注意事項：**
-
-- 原データ（報告値）に誤りや未報告が含まれる場合があり、分析結果が実態と異なることがあります。
-- 本ツールの分析結果は参考情報であり、医療機関の評価・優劣を示すものではありません。
-- 経営判断・医療政策の立案などに利用する場合は、必ず一次データや専門家の助言を合わせてご確認ください。
-- 本ツールの利用によって生じたいかなる損害についても、作成者は責任を負いません。
-- データは報告年度時点のものであり、現在の状況と異なる場合があります。
-
-</div>
-""", unsafe_allow_html=True)
-
-    with _fb:
-        if os.environ.get("BYOSHO_HIDE_ADMIN") != "1":
-            with st.expander("🔧 管理者"):
-                st.caption("データの再読み込み / キャッシュ管理")
-                if st.button("キャッシュをクリアして再読み込み", use_container_width=True, key="_ftr_cache_clear"):
-                    st.cache_data.clear()
-                    for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
-                        st.session_state.pop(key, None)
-                    st.rerun()
-                st.divider()
-                st.caption("🔬 手術データの取り込み（様式2）")
-                _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")
-                _y2_hint = "2021年は7地域ファイルを全て選択" if _y2_year_sel == 2021 else "全国1ファイルを選択"
-                _y2_files = st.file_uploader(
-                    f"Excelファイルを選択（{_y2_hint}）",
-                    type=["xlsx", "xls"],
-                    accept_multiple_files=True,
-                    key="_ftr_yoshiki2_upload",
-                )
-                if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_ftr_yoshiki2_import"):
-                    _prog = st.progress(0, text="処理開始...")
-                    _status = st.empty()
-                    try:
-                        _parts = []
-                        for _i, _f in enumerate(_y2_files):
-                            _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
-                            _fb_bytes = _f.read()
-                            _part = load_mhlw_yoshiki2(_fb_bytes, year=_y2_year_sel)
-                            _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
-                            _parts.append(_part)
-                        _prog.progress(1.0, text="集計中...")
-                        if not _parts:
-                            _prog.empty()
-                            st.error("データが空です。")
-                        else:
-                            _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
-                            _existing = st.session_state.get("surgery_df")
-                            if _existing is not None and not _existing.empty:
-                                _existing = _existing[_existing["報告年度"] != _y2_year_sel]
-                                _merged = pd.concat([_existing, _surg_new], ignore_index=True)
-                            else:
-                                _merged = _surg_new
-                            st.session_state["surgery_df"] = _merged
-                            import io as _io2
-                            _pbuf = _io2.BytesIO()
-                            _merged.to_parquet(_pbuf, index=False)
-                            st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
-                            _prog.empty()
-                            _status.empty()
-                            st.success(f"✅ {_y2_year_sel}年: {len(_surg_new):,} 病院取り込み完了")
-                    except Exception as _e:
-                        st.error(f"エラー: {_e}")
-                if st.session_state.get("_yoshiki2_parquet"):
-                    st.download_button(
-                        "📥 surgery_cache.parquet をダウンロード",
-                        data=st.session_state["_yoshiki2_parquet"],
-                        file_name="surgery_cache.parquet",
-                        mime="application/octet-stream",
-                        use_container_width=True,
-                        type="primary",
-                        key="_ftr_dl_parquet",
-                    )
-                st.divider()
-                st.caption("📊 DPC・病床機能・施設基準届出 統合表")
-                _df_for_export = st.session_state.get("df")
-                if _df_for_export is not None and not _df_for_export.empty:
-                    if st.button("統合表を生成する", use_container_width=True, key="_ftr_gen_integrated"):
-                        with st.spinner("生成中..."):
-                            try:
-                                _xl_bytes = _build_integrated_excel(_df_for_export)
-                                st.session_state["_integrated_excel"] = _xl_bytes
-                            except Exception as _e:
-                                st.error(f"エラー: {_e}")
-                    if st.session_state.get("_integrated_excel"):
-                        _yr = int(_df_for_export["報告年度"].max())
-                        st.download_button(
-                            "📥 統合表 Excel をダウンロード",
-                            data=st.session_state["_integrated_excel"],
-                            file_name=f"医療機関統合表_{_yr}年度.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True,
-                            type="primary",
-                            key="_ftr_dl_integrated",
-                        )
-                else:
-                    st.caption("データ読み込み後に使用できます")
-
-    st.markdown(
-        "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
-        "© MedilenZ — データ出典: 厚生労働省「病床機能報告」</div>",
-        unsafe_allow_html=True,
-    )
-
-
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap');
@@ -805,6 +611,201 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
+
+# ── ログイン必須ゲート ──────────────────────────────────────
+# 未ログインの場合はここでログイン/新規登録画面を表示してst.stop()する。
+# 以降のデータ読み込み・画面描画はログイン済みユーザーにしか到達しない。
+# stauth.Authenticateは1回のスクリプト実行につき1個だけ生成すること
+# （内部のCookie管理コンポーネントが固定keyを使うため、複数回生成すると
+# Streamlitの重複keyエラーになる）。_render_header()のログアウトボタンも
+# この同じインスタンスを使い回す。
+_authenticator = get_authenticator()
+require_login(_authenticator)
+
+
+def _render_header():
+    """パンくずナビゲーションヘッダー（ステップ表示なし）"""
+    mode = st.session_state.get("_view_mode", "home")
+    _hospital = st.session_state.get("_sel_hospital", "")
+    _pref     = st.session_state.get("_sel_pref", "")
+    _region   = st.session_state.get("_sel_region", "")
+
+    _uc1, _uc2 = st.columns([8.5, 1.5])
+    with _uc1:
+        _user_email = st.session_state.get("username", "")
+        if _user_email:
+            st.markdown(
+                f"<div style='font-size:0.72rem;color:#9ca3af;padding:6px 0 0;'>"
+                f"{_user_email}</div>",
+                unsafe_allow_html=True,
+            )
+    with _uc2:
+        _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
+
+    if mode == "home":
+        st.markdown(
+            "<div style='padding:10px 0 2px;'>"
+            "<span style='font-size:1.05rem;font-weight:800;color:#111827;'>"
+            "🏥 ホーム</span></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        _hc1, _hc2 = st.columns([1.2, 8.8])
+        with _hc1:
+            if st.button("← ホーム", key="_hdr_home_btn"):
+                st.session_state["_view_mode"] = "home"
+                st.session_state["_hospital_chosen"] = False
+                st.rerun()
+        with _hc2:
+            _sep = "<span style='color:#d1d5db;margin:0 5px;'>›</span>"
+            _parts = ["<span style='color:#9ca3af;'>🏥 ホーム</span>"]
+            if mode == "detail":
+                if _pref:     _parts.append(f"<span style='color:#6b7280;'>{_pref}</span>")
+                if _region:   _parts.append(f"<span style='color:#6b7280;'>{_region}</span>")
+                if _hospital: _parts.append(f"<strong style='color:#111827;'>{_hospital}</strong>")
+            elif mode == "map":
+                _ms_pref = st.session_state.get("_ms_pref", "")
+                if _ms_pref: _parts.append(f"<span style='color:#6b7280;'>{_ms_pref}</span>")
+                _parts.append("<span style='color:#111827;font-weight:600;'>地図で探す</span>")
+            elif mode == "distance":
+                _parts.append("<span style='color:#111827;font-weight:600;'>距離・所要時間で探す</span>")
+            elif mode == "search":
+                _parts.append("<span style='color:#111827;font-weight:600;'>設備・手術条件で探す</span>")
+            elif mode == "region_vision":
+                _rv_p = st.session_state.get("_rv_sel_pref", "")
+                _rv_r = st.session_state.get("_rv_sel_region", "")
+                if _rv_p: _parts.append(f"<span style='color:#6b7280;'>{_rv_p}</span>")
+                if _rv_r: _parts.append(f"<span style='color:#6b7280;'>{_rv_r}</span>")
+                _parts.append("<span style='color:#111827;font-weight:600;'>地域医療構想分析</span>")
+            st.markdown(
+                f"<div style='padding:7px 0 0;font-size:0.82rem;'>{_sep.join(_parts)}</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.markdown(
+        "<hr style='margin:4px 0 14px;border:none;border-top:1px solid #f3f4f6;'>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_footer():
+    """全ページ共通のフッター"""
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    _fa, _fb = st.columns(2)
+    with _fa:
+        with st.expander("⚠️ 免責事項"):
+            st.markdown("""
+<div style="font-size:0.85rem; color:#555; line-height:1.6;">
+
+本ツールは、厚生労働省が公表する**病床機能報告**のデータをもとに集計・分析を行うものです。
+
+**ご利用にあたっての注意事項：**
+
+- 原データ（報告値）に誤りや未報告が含まれる場合があり、分析結果が実態と異なることがあります。
+- 本ツールの分析結果は参考情報であり、医療機関の評価・優劣を示すものではありません。
+- 経営判断・医療政策の立案などに利用する場合は、必ず一次データや専門家の助言を合わせてご確認ください。
+- 本ツールの利用によって生じたいかなる損害についても、作成者は責任を負いません。
+- データは報告年度時点のものであり、現在の状況と異なる場合があります。
+
+</div>
+""", unsafe_allow_html=True)
+
+    with _fb:
+        if os.environ.get("BYOSHO_HIDE_ADMIN") != "1":
+            with st.expander("🔧 管理者"):
+                st.caption("データの再読み込み / キャッシュ管理")
+                if st.button("キャッシュをクリアして再読み込み", use_container_width=True, key="_ftr_cache_clear"):
+                    st.cache_data.clear()
+                    for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
+                        st.session_state.pop(key, None)
+                    st.rerun()
+                st.divider()
+                st.caption("🔬 手術データの取り込み（様式2）")
+                _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")
+                _y2_hint = "2021年は7地域ファイルを全て選択" if _y2_year_sel == 2021 else "全国1ファイルを選択"
+                _y2_files = st.file_uploader(
+                    f"Excelファイルを選択（{_y2_hint}）",
+                    type=["xlsx", "xls"],
+                    accept_multiple_files=True,
+                    key="_ftr_yoshiki2_upload",
+                )
+                if _y2_files and st.button(f"手術データを取り込む（{len(_y2_files)}ファイル）", use_container_width=True, key="_ftr_yoshiki2_import"):
+                    _prog = st.progress(0, text="処理開始...")
+                    _status = st.empty()
+                    try:
+                        _parts = []
+                        for _i, _f in enumerate(_y2_files):
+                            _prog.progress((_i) / len(_y2_files), text=f"読み込み中: {_f.name}")
+                            _fb_bytes = _f.read()
+                            _part = load_mhlw_yoshiki2(_fb_bytes, year=_y2_year_sel)
+                            _status.caption(f"✔ {_f.name}: {len(_part):,} 病院")
+                            _parts.append(_part)
+                        _prog.progress(1.0, text="集計中...")
+                        if not _parts:
+                            _prog.empty()
+                            st.error("データが空です。")
+                        else:
+                            _surg_new = pd.concat(_parts, ignore_index=True).drop_duplicates(subset=["医療機関名", "都道府県名"])
+                            _existing = st.session_state.get("surgery_df")
+                            if _existing is not None and not _existing.empty:
+                                _existing = _existing[_existing["報告年度"] != _y2_year_sel]
+                                _merged = pd.concat([_existing, _surg_new], ignore_index=True)
+                            else:
+                                _merged = _surg_new
+                            st.session_state["surgery_df"] = _merged
+                            import io as _io2
+                            _pbuf = _io2.BytesIO()
+                            _merged.to_parquet(_pbuf, index=False)
+                            st.session_state["_yoshiki2_parquet"] = _pbuf.getvalue()
+                            _prog.empty()
+                            _status.empty()
+                            st.success(f"✅ {_y2_year_sel}年: {len(_surg_new):,} 病院取り込み完了")
+                    except Exception as _e:
+                        st.error(f"エラー: {_e}")
+                if st.session_state.get("_yoshiki2_parquet"):
+                    st.download_button(
+                        "📥 surgery_cache.parquet をダウンロード",
+                        data=st.session_state["_yoshiki2_parquet"],
+                        file_name="surgery_cache.parquet",
+                        mime="application/octet-stream",
+                        use_container_width=True,
+                        type="primary",
+                        key="_ftr_dl_parquet",
+                    )
+                st.divider()
+                st.caption("📊 DPC・病床機能・施設基準届出 統合表")
+                _df_for_export = st.session_state.get("df")
+                if _df_for_export is not None and not _df_for_export.empty:
+                    if st.button("統合表を生成する", use_container_width=True, key="_ftr_gen_integrated"):
+                        with st.spinner("生成中..."):
+                            try:
+                                _xl_bytes = _build_integrated_excel(_df_for_export)
+                                st.session_state["_integrated_excel"] = _xl_bytes
+                            except Exception as _e:
+                                st.error(f"エラー: {_e}")
+                    if st.session_state.get("_integrated_excel"):
+                        _yr = int(_df_for_export["報告年度"].max())
+                        st.download_button(
+                            "📥 統合表 Excel をダウンロード",
+                            data=st.session_state["_integrated_excel"],
+                            file_name=f"医療機関統合表_{_yr}年度.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            type="primary",
+                            key="_ftr_dl_integrated",
+                        )
+                else:
+                    st.caption("データ読み込み後に使用できます")
+
+    st.markdown(
+        "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
+        "© MedilenZ — データ出典: 厚生労働省「病床機能報告」</div>",
+        unsafe_allow_html=True,
+    )
+
+
 
 
 # ── DuckDB パス ────────────────────────────────────────────

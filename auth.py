@@ -106,28 +106,23 @@ def _render_landing_content() -> None:
     """未ログイン時のLPコンテンツ（機能紹介・実画面・料金・使い方・利用条件）。"""
     st.markdown(
         """
-<div style="max-width:820px;margin:0 auto;">
-  <div style="text-align:center;margin:0 0 28px;">
-    <span style="display:inline-block;background:#EAF4F0;color:#0B6653;
-                 font-size:0.75rem;font-weight:700;padding:5px 14px;border-radius:999px;
-                 margin-bottom:14px;">
-      病院経営者・医療系コンサルタントのための
-    </span>
-    <h2 style="font-size:1.6rem;font-weight:900;color:#26251F;margin:0 0 10px;line-height:1.5;">
+<div style="max-width:680px;margin:0 auto;">
+  <div style="text-align:center;margin:0 0 32px;">
+    <h2 style="font-size:1.7rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.5;">
       地域医療のリアルを、公的データで一目に。
     </h2>
-    <p style="font-size:0.92rem;color:#6E6A5E;max-width:560px;margin:0 auto;line-height:1.8;">
+    <p style="font-size:0.95rem;color:#6E6A5E;max-width:520px;margin:0 auto;line-height:1.9;">
       病床機能報告・DPC・施設基準届出など、バラバラな公的統計をMedilenZが横断的に統合。
       競合病院との比較や地域内でのポジション把握が、ひとつの画面で完結します。
     </p>
   </div>
 
-  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px 28px;
-              margin:0 0 28px;font-size:0.8rem;color:#6E6A5E;">
-    <div>📊 病床機能報告 <strong style="color:#26251F;">4年分</strong>（令和4〜7年度）</div>
-    <div>🩺 DPC <strong style="color:#26251F;">3年分</strong>（令和4〜6年度）</div>
-    <div>📍 施設基準届出 <strong style="color:#26251F;">全国47都道府県</strong></div>
-    <div>🏥 対応病院 <strong style="color:#26251F;">7,000件以上</strong></div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px 24px;
+              margin:0 0 32px;font-size:0.78rem;color:#9c9890;">
+    <div>病床機能報告 <strong style="color:#6E6A5E;">4年分</strong></div>
+    <div>DPC <strong style="color:#6E6A5E;">3年分</strong></div>
+    <div>施設基準届出 <strong style="color:#6E6A5E;">全国47都道府県</strong></div>
+    <div>対応病院 <strong style="color:#6E6A5E;">7,000件以上</strong></div>
   </div>
 </div>""",
         unsafe_allow_html=True,
