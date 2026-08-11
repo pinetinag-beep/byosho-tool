@@ -103,35 +103,88 @@ def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
 
 
 def _render_landing_content() -> None:
-    """未ログイン時のLPコンテンツ（機能紹介・使い方・利用条件）。"""
+    """未ログイン時のLPコンテンツ（機能紹介・実画面・料金・使い方・利用条件）。"""
     st.markdown(
         """
-<div style="max-width:760px;margin:0 auto 8px;">
-  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:8px 0 28px;">
-    <div style="flex:1;min-width:200px;background:#FFFFFF;border:1px solid #E8E4DB;
+<div style="max-width:820px;margin:0 auto;">
+  <div style="text-align:center;margin:0 0 28px;">
+    <span style="display:inline-block;background:#EAF4F0;color:#0B6653;
+                 font-size:0.75rem;font-weight:700;padding:5px 14px;border-radius:999px;
+                 margin-bottom:14px;">
+      病院経営者・医療系コンサルタントのための
+    </span>
+    <h2 style="font-size:1.6rem;font-weight:900;color:#26251F;margin:0 0 10px;line-height:1.5;">
+      地域医療のリアルを、公的データで一目に。
+    </h2>
+    <p style="font-size:0.92rem;color:#6E6A5E;max-width:560px;margin:0 auto;line-height:1.8;">
+      病床機能報告・DPC・施設基準届出など、バラバラな公的統計をMedilenZが横断的に統合。
+      競合病院との比較や複数地域の分析が、ひとつの画面で完結します。
+    </p>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px 28px;
+              margin:0 0 28px;font-size:0.8rem;color:#6E6A5E;">
+    <div>📊 病床機能報告 <strong style="color:#26251F;">4年分</strong>（令和4〜7年度）</div>
+    <div>🩺 DPC <strong style="color:#26251F;">3年分</strong>（令和4〜6年度）</div>
+    <div>📍 施設基準届出 <strong style="color:#26251F;">全国47都道府県</strong></div>
+    <div>🏥 対応病院 <strong style="color:#26251F;">8,000件以上</strong></div>
+  </div>
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+    _shot_l, _shot_c, _shot_r = st.columns([1, 6, 1])
+    with _shot_c:
+        st.image(
+            "assets/lp_kpi_sample.png",
+            caption="実際の病院詳細画面（サンプル）— 許可病床数・稼働率・地域内順位などを自動集計",
+            use_container_width=True,
+        )
+
+    st.markdown(
+        """
+<div style="max-width:820px;margin:28px auto 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:0 0 24px;">
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
                 border-radius:14px;padding:20px;">
-      <div style="font-size:1.4rem;">🏥</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">全国の病院を比較</div>
+      <div style="font-size:1.4rem;">🏆</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">自院の立ち位置が分かる</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        厚労省「病床機能報告」を中心に、DPC・手術実績・医療設備・スタッフ数などのデータを統合。
-        地域内の競合病院や全国の病院と横並びで比較できます。
+        稼働率・地域シェア・地域内順位を自動算出。自院が地域でどんな役割を担っているか、
+        数字で把握できます。
       </div>
     </div>
-    <div style="flex:1;min-width:200px;background:#FFFFFF;border:1px solid #E8E4DB;
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">🗺️</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">複数地域を一括分析</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        医療系コンサルタント向けに、都道府県・二次医療圏をまたいだ地域比較・
+        経年トレンドを一画面で確認できます。
+      </div>
+    </div>
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
                 border-radius:14px;padding:20px;">
       <div style="font-size:1.4rem;">🔍</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">条件で病院を検索</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">条件で全国から検索</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        CT/MRI台数・手術件数・救急搬送件数など、豊富な条件で全国の病院を絞り込み検索できます。
+        CT/MRI台数・手術件数・救急搬送件数・DPC疾患名・距離所要時間など、
+        豊富な条件で病院を絞り込めます。
       </div>
     </div>
-    <div style="flex:1;min-width:200px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
-      <div style="font-size:1.4rem;">📍</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">距離・所要時間で探す</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        住所やランドマークから、移動手段別にN分以内の病院を一覧表示します。
-      </div>
+  </div>
+
+  <div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
+              padding:24px;text-align:center;margin:0 0 24px;">
+    <div style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.05em;">
+      料金プラン
+    </div>
+    <div style="margin:6px 0 4px;">
+      <span style="font-size:2.2rem;font-weight:900;color:#26251F;">¥500</span>
+      <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込）</span>
+    </div>
+    <div style="font-size:0.8rem;color:#6E6A5E;">
+      クレジットカード決済・お申し込み後すぐにご利用いただけます
     </div>
   </div>
 
@@ -209,7 +262,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     _render_landing_content()
 
-    _tab_login, _tab_register = st.tabs(["ログイン", "新規申込み"])
+    _tab_register, _tab_login = st.tabs(["🆕 新規申込み", "ログイン"])
 
     with _tab_login:
         authenticator.login(
