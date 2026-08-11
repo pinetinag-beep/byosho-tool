@@ -1,11 +1,14 @@
-"""ユーザー認証（streamlit-authenticator）。
+"""ユーザー認証（streamlit-authenticator）＋ Stripe決済連携。
 
 会員情報（メールアドレス・ハッシュ化パスワード・ロール等）は
 data/auth_config.yaml に保存する。このファイルはパスワードハッシュを含むため
 .gitignore 対象（リポジトリにはコミットしない）。VPS上で初回起動時に自動生成される。
 
-ロール（roles）には現状 "free" を自動付与するのみで、機能制限には未使用
-（有料プラン運用が固まった後、admin_manage_users.py 等で "paid" に昇格する想定）。
+2026年8月、決済導入に伴い「誰でも自由に無料登録」の方式は廃止し、
+Stripe Checkout（月額サブスクリプション）での決済完了後にのみアカウントが
+発行される方式に変更した。フロー: サイトに来る→メールアドレス入力→Stripeの
+決済ページへ→決済完了→アカウント自動発行（roles=["paid"]）→ログイン情報を
+メールで通知→ログインして利用開始。
 """
 import os
 import secrets
@@ -13,6 +16,9 @@ import secrets
 import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
+
+import mailer
+import payments
 
 CONFIG_PATH = "data/auth_config.yaml"
 
@@ -53,8 +59,51 @@ def get_authenticator() -> stauth.Authenticate:
     )
 
 
+def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
+    """Stripe Checkoutからのリダイレクト（?payment=success&session_id=...）を処理する。
+
+    決済完了を確認できたら、そのメールアドレスでアカウントを発行し
+    （既に発行済みなら何もしない＝再読み込みしても二重発行・二重メールにならない）、
+    ランダムなパスワードをメールで送る。
+    """
+    params = st.query_params
+    if params.get("payment") != "success":
+        return
+    session_id = params.get("session_id", "")
+    if not session_id:
+        return
+
+    email = payments.verify_paid_session(session_id)
+    if not email:
+        st.error("決済の確認ができませんでした。お手数ですがもう一度お試しください。")
+        return
+
+    password = payments.gen_password()
+    try:
+        authenticator.authentication_controller.register_user(
+            "会員", "登録", email, email, password, password, "",
+            roles=["paid"], captcha=False,
+        )
+    except stauth.RegisterError as e:
+        if "already taken" in str(e):
+            st.success("お申し込みは完了しています。「ログイン」タブからログインしてください。")
+        else:
+            st.error(str(e))
+        return
+
+    try:
+        mailer.send_credentials_email(email, password)
+        st.success(
+            f"お申し込みが完了しました。{email} 宛にログイン情報をお送りしました。"
+            "「ログイン」タブからログインしてください。"
+        )
+    except Exception as e:
+        st.error(f"アカウントは発行されましたが、メール送信に失敗しました（{e}）。"
+                  "お手数ですがサポートまでご連絡ください。")
+
+
 def require_login(authenticator: stauth.Authenticate) -> None:
-    """ログイン必須ゲート。未ログインならログイン/新規登録画面を表示してst.stop()する。
+    """ログイン必須ゲート。未ログインならログイン/申込み画面を表示してst.stop()する。
 
     authenticator は呼び出し側（app.py）で1回だけ生成したインスタンスを渡すこと。
     stauth.Authenticate は内部でCookie管理用のカスタムコンポーネント（固定key）を
@@ -63,6 +112,8 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     """
     if st.session_state.get("authentication_status"):
         return
+
+    _handle_payment_return(authenticator)
 
     st.markdown(
         """
@@ -78,7 +129,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
         unsafe_allow_html=True,
     )
 
-    _tab_login, _tab_register = st.tabs(["ログイン", "新規登録"])
+    _tab_login, _tab_register = st.tabs(["ログイン", "新規申込み"])
 
     with _tab_login:
         authenticator.login(
@@ -95,28 +146,27 @@ def require_login(authenticator: stauth.Authenticate) -> None:
             st.error("メールアドレスまたはパスワードが違います")
 
     with _tab_register:
-        try:
-            _email, _username, _name = authenticator.register_user(
-                location="main",
-                key="_register_form",
-                merge_username_email=True,
-                roles=["free"],
-                fields={
-                    "Form name": "新規登録",
-                    "First name": "姓",
-                    "Last name": "名",
-                    "Email": "メールアドレス",
-                    "Password": "パスワード",
-                    "Repeat password": "パスワード（確認）",
-                    "Password hint": "パスワードのヒント（任意）",
-                    "Captcha": "画像に表示されている文字を入力",
-                    "Register": "登録する",
-                },
-            )
-            if _email:
-                st.success("登録が完了しました。「ログイン」タブからログインしてください。")
-        except stauth.RegisterError as e:
-            st.error(str(e))
+        st.markdown(
+            "<p style='font-size:0.85rem;color:#6E6A5E;'>"
+            "月額500円のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
+            "</p>",
+            unsafe_allow_html=True,
+        )
+        with st.form("_signup_form", clear_on_submit=False):
+            _signup_email = st.text_input("メールアドレス", autocomplete="off")
+            _signup_submitted = st.form_submit_button("お申し込みへ進む")
+        if _signup_submitted:
+            if not _signup_email or "@" not in _signup_email:
+                st.error("正しいメールアドレスを入力してください")
+            else:
+                try:
+                    _checkout_url = payments.create_checkout_session(_signup_email)
+                    st.link_button(
+                        "💳 決済ページへ進む（月額500円）", _checkout_url,
+                        type="primary",
+                    )
+                except Exception as e:
+                    st.error(f"決済ページの作成に失敗しました（{e}）")
 
     if st.session_state.get("authentication_status"):
         # クッキーによる自動ログインが成立した場合、ゲートUIを描き直さず
