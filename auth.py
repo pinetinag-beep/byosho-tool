@@ -221,7 +221,7 @@ def _render_landing_content() -> None:
               padding:20px 24px;margin:0 0 28px;">
     <div style="font-weight:800;color:#26251F;margin-bottom:10px;">使い方</div>
     <ol style="margin:0;padding-left:20px;color:#4b5563;font-size:0.9rem;line-height:1.9;">
-      <li>下の「新規申込み」タブでメールアドレスを入力</li>
+      <li>下の「新規利用申し込み」タブでメールアドレスを入力</li>
       <li>Stripeの決済ページでお支払い（月額500円）</li>
       <li>決済完了後、自動でアカウントが発行され、ログイン情報がメールで届きます</li>
       <li>メールに記載のIDとパスワードで「ログイン」タブからログイン</li>
@@ -231,9 +231,23 @@ def _render_landing_content() -> None:
         unsafe_allow_html=True,
     )
 
-    with st.expander("利用条件・特定商取引法に基づく表示"):
-        st.markdown(
-            """
+def _render_tokushoho() -> None:
+    """特定商取引法に基づく表示。ページ最下部に、目立たない大きさで配置する。"""
+    st.markdown(
+        """
+<style>
+.st-key-_tokushoho_box details summary {
+    font-size: 0.75rem !important;
+    color: #9c9890 !important;
+}
+.st-key-_tokushoho_box details summary svg { width: 14px !important; height: 14px !important; }
+</style>""",
+        unsafe_allow_html=True,
+    )
+    with st.container(key="_tokushoho_box"):
+        with st.expander("利用条件・特定商取引法に基づく表示"):
+            st.markdown(
+                """
 **料金プラン**：月額500円（税込）
 
 **お支払い方法**：クレジットカード決済（Stripe）
@@ -259,7 +273,7 @@ info@medilenz.jp までご連絡ください。デジタルサービスの性質
 | メールアドレス | info@medilenz.jp |
 | 販売価格 | 月額500円（税込） |
 """
-        )
+            )
 
 
 def require_login(authenticator: stauth.Authenticate) -> None:
@@ -291,7 +305,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     _render_landing_content()
 
-    _tab_register, _tab_login = st.tabs(["🆕 新規申込み", "ログイン"])
+    _tab_register, _tab_login = st.tabs(["🆕 新規利用申し込み", "ログイン"])
 
     with _tab_login:
         authenticator.login(
@@ -329,6 +343,9 @@ def require_login(authenticator: stauth.Authenticate) -> None:
                     )
                 except Exception as e:
                     st.error(f"決済ページの作成に失敗しました（{e}）")
+
+    st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
+    _render_tokushoho()
 
     if st.session_state.get("authentication_status"):
         # クッキーによる自動ログインが成立した場合、ゲートUIを描き直さず
