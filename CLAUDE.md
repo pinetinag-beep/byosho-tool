@@ -554,6 +554,7 @@ PDF解析で得た教訓（同種のPDFを今後解析する際に必ず踏ま�
   - `auth.py`の`_handle_payment_return()` — `require_login()`の冒頭で毎回呼ばれ、`?payment=success&session_id=...`のクエリパラメータを検知したら決済確認→アカウント発行→メール送信を行う
 - **Webhookを使わない設計（既知の限界）**: 決済確認は「StripeがブラウザをリダイレクトしてくるURLの`session_id`をAPIで検証する」方式のみで、Stripe Webhook（`checkout.session.completed`イベント）は実装していない。理由: StreamlitはWebSocketベースのUIで、HTTPのWebhookエンドポイントを持たせるには別プロセス（Flask/FastAPI等）をnginx配下に追加で立てる必要があり、今回はスコープ外とした。**この設計だと、ユーザーが決済完了直後にリダイレクトが完了する前にブラウザを閉じてしまった場合、決済は成立しているのにアカウントが発行されない、という取りこぼしが理論上ありうる。** 発生した場合は、Stripeダッシュボードで決済履歴を確認の上、該当ユーザーのアカウントを手動発行する運用でカバーする想定（管理スクリプト未実装）。将来的に取りこぼしが実害として発生するようなら、Webhook受信用の軽量プロセスを追加することを検討する。
 - **アカウント発行の冪等性**: 同じ決済で複数回リダイレクト・再読み込みされても、`register_user`が同じメールアドレスに対して`RegisterError('Email already taken')`で失敗することを利用し、2通目のメール送信やエラー表示を防いでいる（「お申し込みは完了しています」と表示するだけ）。専用の「処理済みセッションID」ストアは作っていない。
+- **決済を経由しないアカウント発行**: `info@medilenz.jp`（運営者自身）のように決済不要なアカウントを作る手段が無い、とユーザーから指摘があり`create_account.py`を追加した（VPS上でSSH経由、`python3 create_account.py <メールアドレス> [--password ...] [--role ...]`）。`payments.gen_password()`と同じパスワード生成・`streamlit-authenticator`の`register_user`を直接呼ぶ点は`_handle_payment_return()`と同じロジックだが、Stripeの決済確認を経由しない。動作確認用アカウント作成にも使える。
 - **必要な環境変数**（VPSのsystemdサービスファイルに`Environment=`で設定。値は`.env`等に書かず、直接ユニットファイルに書く運用——既存の`ANTHROPIC_API_KEY`等と同じ、`st.secrets`→環境変数の順で読むフォールバック方式を`payments.py`/`mailer.py`でも踏襲）:
   | 変数名 | 用途 | 備考 |
   |---|---|---|
