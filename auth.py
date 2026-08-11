@@ -133,18 +133,28 @@ def _render_landing_content() -> None:
         unsafe_allow_html=True,
     )
 
-    _shot_l, _shot_c, _shot_r = st.columns([1, 6, 1])
+    st.markdown(
+        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
+        "margin:0 0 8px;'>📋 実際の病院詳細画面</p>",
+        unsafe_allow_html=True,
+    )
+    _shot_l, _shot_c, _shot_r = st.columns([1, 8, 1])
     with _shot_c:
-        st.image(
-            "assets/lp_kpi_sample.png",
-            caption="実際の病院詳細画面（サンプル）— 許可病床数・稼働率・地域内順位などを自動集計",
-            use_container_width=True,
+        with st.container(border=True):
+            st.image("assets/lp_hospital_detail.png", use_container_width=True)
+        st.markdown(
+            "<p style='text-align:center;font-size:0.78rem;color:#6E6A5E;margin:6px 0 0;'>"
+            "許可病床数・稼働率・地域内順位・地域シェアなどを自動集計して表示します"
+            "</p>",
+            unsafe_allow_html=True,
         )
+
+    st.markdown("<div style='margin:36px 0 20px;'></div>", unsafe_allow_html=True)
 
     st.markdown(
         """
-<div style="max-width:820px;margin:28px auto 0;">
-  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:0 0 24px;">
+<div style="max-width:820px;margin:0 auto;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:0 0 32px;">
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
                 border-radius:14px;padding:20px;">
       <div style="font-size:1.4rem;">🏆</div>
@@ -173,7 +183,31 @@ def _render_landing_content() -> None:
       </div>
     </div>
   </div>
+</div>""",
+        unsafe_allow_html=True,
+    )
 
+    st.markdown(
+        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
+        "margin:0 0 8px;'>📋 実際の検索結果画面</p>",
+        unsafe_allow_html=True,
+    )
+    _shot2_l, _shot2_c, _shot2_r = st.columns([1, 8, 1])
+    with _shot2_c:
+        with st.container(border=True):
+            st.image("assets/lp_search_results.png", use_container_width=True)
+        st.markdown(
+            "<p style='text-align:center;font-size:0.78rem;color:#6E6A5E;margin:6px 0 0;'>"
+            "エリア・設備・手術件数などの条件で絞り込むと、該当する病院が一覧表示されます"
+            "</p>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='margin:36px 0 0;'></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        """
+<div style="max-width:820px;margin:0 auto;">
   <div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
               padding:24px;text-align:center;margin:0 0 24px;">
     <div style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.05em;">
