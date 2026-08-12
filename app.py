@@ -22,7 +22,7 @@ from data_processor import (
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
-from auth import require_login, get_authenticator, CONFIG_PATH as AUTH_CONFIG_PATH
+from auth import require_login, get_authenticator
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -740,68 +740,12 @@ def _render_footer():
                         st.session_state.pop(key, None)
                     st.rerun()
                 st.divider()
-                st.caption("👥 会員一覧")
-                if os.path.exists(AUTH_CONFIG_PATH):
-                    import yaml as _yaml
-                    with open(AUTH_CONFIG_PATH, encoding="utf-8") as _f:
-                        _auth_cfg = _yaml.safe_load(_f) or {}
-                    _users = (_auth_cfg.get("credentials") or {}).get("usernames") or {}
-                    if _users:
-                        _users_df = pd.DataFrame([
-                            {
-                                "メールアドレス": _uname,
-                                "ロール": "・".join(_udata.get("roles") or []),
-                            }
-                            for _uname, _udata in _users.items()
-                        ])
-                        st.dataframe(_users_df, use_container_width=True, hide_index=True)
-                        st.caption(f"{len(_users_df)}件")
-
-                        st.divider()
-                        st.caption("👤 会員の管理（利用停止・退会処理）")
-                        _admin_target = st.selectbox(
-                            "対象のメールアドレス", list(_users.keys()), key="_admin_user_sel",
-                        )
-                        if _admin_target:
-                            _target_roles = list(_users[_admin_target].get("roles") or [])
-                            _is_suspended = "suspended" in _target_roles
-
-                            def _save_users(_users_dict):
-                                _auth_cfg["credentials"]["usernames"] = _users_dict
-                                with open(AUTH_CONFIG_PATH, "w", encoding="utf-8") as _wf:
-                                    _yaml.dump(_auth_cfg, _wf, default_flow_style=False, allow_unicode=True)
-
-                            _mc1, _mc2 = st.columns(2)
-                            with _mc1:
-                                _suspend_label = "✅ 利用停止を解除する" if _is_suspended else "🚫 利用を停止する"
-                                if st.button(_suspend_label, use_container_width=True, key="_admin_toggle_suspend"):
-                                    if _is_suspended:
-                                        _target_roles = [r for r in _target_roles if r != "suspended"]
-                                    else:
-                                        _target_roles.append("suspended")
-                                    _users[_admin_target]["roles"] = _target_roles
-                                    _save_users(_users)
-                                    st.success(f"{_admin_target} のロールを更新しました: {_target_roles}")
-                                    st.rerun()
-                                if _is_suspended:
-                                    st.caption("現在: 利用停止中")
-                            with _mc2:
-                                _confirm_del = st.checkbox(
-                                    f"{_admin_target} を完全に削除することを確認",
-                                    key="_admin_confirm_delete",
-                                )
-                                if st.button(
-                                    "🗑️ 退会処理（アカウント削除）", use_container_width=True,
-                                    disabled=not _confirm_del, key="_admin_delete_user",
-                                ):
-                                    del _users[_admin_target]
-                                    _save_users(_users)
-                                    st.success(f"{_admin_target} を削除しました。")
-                                    st.rerun()
-                    else:
-                        st.caption("登録済みの会員はいません。")
-                else:
-                    st.caption("会員情報ファイルがまだありません。")
+                st.caption("👥 会員管理")
+                st.markdown(
+                    "会員一覧・Stripe決済状況の確認・アカウント発行・ロール編集・"
+                    "利用停止/退会処理・ログイン履歴は [admin.medilenz.jp]"
+                    "(https://admin.medilenz.jp) に移行しました。"
+                )
                 st.divider()
                 st.caption("🔬 手術データの取り込み（様式2）")
                 _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")
