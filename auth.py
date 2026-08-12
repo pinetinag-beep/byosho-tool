@@ -293,6 +293,64 @@ info@medilenz.jp までご連絡ください。デジタルサービスの性質
             )
 
 
+def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
+    """再ログイン用Cookieが有効なら、そこからセッションを復元する。
+
+    streamlit-authenticator組み込みのlogin()が内部でやっている処理と同じ
+    （このモジュールは独自のログインフォームを使うため、この部分だけ個別に呼ぶ必要がある）。
+    """
+    if not st.session_state.get("authentication_status"):
+        token = authenticator.cookie_controller.get_cookie()
+        if token:
+            authenticator.authentication_controller.login(token=token)
+
+
+def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
+    """ログインフォームを描画する。
+
+    streamlit-authenticator組み込みのlogin()を使わず独自にフォームを組んでいる理由は2つ：
+
+    1. **Chromeのパスワードマネージャー対策**: ライブラリ側はUsername/Password両方の
+       入力欄に固定で `autocomplete='off'` を付けており、公開APIから上書きする手段が
+       無い。Chromeはパスワード欄自体は`autocomplete='off'`でも保存対象にする一方、
+       ペアとなるメールアドレス欄の特定にはautocomplete属性を参照するため、
+       「パスワードだけ保存され、メールアドレスは提案されない」という状態になっていた
+       （2026年8月、本番で発覚）。`autocomplete="username"`/`"current-password"`を
+       明示することで両方とも正しく提案・保存されるようにする。
+    2. **「ログイン状態を保持する」チェックボックス**: streamlit-authenticatorは
+       ログイン成功時に必ず`cookie.expiry_days`（既定30日）ぶんの再ログイン用Cookieを
+       発行する設計で、チェックボックス等でON/OFFする仕組みが無い。
+       `cookie_model.cookie_expiry_days`を送信直前に一時的に0へ書き換えると
+       `set_cookie()`が何もしなくなる（ライブラリ側の仕様）ことを利用し、
+       未チェック時はCookieを発行しない＝ブラウザを閉じたら再ログインが必要、
+       という制御を実現している。
+    """
+    with st.form(key, clear_on_submit=False):
+        st.subheader("ログイン")
+        _email = st.text_input("メールアドレス", autocomplete="username")
+        _pw = st.text_input("パスワード", type="password", autocomplete="current-password")
+        _remember = st.checkbox("ログイン状態を保持する", value=True)
+        _submitted = st.form_submit_button("ログイン")
+
+    if not _submitted:
+        return
+    if not _email or not _pw:
+        st.error("メールアドレスとパスワードを入力してください")
+        return
+    try:
+        ok = authenticator.authentication_controller.login(_email, _pw)
+    except Exception as e:
+        st.error(str(e))
+        return
+    if not ok:
+        st.error("メールアドレスまたはパスワードが違います")
+        return
+    if not _remember:
+        authenticator.cookie_controller.cookie_model.cookie_expiry_days = 0
+    authenticator.cookie_controller.set_cookie()
+    st.rerun()
+
+
 def require_login(authenticator: stauth.Authenticate) -> None:
     """ログイン必須ゲート。未ログインならログイン/申込み画面を表示してst.stop()する。
 
@@ -301,6 +359,8 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     生成するため、1回のスクリプト実行の中で複数回インスタンス化するとStreamlitの
     「同じkeyの要素が重複している」エラーになる。
     """
+    _try_cookie_login(authenticator)
+
     if st.session_state.get("authentication_status"):
         if "suspended" in (st.session_state.get("roles") or []):
             authenticator.logout(location="unrendered")
@@ -335,18 +395,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     _tab_register, _tab_login = st.tabs(["🆕 新規利用申し込み", "ログイン"])
 
     with _tab_login:
-        authenticator.login(
-            location="main",
-            key="_login_form",
-            fields={
-                "Form name": "ログイン",
-                "Username": "メールアドレス",
-                "Password": "パスワード",
-                "Login": "ログイン",
-            },
-        )
-        if st.session_state.get("authentication_status") is False:
-            st.error("メールアドレスまたはパスワードが違います")
+        _render_login_form(authenticator, "_login_form")
 
     with _tab_register:
         st.markdown(
@@ -374,11 +423,6 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
     _render_tokushoho()
 
-    if st.session_state.get("authentication_status"):
-        # クッキーによる自動ログインが成立した場合、ゲートUIを描き直さず
-        # 素早く本来の画面に抜けるためrerunする
-        st.rerun()
-
     st.stop()
 
 
@@ -388,6 +432,8 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
     本体アプリのrequire_login()と違いLP・新規申込みタブは持たず、ログインフォーム
     のみを表示する。adminロールを持たないユーザーはログインできてもここで弾く。
     """
+    _try_cookie_login(authenticator)
+
     if st.session_state.get("authentication_status"):
         if "admin" not in (st.session_state.get("roles") or []):
             authenticator.logout(location="unrendered")
@@ -404,20 +450,6 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
     )
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
-        authenticator.login(
-            location="main",
-            key="_admin_login_form",
-            fields={
-                "Form name": "管理者ログイン",
-                "Username": "メールアドレス",
-                "Password": "パスワード",
-                "Login": "ログイン",
-            },
-        )
-        if st.session_state.get("authentication_status") is False:
-            st.error("メールアドレスまたはパスワードが違います")
-
-    if st.session_state.get("authentication_status"):
-        st.rerun()
+        _render_login_form(authenticator, "_admin_login_form")
 
     st.stop()
