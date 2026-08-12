@@ -11,6 +11,7 @@ import os
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import stripe
 import streamlit_authenticator as stauth
 import yaml
@@ -20,6 +21,20 @@ import mailer
 import payments
 
 st.set_page_config(page_title="MedilenZ 会員管理", page_icon="🛠️", layout="wide")
+
+# ── ブラウザ自動翻訳の抑止（app.pyと同じ対策。詳細はCLAUDE.md参照）──────
+components.html("""
+<script>
+if (!window.parent.document.querySelector('meta[name="google"]')) {
+    const meta = window.parent.document.createElement('meta');
+    meta.name = 'google';
+    meta.content = 'notranslate';
+    window.parent.document.head.appendChild(meta);
+}
+window.parent.document.documentElement.lang = "ja";
+window.parent.document.documentElement.classList.add("notranslate");
+</script>
+""", height=0)
 
 _STRIPE_STATUS_LABELS = {
     "active": "有効",
