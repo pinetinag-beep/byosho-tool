@@ -13,6 +13,7 @@ Stripe Checkout（月額サブスクリプション）での決済完了後に�
 import csv
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
@@ -297,12 +298,17 @@ def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
     """再ログイン用Cookieが有効なら、そこからセッションを復元する。
 
     streamlit-authenticator組み込みのlogin()が内部でやっている処理と同じ
-    （このモジュールは独自のログインフォームを使うため、この部分だけ個別に呼ぶ必要がある）。
+    （このモジュールは独自のログインフォームを使うため、この部分だけ個別に呼ぶ必要がある。
+    sleepもライブラリ本家のPRE_LOGIN_SLEEP_TIME=0.7秒に合わせている——
+    CookieManagerコンポーネントがブラウザのCookieを読み取ってPython側に
+    値を返すまでには往復が必要で、間を置かないとまだ読み取れていない
+    Noneのまま「未ログイン」と判定してしまうことがある）。
     """
     if not st.session_state.get("authentication_status"):
         token = authenticator.cookie_controller.get_cookie()
         if token:
             authenticator.authentication_controller.login(token=token)
+        time.sleep(0.7)
 
 
 def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
@@ -324,6 +330,17 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
        `set_cookie()`が何もしなくなる（ライブラリ側の仕様）ことを利用し、
        未チェック時はCookieを発行しない＝ブラウザを閉じたら再ログインが必要、
        という制御を実現している。
+
+    呼び出し側で`st.rerun()`しないこと（重要）: `set_cookie()`はCookieManager
+    コンポーネントに「このCookieをセットして」という指示を送るだけで、実際に
+    ブラウザへ書き込まれるのは少し後（フロントエンドの次の描画サイクル）になる。
+    ここで即座に`st.rerun()`すると、書き込みが完了する前に画面が再構築されて
+    しまい、Cookieが実際には保存されない競合状態になる（本番で発覚・実際に
+    4回中3回の頻度で再現した）。streamlit-authenticator本家のlogin()も同じ理由で
+    セット直後には無条件でrerunしておらず、フォーム以外の残りのUI描画を続けて
+    時間を稼いでから、呼び出し元が最後にまとめてrerunする作りになっている。
+    このモジュールもそれに倣い、rerunは呼び出し元（require_login等）が
+    残りのUIを描画し終えた後に行う。
     """
     with st.form(key, clear_on_submit=False):
         st.subheader("ログイン")
@@ -348,7 +365,7 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
     if not _remember:
         authenticator.cookie_controller.cookie_model.cookie_expiry_days = 0
     authenticator.cookie_controller.set_cookie()
-    st.rerun()
+    time.sleep(0.7)
 
 
 def require_login(authenticator: stauth.Authenticate) -> None:
@@ -423,6 +440,11 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
     _render_tokushoho()
 
+    if st.session_state.get("authentication_status"):
+        # ここまでLPの残りを描画し終えたことで、直前のログイン成功時に発行した
+        # Cookieがブラウザへ書き込まれる時間を稼げている（_render_login_form参照）。
+        st.rerun()
+
     st.stop()
 
 
@@ -451,5 +473,12 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
         _render_login_form(authenticator, "_admin_login_form")
+
+    if st.session_state.get("authentication_status"):
+        # 即rerunしない理由は_render_login_form参照（Cookie書き込みのレース対策）。
+        # このアプリはLPのような「間を持たせる」他の描画が無いため、追加の
+        # sleepでCookie書き込みの猶予を確保する。
+        time.sleep(0.5)
+        st.rerun()
 
     st.stop()
