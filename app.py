@@ -22,7 +22,7 @@ from data_processor import (
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
-from auth import require_login, get_authenticator
+from auth import require_login, get_authenticator, CONFIG_PATH as AUTH_CONFIG_PATH
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -630,7 +630,7 @@ def _render_header():
     _pref     = st.session_state.get("_sel_pref", "")
     _region   = st.session_state.get("_sel_region", "")
 
-    _uc1, _uc2 = st.columns([8.5, 1.5])
+    _uc1, _uc2, _uc3 = st.columns([6.7, 2.2, 1.6])
     with _uc1:
         _user_email = st.session_state.get("username", "")
         if _user_email:
@@ -640,6 +640,24 @@ def _render_header():
                 unsafe_allow_html=True,
             )
     with _uc2:
+        with st.popover("🔑 パスワード変更", use_container_width=True):
+            try:
+                if _authenticator.reset_password(
+                    _user_email,
+                    location="main",
+                    key="_hdr_reset_pw_form",
+                    fields={
+                        "Form name": "パスワード変更",
+                        "Current password": "現在のパスワード",
+                        "New password": "新しいパスワード",
+                        "Repeat password": "新しいパスワード（確認）",
+                        "Reset": "変更する",
+                    },
+                ):
+                    st.success("パスワードを変更しました。")
+            except Exception as e:
+                st.error(str(e))
+    with _uc3:
         _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
 
     if mode == "home":
@@ -721,6 +739,27 @@ def _render_footer():
                     for key in ["df", "ward_df", "surgery_df", "_yoshiki2_parquet"]:
                         st.session_state.pop(key, None)
                     st.rerun()
+                st.divider()
+                st.caption("👥 会員一覧")
+                if os.path.exists(AUTH_CONFIG_PATH):
+                    import yaml as _yaml
+                    with open(AUTH_CONFIG_PATH, encoding="utf-8") as _f:
+                        _auth_cfg = _yaml.safe_load(_f) or {}
+                    _users = (_auth_cfg.get("credentials") or {}).get("usernames") or {}
+                    if _users:
+                        _users_df = pd.DataFrame([
+                            {
+                                "メールアドレス": _uname,
+                                "ロール": "・".join(_udata.get("roles") or []),
+                            }
+                            for _uname, _udata in _users.items()
+                        ])
+                        st.dataframe(_users_df, use_container_width=True, hide_index=True)
+                        st.caption(f"{len(_users_df)}件")
+                    else:
+                        st.caption("登録済みの会員はいません。")
+                else:
+                    st.caption("会員情報ファイルがまだありません。")
                 st.divider()
                 st.caption("🔬 手術データの取り込み（様式2）")
                 _y2_year_sel = st.selectbox("取り込む年度", [2023, 2022, 2021], key="_ftr_yoshiki2_year")

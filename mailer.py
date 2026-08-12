@@ -30,6 +30,7 @@ def send_credentials_email(to_email: str, password: str) -> None:
 パスワード: {password}
 
 https://medilenz.jp からログインできます。
+ログイン後、画面上部の「パスワード変更」からいつでもパスワードを変更できます。
 
 --
 MedilenZ
