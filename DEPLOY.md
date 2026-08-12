@@ -11,6 +11,16 @@
 
 ---
 
+## 本番サーバー情報（現在稼働中）
+
+- **グローバルIPアドレス**: `133.88.119.9`（`medilenz.jp` のDNS Aレコードから確認可能。会話の要約でこの情報が失われた場合は `getent hosts medilenz.jp` や `dig medilenz.jp` で再取得できる）
+- **SSH接続**: `ssh deploy@133.88.119.9`（root直接ログインは無効化済み、`deploy`ユーザーを使う）
+- **ドメイン**: `https://medilenz.jp`
+- **アプリのフォルダ**: `~/byosho-tool`（`deploy`ユーザーのホーム直下）
+- **常駐サービス名**: `byosho-tool`（`sudo systemctl restart byosho-tool` で再起動）
+
+---
+
 ## ステップ0: 事前準備
 
 - ConoHa VPSのアカウント作成・支払い方法の登録（ConoHa側の画面で実施）
