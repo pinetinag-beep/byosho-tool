@@ -630,7 +630,7 @@ def _render_header():
     _pref     = st.session_state.get("_sel_pref", "")
     _region   = st.session_state.get("_sel_region", "")
 
-    _uc1, _uc2, _uc3 = st.columns([6.7, 2.2, 1.6])
+    _uc1, _uc2, _uc3 = st.columns([7.6, 1.4, 1.4])
     with _uc1:
         _user_email = st.session_state.get("username", "")
         if _user_email:
@@ -640,7 +640,7 @@ def _render_header():
                 unsafe_allow_html=True,
             )
     with _uc2:
-        with st.popover("🔑 パスワード変更", use_container_width=True):
+        with st.popover("🔑 変更"):
             try:
                 if _authenticator.reset_password(
                     _user_email,
@@ -731,7 +731,7 @@ def _render_footer():
 """, unsafe_allow_html=True)
 
     with _fb:
-        if os.environ.get("BYOSHO_HIDE_ADMIN") != "1":
+        if "admin" in (st.session_state.get("roles") or []):
             with st.expander("🔧 管理者"):
                 st.caption("データの再読み込み / キャッシュ管理")
                 if st.button("キャッシュをクリアして再読み込み", use_container_width=True, key="_ftr_cache_clear"):
