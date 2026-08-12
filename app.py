@@ -114,11 +114,23 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── ブラウザ自動翻訳の抑止 ──────────────────────────────────
-# Chrome等の自動翻訳が日本語ページを誤って再翻訳し、「地域包括ケア」が
-# 「地域含むケア」のように書き換わってしまう事象への対策。
-# st.markdown内の<script>はinnerHTML経由のため実行されないので、
-# components.html（同一オリジンiframe）経由でwindow.parentのDOMを操作する。
+# ── ページ起動時のユーティリティJS（ブラウザ自動翻訳の抑止・GA4・Enterキー無効化）──
+# 3つとも window.parent のDOMを触る必要があるためcomponents.html（同一オリジン
+# iframe）経由で実行する（st.markdown内の<script>はinnerHTML経由のため実行されない）。
+# 以前は3つの components.html() 呼び出しに分かれていたが、それぞれが
+# Streamlitの縦方向gap（要素間の既定余白）を1つぶん消費してしまい、ログイン前
+# 画面（auth.require_login）の見出し前に不要な空白が積み重なる原因になっていた
+# （2026年8月発覚）。実行内容はそのまま、1つのcomponents.htmlにまとめて余白を減らす。
+# - ブラウザ自動翻訳の抑止: Chrome等の自動翻訳が日本語ページを誤って再翻訳し、
+#   「地域包括ケア」が「地域含むケア」のように書き換わってしまう事象への対策。
+# - GA4: 本番ドメイン（medilenz.jp）でのアクセスのみ計測する（ローカル開発・
+#   Streamlit Cloudのテスト版アクセスを計測に混入させないため、ホスト名で判定）。
+# - Enterキー無効化: st.form() はHTMLの<form>と同様、テキスト入力欄でEnterを
+#   押すとボタンクリックと同じく送信されてしまう（標準のブラウザ挙動）。「検索
+#   ボタンを押した時だけ結果を更新したい」という要望のため、Streamlitの入力欄
+#   への到達前（capture phase）でEnterキーのデフォルト動作を止める。
+# いずれも毎rerunでこのcomponents.htmlが再実行されるため、window.parent側の
+# フラグ（__gaLoaded・__enterGuardInstalled）で多重登録・多重読み込みを防止する。
 components.html("""
 <script>
 if (!window.parent.document.querySelector('meta[name="google"]')) {
@@ -129,17 +141,7 @@ if (!window.parent.document.querySelector('meta[name="google"]')) {
 }
 window.parent.document.documentElement.lang = "ja";
 window.parent.document.documentElement.classList.add("notranslate");
-</script>
-""", height=0)
 
-# ── Google Analytics（GA4）────────────────────────────────
-# 本番ドメイン（medilenz.jp）でのアクセスのみ計測する（ローカル開発・
-# Streamlit Cloudのテスト版アクセスを計測に混入させないため、ホスト名で
-# 判定してから読み込む）。毎rerunでこのcomponents.htmlは再実行されるが、
-# window.parent.__gaLoaded で多重読み込みを防止する
-# （notranslate/Enterキー無効化と同じガード方式）。
-components.html("""
-<script>
 if (window.parent.location.hostname === 'medilenz.jp' && !window.parent.__gaLoaded) {
     window.parent.__gaLoaded = true;
     const s = window.parent.document.createElement('script');
@@ -151,18 +153,7 @@ if (window.parent.location.hostname === 'medilenz.jp' && !window.parent.__gaLoad
     window.parent.gtag('js', new Date());
     window.parent.gtag('config', 'G-8Y6SDBSCMQ');
 }
-</script>
-""", height=0)
 
-# ── 検索フォーム内でのEnterキー送信を無効化 ───────────────────
-# st.form() はHTMLの<form>と同様、テキスト入力欄でEnterを押すとボタン
-# クリックと同じく送信されてしまう（標準のブラウザ挙動）。「検索ボタンを
-# 押した時だけ結果を更新したい」という要望のため、Streamlitの入力欄への
-# 到達前（capture phase）でEnterキーのデフォルト動作を止める。
-# window.parent.__enterGuardInstalled で多重登録を防止（毎rerunでこの
-# components.htmlが再実行されるため）。
-components.html("""
-<script>
 if (!window.parent.__enterGuardInstalled) {
     window.parent.__enterGuardInstalled = true;
     window.parent.document.addEventListener('keydown', function(e) {

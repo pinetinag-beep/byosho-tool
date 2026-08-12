@@ -393,9 +393,14 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     _handle_payment_return(authenticator)
 
+    # margin-top:-110pxは、この見出しの手前にある非表示ユーティリティ要素
+    # （notranslate等のスクリプト・CookieManagerコンポーネント）がStreamlit既定の
+    # 縦gapを消費して積み上がった空白を打ち消すための調整（2026年8月、ヘッダーの
+    # 上が間延びして見えると指摘され対応）。ヘッダー（高さ60px・絶対配置）とは
+    # 重ならない範囲で詰めている。
     st.markdown(
         """
-<div style="text-align:center;padding:40px 0 20px;">
+<div style="text-align:center;padding:40px 0 20px;margin-top:-110px;">
   <h1 style="font-size:2.4rem;font-weight:900;color:#26251F;margin:0 0 6px;
              letter-spacing:-0.01em;font-family:'Helvetica Neue',Arial,sans-serif;">
     Medilen<span style="color:#12886D;">Z</span>
