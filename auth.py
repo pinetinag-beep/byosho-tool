@@ -10,8 +10,10 @@ Stripe Checkout（月額サブスクリプション）での決済完了後に�
 決済ページへ→決済完了→アカウント自動発行（roles=["paid"]）→ログイン情報を
 メールで通知→ログインして利用開始。
 """
+import csv
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -21,6 +23,8 @@ import mailer
 import payments
 
 CONFIG_PATH = "data/auth_config.yaml"
+LOGIN_LOG_PATH = "data/login_log.csv"
+_JST = timezone(timedelta(hours=9))
 
 _PASSWORD_INSTRUCTIONS = """
 **パスワードの条件:**
@@ -57,6 +61,19 @@ def get_authenticator() -> stauth.Authenticate:
         CONFIG_PATH,
         password_instructions=_PASSWORD_INSTRUCTIONS,
     )
+
+
+def _log_login(email: str) -> None:
+    """ログイン成功をdata/login_log.csvに記録する（1ブラウザセッションにつき1回）。"""
+    if not email:
+        return
+    os.makedirs(os.path.dirname(LOGIN_LOG_PATH), exist_ok=True)
+    is_new = not os.path.exists(LOGIN_LOG_PATH)
+    with open(LOGIN_LOG_PATH, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if is_new:
+            writer.writerow(["日時", "メールアドレス"])
+        writer.writerow([datetime.now(_JST).strftime("%Y-%m-%d %H:%M:%S"), email])
 
 
 def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
@@ -292,6 +309,9 @@ def require_login(authenticator: stauth.Authenticate) -> None:
                 "info@medilenz.jp までご連絡ください。"
             )
             st.stop()
+        if not st.session_state.get("_login_logged"):
+            _log_login(st.session_state.get("username", ""))
+            st.session_state["_login_logged"] = True
         return
 
     _handle_payment_return(authenticator)
@@ -357,6 +377,47 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     if st.session_state.get("authentication_status"):
         # クッキーによる自動ログインが成立した場合、ゲートUIを描き直さず
         # 素早く本来の画面に抜けるためrerunする
+        st.rerun()
+
+    st.stop()
+
+
+def require_admin_login(authenticator: stauth.Authenticate) -> None:
+    """会員管理アプリ（admin_app.py）用のログインゲート。
+
+    本体アプリのrequire_login()と違いLP・新規申込みタブは持たず、ログインフォーム
+    のみを表示する。adminロールを持たないユーザーはログインできてもここで弾く。
+    """
+    if st.session_state.get("authentication_status"):
+        if "admin" not in (st.session_state.get("roles") or []):
+            authenticator.logout(location="unrendered")
+            st.error("このアプリは管理者専用です。")
+            st.stop()
+        if not st.session_state.get("_login_logged"):
+            _log_login(st.session_state.get("username", ""))
+            st.session_state["_login_logged"] = True
+        return
+
+    st.markdown(
+        "<h2 style='text-align:center;margin:60px 0 24px;'>MedilenZ 会員管理</h2>",
+        unsafe_allow_html=True,
+    )
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        authenticator.login(
+            location="main",
+            key="_admin_login_form",
+            fields={
+                "Form name": "管理者ログイン",
+                "Username": "メールアドレス",
+                "Password": "パスワード",
+                "Login": "ログイン",
+            },
+        )
+        if st.session_state.get("authentication_status") is False:
+            st.error("メールアドレスまたはパスワードが違います")
+
+    if st.session_state.get("authentication_status"):
         st.rerun()
 
     st.stop()

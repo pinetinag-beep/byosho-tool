@@ -268,6 +268,99 @@ sudo systemctl restart byosho-tool
 
 ---
 
+## 会員管理アプリ（admin_app.py）のデプロイ
+
+2026年8月、会員一覧・Stripe決済状況の確認・手動アカウント発行・ロール編集・
+利用停止/退会処理・ログイン履歴を1画面にまとめた管理者専用アプリを追加した
+（本体アプリ`app.py`とは別プロセス・別サブドメイン `admin.medilenz.jp` で動かす方針）。
+認証は本体と同じ `data/auth_config.yaml` を共有し、`admin`ロールを持つ会員のみ
+ログインできる（`auth.require_admin_login()`）。
+
+**初回セットアップ手順**（本体アプリのステップ6〜9と同じ考え方）:
+
+1. **DNS**: ドメインの管理画面（ConoHa DNSやレジストラの設定）で、`admin.medilenz.jp`
+   のAレコードを本番サーバーのグローバルIP（`133.88.119.9`）に向ける。反映まで数分〜
+   数十分かかることがある。
+
+2. **systemdサービス化**（本体とは別ポート8502で常駐させる）:
+
+   ```bash
+   sudo nano /etc/systemd/system/byosho-admin.service
+   ```
+
+   内容（`Environment=`行は`byosho-tool.service`と同じもの——`STRIPE_SECRET_KEY`・
+   `SMTP_PASSWORD`など——をコピーする。`cat /etc/systemd/system/byosho-tool.service`
+   で確認できる）:
+
+   ```ini
+   [Unit]
+   Description=MedilenZ admin (member management) app
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=deploy
+   WorkingDirectory=/home/deploy/byosho-tool
+   Environment=STRIPE_SECRET_KEY=<byosho-tool.serviceと同じ値>
+   Environment=SMTP_PASSWORD=<byosho-tool.serviceと同じ値>
+   ExecStart=/home/deploy/byosho-tool/venv/bin/streamlit run admin_app.py --server.port 8502 --server.address 127.0.0.1 --server.headless true
+   Restart=always
+   RestartSec=5
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable byosho-admin
+   sudo systemctl start byosho-admin
+   sudo systemctl status byosho-admin
+   ```
+
+3. **nginx**: `admin.medilenz.jp` 用のserver blockを追加する（本体と同じサーバー内、
+   別ファイルにする）。
+
+   ```bash
+   sudo nano /etc/nginx/sites-available/byosho-admin
+   ```
+
+   ```nginx
+   server {
+       listen 80;
+       server_name admin.medilenz.jp;
+
+       location / {
+           proxy_pass http://127.0.0.1:8502;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_read_timeout 86400;
+       }
+   }
+   ```
+
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/byosho-admin /etc/nginx/sites-enabled/
+   sudo nginx -t
+   sudo systemctl reload nginx
+   sudo apt install -y certbot python3-certbot-nginx   # 未インストールなら
+   sudo certbot --nginx -d admin.medilenz.jp
+   ```
+
+4. `https://admin.medilenz.jp` にアクセスし、`admin`ロールを持つアカウント
+   （例: `pinetina.g@gmail.com`）でログインできるか確認する。
+
+**以後の更新**は本体アプリと同じ「今後の更新フロー」（`git pull` →
+`sudo systemctl restart byosho-admin`）で反映する。本体を再起動する時に
+このサービスも変更されていれば、あわせて再起動すること
+（`sudo systemctl restart byosho-tool byosho-admin` とまとめて実行してもよい）。
+
+---
+
 ## 未検討・今後の課題
 
 - **メモリ監視**: 2GBプランで実際にどれだけ余裕があるか、本番トラフィックで様子を見る
