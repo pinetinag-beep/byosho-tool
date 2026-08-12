@@ -224,14 +224,14 @@ def _render_landing_content() -> None:
   <div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
               padding:24px;text-align:center;margin:0 0 24px;">
     <div style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.05em;">
-      料金プラン
+      お試し価格
     </div>
     <div style="margin:6px 0 4px;">
       <span style="font-size:2.2rem;font-weight:900;color:#26251F;">¥500</span>
       <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込）</span>
     </div>
     <div style="font-size:0.8rem;color:#6E6A5E;">
-      クレジットカード決済・お申し込み後すぐにご利用いただけます
+      2026年12月末までの特別価格・クレジットカード決済ですぐにご利用いただけます
     </div>
   </div>
 
@@ -266,7 +266,7 @@ def _render_tokushoho() -> None:
         with st.expander("利用条件・特定商取引法に基づく表示"):
             st.markdown(
                 """
-**料金プラン**：月額500円（税込）
+**料金プラン**：お試し価格 月額500円（税込）※2026年12月末までの特別価格です
 
 **お支払い方法**：クレジットカード決済（Stripe）
 
@@ -289,7 +289,7 @@ info@medilenz.jp までご連絡ください。デジタルサービスの性質
 | 所在地 | ご請求いただければ遅滞なく開示いたします |
 | 電話番号 | ご請求いただければ遅滞なく開示いたします |
 | メールアドレス | info@medilenz.jp |
-| 販売価格 | 月額500円（税込） |
+| 販売価格 | 月額500円（税込）※お試し価格、2026年12月末まで |
 """
             )
 
@@ -422,7 +422,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     with _tab_register:
         st.markdown(
             "<p style='font-size:0.85rem;color:#6E6A5E;'>"
-            "月額500円のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
+            "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
             "</p>",
             unsafe_allow_html=True,
         )
