@@ -285,6 +285,13 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     「同じkeyの要素が重複している」エラーになる。
     """
     if st.session_state.get("authentication_status"):
+        if "suspended" in (st.session_state.get("roles") or []):
+            authenticator.logout(location="unrendered")
+            st.error(
+                "このアカウントは利用停止中です。心当たりがない場合は "
+                "info@medilenz.jp までご連絡ください。"
+            )
+            st.stop()
         return
 
     _handle_payment_return(authenticator)
