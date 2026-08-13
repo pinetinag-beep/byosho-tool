@@ -27,6 +27,11 @@ CONFIG_PATH = "data/auth_config.yaml"
 LOGIN_LOG_PATH = "data/login_log.csv"
 _JST = timezone(timedelta(hours=9))
 
+# Stripeが本番（ライブモード）審査中のため、新規申込みは一時的に停止し
+# 「近日公開」表示にしている（2026年8月）。STRIPE_SECRET_KEY等をsk_live_に
+# 切り替えて本番稼働を始めるタイミングで、このフラグをTrueに戻すこと。
+_REGISTRATION_OPEN = False
+
 _PASSWORD_INSTRUCTIONS = """
 **パスワードの条件:**
 - 8〜20文字
@@ -224,26 +229,15 @@ def _render_landing_content() -> None:
   <div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
               padding:24px;text-align:center;margin:0 0 24px;">
     <div style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.05em;">
-      お試し価格
+      近日公開
     </div>
     <div style="margin:6px 0 4px;">
       <span style="font-size:2.2rem;font-weight:900;color:#26251F;">¥500</span>
-      <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込）</span>
+      <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込・予定）</span>
     </div>
     <div style="font-size:0.8rem;color:#6E6A5E;">
-      2026年12月末までの特別価格・クレジットカード決済ですぐにご利用いただけます
+      新規のお申し込みは近日公開予定です。しばらくお待ちください。
     </div>
-  </div>
-
-  <div style="background:#EAF4F0;border:1px solid #BFDFD4;border-radius:14px;
-              padding:20px 24px;margin:0 0 28px;">
-    <div style="font-weight:800;color:#26251F;margin-bottom:10px;">使い方</div>
-    <ol style="margin:0;padding-left:20px;color:#4b5563;font-size:0.9rem;line-height:1.9;">
-      <li>下の「新規利用申し込み」タブでメールアドレスを入力</li>
-      <li>Stripeの決済ページでお支払い（月額500円）</li>
-      <li>決済完了後、自動でアカウントが発行され、ログイン情報がメールで届きます</li>
-      <li>メールに記載のIDとパスワードで「ログイン」タブからログイン</li>
-    </ol>
   </div>
 </div>""",
         unsafe_allow_html=True,
@@ -420,27 +414,33 @@ def require_login(authenticator: stauth.Authenticate) -> None:
         _render_login_form(authenticator, "_login_form")
 
     with _tab_register:
-        st.markdown(
-            "<p style='font-size:0.85rem;color:#6E6A5E;'>"
-            "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
-            "</p>",
-            unsafe_allow_html=True,
-        )
-        with st.form("_signup_form", clear_on_submit=False):
-            _signup_email = st.text_input("メールアドレス", autocomplete="off")
-            _signup_submitted = st.form_submit_button("お申し込みへ進む")
-        if _signup_submitted:
-            if not _signup_email or "@" not in _signup_email:
-                st.error("正しいメールアドレスを入力してください")
-            else:
-                try:
-                    _checkout_url = payments.create_checkout_session(_signup_email)
-                    st.link_button(
-                        "💳 決済ページへ進む（月額500円）", _checkout_url,
-                        type="primary",
-                    )
-                except Exception as e:
-                    st.error(f"決済ページの作成に失敗しました（{e}）")
+        if not _REGISTRATION_OPEN:
+            st.info(
+                "🚧 新規のお申し込みは近日公開予定です。準備が整い次第、こちらから"
+                "お申し込みいただけるようになります。しばらくお待ちください。"
+            )
+        else:
+            st.markdown(
+                "<p style='font-size:0.85rem;color:#6E6A5E;'>"
+                "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
+                "</p>",
+                unsafe_allow_html=True,
+            )
+            with st.form("_signup_form", clear_on_submit=False):
+                _signup_email = st.text_input("メールアドレス", autocomplete="off")
+                _signup_submitted = st.form_submit_button("お申し込みへ進む")
+            if _signup_submitted:
+                if not _signup_email or "@" not in _signup_email:
+                    st.error("正しいメールアドレスを入力してください")
+                else:
+                    try:
+                        _checkout_url = payments.create_checkout_session(_signup_email)
+                        st.link_button(
+                            "💳 決済ページへ進む（月額500円）", _checkout_url,
+                            type="primary",
+                        )
+                    except Exception as e:
+                        st.error(f"決済ページの作成に失敗しました（{e}）")
 
     st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
     _render_tokushoho()
