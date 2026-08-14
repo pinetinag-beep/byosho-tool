@@ -18,6 +18,9 @@ __pycache__/
 !dpc_match.parquet
 !shisetsu_kijun_cache.parquet
 !gakkai_nintei_cache.parquet
+!gairai_form1_annual.parquet
+!gairai_form1_monthly.parquet
+!gairai_form2.parquet
 
 # 更新スクリプトが作る一時バックアップ
 *.parquet.bak
@@ -49,3 +52,4 @@ byosho_file_R6/
 DPC_file_R4/
 DPC_file_R5/
 shisetsu_new_20260712/
+外来機能報告/
