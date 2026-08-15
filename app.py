@@ -2756,6 +2756,15 @@ if st.session_state.get("_view_mode") == "distance":
                         )
                         _dist_result.index += 1
 
+                        # 医療機関名列を病院詳細ページへのリンクにする（?hospital=<名前>への
+                        # 遷移は_qp_hospハンドラが年度・都道府県・二次医療圏を自動で引き当てる
+                        # ので、URLはこれだけで足りる）。display_textの正規表現でURLから
+                        # 病院名部分だけを抜き出して表示するため、percent-encodeしない生の
+                        # 名前をそのままURLの値にしてよい（folium地図ポップアップの
+                        # window.top.location.origin+'/?hospital='+encodeURIComponent(name)
+                        # と同じ着地点だが、こちらは表示のためencodeしない）。
+                        _dist_result["_hosp_link"] = _dist_result["医療機関名"].apply(lambda n: f"/?hospital={n}")
+
                         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
                         st.markdown('<div class="section-header">検索結果</div>', unsafe_allow_html=True)
                         st.markdown(_source_tag(_byosho_source(_dist_year)), unsafe_allow_html=True)
@@ -2763,6 +2772,8 @@ if st.session_state.get("_view_mode") == "distance":
                             st.caption("※ 公共交通は直線距離÷25km/hの近似値です")
                         st.caption(f"**{len(_dist_result):,}病院** が {_dist_max}分以内 — 出発地: {_dist_addr}")
                         _dist_col_cfg = {
+                            "_hosp_link":           st.column_config.LinkColumn("医療機関名", display_text=r"hospital=(.*)"),
+                            "医療機関名":            None,
                             "直線距離(km)":         st.column_config.NumberColumn("直線距離",     format="%.1f km"),
                             "所要時間(分)":         st.column_config.NumberColumn("所要時間",     format="%.1f 分"),
                             "合計_許可病床数":       st.column_config.NumberColumn("許可病床数",   format="%,d 床"),
@@ -2782,9 +2793,14 @@ if st.session_state.get("_view_mode") == "distance":
                             if _asc.startswith("手術_"):
                                 _dist_col_cfg[_asc] = st.column_config.NumberColumn(
                                     _asc.replace("手術_", ""), format="%,d 件")
-                        st.dataframe(_dist_result, use_container_width=True, column_config=_dist_col_cfg)
+                        _dist_col_order = ["_hosp_link" if c == "医療機関名" else c for c in _dist_result.columns]
+                        st.dataframe(
+                            _dist_result, use_container_width=True,
+                            column_config=_dist_col_cfg, column_order=_dist_col_order,
+                        )
+                        st.caption("医療機関名をクリックすると病院詳細ページを開けます。")
 
-                        _dist_csv_df = _dist_result.copy()
+                        _dist_csv_df = _dist_result.drop(columns=["_hosp_link"]).copy()
                         for _c in _dist_auto_surg_cols:
                             if _c in _dist_csv_df.columns:
                                 _v = pd.to_numeric(_dist_csv_df[_c], errors="coerce").fillna(0)
@@ -2796,23 +2812,6 @@ if st.session_state.get("_view_mode") == "distance":
                             mime="text/csv",
                             key="dist_csv_dl",
                         )
-
-                        st.divider()
-                        st.markdown("### 🏥 病院を選んで詳細を見る")
-                        _dist_nav_cols = st.columns(3)
-                        for _di, _dname in enumerate(_dist_result["医療機関名"].tolist()[:30]):
-                            with _dist_nav_cols[_di % 3]:
-                                if st.button(f"🏥 {_dname}", key=f"_dist_nav_{_di}", use_container_width=True):
-                                    _drow = _dist_df_base[_dist_df_base["医療機関名"] == _dname]
-                                    if not _drow.empty:
-                                        _dr = _drow.iloc[0]
-                                        st.session_state["_nav_jump"] = {
-                                            "year": int(_dr["報告年度"]),
-                                            "pref": str(_dr["都道府県名"]),
-                                            "region": str(_dr["二次医療圏名"]),
-                                            "hospital": _dname,
-                                        }
-                                        st.rerun()
             else:
                 _run_dpc_distance_search(_origin, _dist_addr, _dist_max, _dist_mode, _dpc_sel)
 
