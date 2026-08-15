@@ -55,7 +55,11 @@ HEADER_ROW = 5
 DATA_START_ROW = 7
 
 _YEAR_DIR_RE = re.compile(r"令和(\d+)年")
-_MONTH_SUFFIX_RE = re.compile(r"令和\d+年(\d{1,2})月$")
+# 末尾の __N は _dedupe_columns が同名列（例:「診察後直ちに入院となった患者延べ数」が
+# 休日受診用・夜間受診用で2回登場する）に付ける一意化サフィックス。年月パターンの
+# 後ろに付くこともあるため、無くても・あっても両方マッチさせる。
+_MONTH_SUFFIX_RE = re.compile(r"令和\d+年(\d{1,2})月(?:__\d+)?$")
+_ANNUAL_SUFFIX_RE = re.compile(r"（年間）(__\d+)?$")
 
 # 令和4年度「報告様式１」の部門フラグ列（識別列の直後、月別指標ブロックの手前）
 _DEPT_PREFIX = "外来を行っている診療科"
@@ -109,14 +113,22 @@ def _read_form(path: str, sheet_name: str = None) -> pd.DataFrame:
 
 def _find_monthly_blocks(columns):
     """「〇〇（年間）」列の直後に12個の「...令和X年Y月」列が続くブロックを検出する。
-    戻り値: [(metric_name, [12個の月別列名（4月始まり）]), ...]
+
+    「診察後直ちに入院となった患者延べ数（年間）」等、休日受診・夜間受診の両方で
+    同名の列が2回登場するケースがあり、_dedupe_columns()が2回目に付ける
+    `__N`サフィックスが年間列にも月別列にも一律で付く。サフィックスの有無どちらも
+    ブロックとして検出できるよう、`_ANNUAL_SUFFIX_RE`/`_MONTH_SUFFIX_RE`は
+    どちらも許容している（片方しか見ないと2回目以降のブロックを取りこぼす）。
+
+    戻り値: [(metric_name, annual_col, [12個の月別列名（4月始まり）]), ...]
     """
     blocks = []
     n = len(columns)
     i = 0
     while i < n:
         col = columns[i]
-        if isinstance(col, str) and col.endswith("（年間）"):
+        m = _ANNUAL_SUFFIX_RE.search(col) if isinstance(col, str) else None
+        if m:
             month_cols = []
             j = i + 1
             while j < n and len(month_cols) < 12:
@@ -127,8 +139,9 @@ def _find_monthly_blocks(columns):
                 else:
                     break
             if len(month_cols) == 12:
-                metric = col[: -len("（年間）")]
-                blocks.append((metric, month_cols))
+                suffix = m.group(1) or ""
+                metric = col[: m.start()] + suffix
+                blocks.append((metric, col, month_cols))
                 i = j
                 continue
         i += 1
@@ -141,18 +154,23 @@ def _reshape_r4_form1(df: pd.DataFrame):
     """
     id_cols = list(df.columns[:12])  # 病診区分 〜 設置主体
     dept_cols = [c for c in df.columns if isinstance(c, str) and c.startswith(_DEPT_PREFIX)]
-    annual_df = df[id_cols + dept_cols].copy()
-
     blocks = _find_monthly_blocks(list(df.columns))
+
+    # 年間値：部門フラグに加えて、各ブロックの「（年間）」列自体（初診患者数（年間）等）
+    # も年間値テーブルへ含める（他年度の年間値ファイルが同じ列を持つため）。
+    annual_df = df[id_cols + dept_cols].copy()
+    for metric, annual_col, _ in blocks:
+        annual_df[f"{metric}（年間）"] = df[annual_col].values
+
     monthly_frames = []
     for month_pos in range(12):
         month_row = df[id_cols].copy()
         # 月別指標ブロックの列名（例: "初診患者数 令和4年4月"）が示す実際の暦月を
         # 抽出して報告月とする（4月始まりの並びだが、念のため列名から都度読む）
-        _, first_block_months = blocks[0]
+        _, _, first_block_months = blocks[0]
         month_num = int(_MONTH_SUFFIX_RE.search(first_block_months[month_pos]).group(1))
         month_row["報告月"] = month_num
-        for metric, month_cols in blocks:
+        for metric, _, month_cols in blocks:
             month_row[metric] = df[month_cols[month_pos]].values
         monthly_frames.append(month_row)
     monthly_df = pd.concat(monthly_frames, ignore_index=True)
@@ -167,9 +185,18 @@ def _stringify_object_columns(df: pd.DataFrame) -> pd.DataFrame:
     文字列。数値としての集計・マスク値(*)の解釈は用途が決まってから
     行う方針のため、ここでは型エラーを避けつつ原本の値をそのまま保持する。
     """
+    def _to_str_or_none(v):
+        # concat時に他年度にしか無い列を埋めるNaN（float）はNoneと同じ「欠損」
+        # 扱いにすること。v is Noneだけで判定すると、NaNがstr(v)で文字列"nan"に
+        # 化けて紛れ込む（実データで発覚：令和4年度に無い列がconcat後に
+        # 文字列"nan"で埋まり、notna()判定で「データあり」と誤判定していた）。
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return str(v)
+
     for col in df.columns:
         if df[col].dtype == object:
-            df[col] = df[col].map(lambda v: str(v) if v is not None else None)
+            df[col] = df[col].map(_to_str_or_none)
     return df
 
 
