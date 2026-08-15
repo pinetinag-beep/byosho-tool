@@ -2148,9 +2148,17 @@ _render_header()
 
 if st.session_state.get("_view_mode") == "home":
     # ── ヒーロー ─────────────────────────────────────────────
+    # padding-topは以前46pxだったが、ヘッダー（メールアドレス行・「ホーム」
+    # パンくず・区切り線）との間に不要な空白が目立つと指摘され縮小した
+    # （2026年8月）。この上に並ぶ非表示要素（notranslate等のスクリプト・
+    # CookieManagerコンポーネント）がStreamlitの既定gapを消費する事情は
+    # ログイン画面の見出し前の空白を圧縮した時と同根だが、ここは既に
+    # ヘッダーの実コンテンツが乗っているため、負のmarginでの圧縮は
+    # ヘッダーと重なる危険があり採用せず、ヒーロー自身の余白を削るだけに
+    # 留めている。
     st.markdown(
         f"""
-<div style="text-align:center;padding:46px 0 34px;">
+<div style="text-align:center;padding:16px 0 34px;">
   <p style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.18em;margin:0 0 10px;">
     地域の医療をひらく、公的データのまど
   </p>
