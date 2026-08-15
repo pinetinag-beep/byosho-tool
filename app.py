@@ -6668,13 +6668,13 @@ if tab_gairai is not None and _is_gairai and _gairai_annual_row is not None:
 
         st.markdown('<div class="section-header">紹介・逆紹介の状況</div>', unsafe_allow_html=True)
         _gk1, _gk2, _gk3, _gk4, _gk5 = st.columns(5)
-        _gk1.metric("初診患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('初診患者数（年間）'))}人")
-        _gk2.metric("紹介患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('紹介患者数（年間）'))}人")
-        _gk3.metric("逆紹介患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('逆紹介患者数（年間）'))}人")
+        kpi_card(_gk1, "初診患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('初診患者数（年間）'))}人")
+        kpi_card(_gk2, "紹介患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('紹介患者数（年間）'))}人")
+        kpi_card(_gk3, "逆紹介患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('逆紹介患者数（年間）'))}人")
         _gr = _gairai_annual_row.get("紹介率（年間）")
         _gr2 = _gairai_annual_row.get("逆紹介率（年間）")
-        _gk4.metric("紹介率（年間）", f"{_gr}%" if _gr not in (None, "*", "-") else _gairai_num(_gr))
-        _gk5.metric("逆紹介率（年間）", f"{_gr2}%" if _gr2 not in (None, "*", "-") else _gairai_num(_gr2))
+        kpi_card(_gk4, "紹介率（年間）", f"{_gr}%" if _gr not in (None, "*", "-") else _gairai_num(_gr))
+        kpi_card(_gk5, "逆紹介率（年間）", f"{_gr2}%" if _gr2 not in (None, "*", "-") else _gairai_num(_gr2))
 
         st.divider()
         st.markdown('<div class="section-header">外来を行っている診療科</div>', unsafe_allow_html=True)
@@ -6684,7 +6684,38 @@ if tab_gairai is not None and _is_gairai and _gairai_annual_row is not None:
             if c.startswith("外来を行っている診療科") and _gairai_annual_row.get(c) == "〇"
         ]
         if _dept_active:
-            st.markdown("　".join(f"`{d}`" for d in _dept_active))
+            # 表示上の見やすさのためのグルーピング（原データの「〇」フラグ自体は
+            # 一切変更しない。あくまで44診療科を一覧しやすく束ねる目的で、診療科名に
+            # 「内科」「外科」を含むかどうかで機械的に分類。独自の医学的判定は行わない）。
+            _dept_groups = {"内科系": [], "外科系": [], "その他": []}
+            for _d in _dept_active:
+                if "内科" in _d or _d in ("皮膚科", "アレルギー科", "リウマチ科", "小児科", "精神科", "心療内科"):
+                    _dept_groups["内科系"].append(_d)
+                elif "外科" in _d or _d in ("泌尿器科", "整形外科", "眼科", "耳鼻咽喉科", "産婦人科", "産科", "婦人科"):
+                    _dept_groups["外科系"].append(_d)
+                else:
+                    _dept_groups["その他"].append(_d)
+            # 「歯科口腔外科」は名前に「外科」を含むが歯科系のため、他の歯科と一緒に
+            # その他へ寄せる（上のexceptで拾われる前に個別判定）。
+            for _grp in ("内科系", "外科系"):
+                if "歯科口腔外科" in _dept_groups[_grp]:
+                    _dept_groups[_grp].remove("歯科口腔外科")
+                    _dept_groups["その他"].append("歯科口腔外科")
+            def _dept_badge(text: str) -> str:
+                return (
+                    '<span style="display:inline-block;background:var(--brand-tint);'
+                    'color:var(--ink);border:1px solid var(--brand-line);border-radius:999px;'
+                    'padding:4px 12px;margin:2px 4px 2px 0;font-size:0.9rem;">'
+                    f'{text}</span>'
+                )
+
+            for _gname, _members in _dept_groups.items():
+                if _members:
+                    st.markdown(f"**{_gname}**")
+                    st.markdown(
+                        "".join(_dept_badge(d) for d in _members),
+                        unsafe_allow_html=True,
+                    )
         else:
             st.caption("報告データがありません。")
 
@@ -6702,8 +6733,8 @@ if tab_gairai is not None and _is_gairai and _gairai_annual_row is not None:
             else:
                 st.caption("紹介受診重点外来の実施は報告されていません。")
             _gf1, _gf2c = st.columns(2)
-            _gf1.metric("紹介受診重点外来の患者延べ数（年間）", f"{_gairai_num(_gf2_patients)}人")
-            _gf2c.metric("紹介受診重点外来の患者割合", f"{_gf2_ratio}%" if _gf2_ratio not in (None, "*", "-") else _gairai_num(_gf2_ratio))
+            kpi_card(_gf1, "紹介受診重点外来の患者延べ数（年間）", f"{_gairai_num(_gf2_patients)}人")
+            kpi_card(_gf2c, "紹介受診重点外来の患者割合", f"{_gf2_ratio}%" if _gf2_ratio not in (None, "*", "-") else _gairai_num(_gf2_ratio))
 
 
 # ── TAB DPC: DPC分析 ──────────────────────────────────────
