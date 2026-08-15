@@ -230,10 +230,17 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
    Streamlit既定のブロックコンテナpadding-top(96px)に加え、notranslate等の
    非表示スクリプトやCookieManagerコンポーネントがStreamlitの既定gapを
    消費し、ログイン後の全画面（ヘッダー行の上）に不要な空白ができていた
-   （2026年8月、本番で指摘）。ツールバー（高さ60px・絶対配置）と重ならない
-   範囲で、ブロックコンテナの先頭を引き上げて詰める。 */
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > div:first-child {
-    margin-top: -115px;
+   （2026年8月、本番で指摘）。
+   最初は先頭要素にmargin-topを負で当てて引き上げる方式を試したが、
+   stAppViewContainer/stMainがoverflow:hidden・overflow-y:autoの
+   スクロールコンテナのため、負のmarginでスクロール開始位置より上に
+   押し出した部分はクリップされて見えなくなり（実際にログアウトボタンが
+   消える事故になった）、この方式は不採用にした。
+   安全な代わりにブロックコンテナ自身のpadding-topを直接縮める
+   （96px→64px。ツールバー（高さ60px・絶対配置）とは重ならない
+   範囲に収めている）。 */
+[data-testid="stMainBlockContainer"] {
+    padding-top: 64px !important;
 }
 
 /* ── KPI数値は等幅フィーチャーを有効化 ── */
