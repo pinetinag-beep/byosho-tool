@@ -226,6 +226,16 @@ h1, h2, h3, h4, h5, h6,
 .stApp { background: var(--paper); }
 header[data-testid="stHeader"] { background: var(--paper) !important; }
 
+/* ── ページ本体の上の余白を圧縮 ──
+   Streamlit既定のブロックコンテナpadding-top(96px)に加え、notranslate等の
+   非表示スクリプトやCookieManagerコンポーネントがStreamlitの既定gapを
+   消費し、ログイン後の全画面（ヘッダー行の上）に不要な空白ができていた
+   （2026年8月、本番で指摘）。ツールバー（高さ60px・絶対配置）と重ならない
+   範囲で、ブロックコンテナの先頭を引き上げて詰める。 */
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > div:first-child {
+    margin-top: -115px;
+}
+
 /* ── KPI数値は等幅フィーチャーを有効化 ── */
 .metric-value {
     font-variant-numeric: tabular-nums;
