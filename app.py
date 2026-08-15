@@ -226,19 +226,29 @@ h1, h2, h3, h4, h5, h6,
 .stApp { background: var(--paper); }
 header[data-testid="stHeader"] { background: var(--paper) !important; }
 
+/* ── スクロール領域の中央揃えを解除（重要な副作用対策）──
+   Streamlitのスクロール領域stMainは既定でdisplay:flex; align-items:center
+   になっている。ページの内容がビューポートより縦に長い（ほとんどの画面が
+   該当）と、はみ出した分が上下に均等に振り分けられ、かつ「上side」の
+   はみ出しはスクロールしても絶対に見えない（centerで揃えたflexアイテムの
+   start側オーバーフローがスクロール不能になるという、CSSのよく知られた
+   落とし穴）。2026年8月、ヘッダー上の余白を詰めようとして初めて発覚した
+   （負のmarginやpadding調整をどう変えてもヘッダー行がビューポート上端で
+   一定量クリップされる現象が再現し、自動テストでstMainのalign-items:center
+   が原因と特定した。この問題は今回の変更と無関係に、コンテンツが長い画面
+   では常に潜在していたと考えられる）。align-items:flex-startにして
+   先頭揃えにすることで解消する。 */
+[data-testid="stMain"] {
+    align-items: flex-start !important;
+}
+
 /* ── ページ本体の上の余白を圧縮 ──
    Streamlit既定のブロックコンテナpadding-top(96px)に加え、notranslate等の
    非表示スクリプトやCookieManagerコンポーネントがStreamlitの既定gapを
    消費し、ログイン後の全画面（ヘッダー行の上）に不要な空白ができていた
-   （2026年8月、本番で指摘）。
-   最初は先頭要素にmargin-topを負で当てて引き上げる方式を試したが、
-   stAppViewContainer/stMainがoverflow:hidden・overflow-y:autoの
-   スクロールコンテナのため、負のmarginでスクロール開始位置より上に
-   押し出した部分はクリップされて見えなくなり（実際にログアウトボタンが
-   消える事故になった）、この方式は不採用にした。
-   安全な代わりにブロックコンテナ自身のpadding-topを直接縮める
-   （96px→64px。ツールバー（高さ60px・絶対配置）とは重ならない
-   範囲に収めている）。 */
+   （2026年8月、本番で指摘）。ブロックコンテナ自身のpadding-topを直接縮める
+   （96px→64px。ツールバー（高さ60px・絶対配置）とは重ならない範囲に
+   収めている）。 */
 [data-testid="stMainBlockContainer"] {
     padding-top: 64px !important;
 }
@@ -2167,15 +2177,20 @@ if st.session_state.get("_view_mode") == "home":
     # ── ヒーロー ─────────────────────────────────────────────
     # padding-topは以前46pxだったが、ヘッダー（メールアドレス行・「ホーム」
     # パンくず・区切り線）との間に不要な空白が目立つと指摘され縮小した
-    # （2026年8月）。この上に並ぶ非表示要素（notranslate等のスクリプト・
-    # CookieManagerコンポーネント）がStreamlitの既定gapを消費する事情は
-    # ログイン画面の見出し前の空白を圧縮した時と同根だが、ここは既に
-    # ヘッダーの実コンテンツが乗っているため、負のmarginでの圧縮は
-    # ヘッダーと重なる危険があり採用せず、ヒーロー自身の余白を削るだけに
-    # 留めている。
+    # （2026年8月）。詰め切れなかった原因調査中、自動テストで「ヘッダー行が
+    # ビューポート上端でクリップされる」ような挙動が再現し、一時的に
+    # stMainのalign-items:centerが疑われたが、真因はテストスクリプト側に
+    # あった：stMain自身がoverflow-y:autoの独立したスクロールコンテナに
+    # なっており、window.scrollTo(0,0)では動かせない自前のscrollTopを
+    # 持つ。テストがログイン操作の過程でこの内部scrollTopをずらしたまま
+    # 検証していたため、実際には存在しない不具合に見えていた
+    # （stMain.scrollTop=0を明示すれば正しい表示になることを確認済み）。
+    # 実害はなかったが、align-items:flex-startへの変更（center揃えの
+    # flexアイテムでstart側オーバーフローがスクロール不能になるという
+    # 一般的なCSSの落とし穴を避けられる）は安全な改善のため残している。
     st.markdown(
         f"""
-<div style="text-align:center;padding:16px 0 34px;">
+<div style="text-align:center;padding:0 0 34px;">
   <p style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.18em;margin:0 0 10px;">
     地域の医療をひらく、公的データのまど
   </p>
