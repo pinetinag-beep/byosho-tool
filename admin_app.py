@@ -61,11 +61,15 @@ def _load_users() -> dict:
 
 
 def _save_users(users: dict) -> None:
-    with open(auth.CONFIG_PATH, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-    cfg.setdefault("credentials", {})["usernames"] = users
-    with open(auth.CONFIG_PATH, "w", encoding="utf-8") as f:
-        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+    # 読み込み〜書き込みをauth.config_lock()で囲む（本体アプリ側の
+    # ログイン等による同時書き込みとの競合でファイルが壊れる事故が
+    # 本番で発生したため。auth.config_lockのdocstring参照）。
+    with auth.config_lock():
+        with open(auth.CONFIG_PATH, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("credentials", {})["usernames"] = users
+        with open(auth.CONFIG_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -99,23 +103,26 @@ with _hc1:
 with _hc2:
     with st.popover("🔑 変更"):
         try:
-            if _authenticator.reset_password(
-                st.session_state.get("username", ""),
-                location="main",
-                key="_admin_reset_pw_form",
-                fields={
-                    "Form name": "パスワード変更",
-                    "Current password": "現在のパスワード",
-                    "New password": "新しいパスワード",
-                    "Repeat password": "新しいパスワード（確認）",
-                    "Reset": "変更する",
-                },
-            ):
+            with auth.config_lock(_authenticator):
+                _pw_changed = _authenticator.reset_password(
+                    st.session_state.get("username", ""),
+                    location="main",
+                    key="_admin_reset_pw_form",
+                    fields={
+                        "Form name": "パスワード変更",
+                        "Current password": "現在のパスワード",
+                        "New password": "新しいパスワード",
+                        "Repeat password": "新しいパスワード（確認）",
+                        "Reset": "変更する",
+                    },
+                )
+            if _pw_changed:
                 st.success("パスワードを変更しました。")
         except Exception as e:
             st.error(str(e))
 with _hc3:
-    _authenticator.logout("ログアウト", "main", key="_admin_logout_btn")
+    with auth.config_lock(_authenticator):
+        _authenticator.logout("ログアウト", "main", key="_admin_logout_btn")
 
 st.divider()
 
@@ -223,10 +230,11 @@ with _tab_new:
         else:
             _pw = _new_password or payments.gen_password()
             try:
-                _authenticator.authentication_controller.register_user(
-                    "会員", "登録", _new_email, _new_email, _pw, _pw, "",
-                    roles=_new_roles, captcha=False,
-                )
+                with auth.config_lock(_authenticator):
+                    _authenticator.authentication_controller.register_user(
+                        "会員", "登録", _new_email, _new_email, _pw, _pw, "",
+                        roles=_new_roles, captcha=False,
+                    )
             except stauth.RegisterError as e:
                 st.error(str(e))
             else:

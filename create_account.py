@@ -27,10 +27,11 @@ def main() -> None:
 
     authenticator = auth.get_authenticator()
     try:
-        authenticator.authentication_controller.register_user(
-            "管理", "アカウント", args.email, args.email, password, password, "",
-            roles=[args.role], captcha=False,
-        )
+        with auth.config_lock(authenticator):
+            authenticator.authentication_controller.register_user(
+                "管理", "アカウント", args.email, args.email, password, password, "",
+                roles=[args.role], captcha=False,
+            )
     except stauth.RegisterError as e:
         print(f"エラー: {e}", file=sys.stderr)
         sys.exit(1)

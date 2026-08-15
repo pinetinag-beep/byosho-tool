@@ -11,9 +11,11 @@ Stripe Checkout（月額サブスクリプション）での決済完了後に�
 メールで通知→ログインして利用開始。
 """
 import csv
+import fcntl
 import os
 import secrets
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
@@ -25,7 +27,54 @@ import payments
 
 CONFIG_PATH = "data/auth_config.yaml"
 LOGIN_LOG_PATH = "data/login_log.csv"
+_LOCK_PATH = "data/auth_config.yaml.lock"
 _JST = timezone(timedelta(hours=9))
+
+
+@contextmanager
+def config_lock(authenticator: "stauth.Authenticate | None" = None):
+    """auth_config.yamlへの読み書きをプロセス間で排他制御する。
+
+    streamlit_authenticatorライブラリの内部実装（Helpers.update_config_file）は
+    「読み込み→変更→書き込み」をロック無しで行っており、書き込み時は
+    open(path, 'w') で即座にファイルを空に切り詰める。本体アプリ（byosho-tool）
+    と会員管理アプリ（byosho-admin）は別プロセスとして同時に動いており、
+    どちらもこの設定ファイルに書き込みうる（ログインのたびに logged_in 状態を
+    書き込むため、見た目以上に書き込み頻度が高い——cookie復元によるログインも
+    含む）。ロック無しで2つの書き込みが重なると、片方の書き込み中にもう片方が
+    ファイルを空に切り詰めてしまい、ファイルが空またはYAMLとして壊れた状態で
+    残ることがある（本番で実際に発生：起動時の設定読み込みで
+    AttributeError('NoneType' object has no attribute 'get') となりアプリ全体が
+    クラッシュした）。
+
+    ログイン・ログアウト・パスワード変更・新規登録・ロール変更等、
+    auth_config.yamlを読み書きする可能性がある操作は必ずこのロックで囲むこと。
+
+    `authenticator`を渡すと、ロック取得直後に会員データをディスクから読み直し、
+    渡された認証オブジェクトの内部状態（authentication_model.credentials）を
+    最新化してから処理に入る。streamlit_authenticatorは`Authenticate`構築時
+    （＝スクリプト実行の先頭、ロック取得より前）に一度だけファイルを読み、
+    以降はメモリ上のcredentialsをそのまま使い回して書き込む（書き込み時も
+    ファイルの'credentials'キーを丸ごと上書きする、マージではない）ため、
+    ロックだけではファイル破損は防げても「ロストアップデート」（自分が読んだ
+    後に他プロセスが書き込んだ変更を、古いメモリ状態でそのまま上書きして
+    消してしまう）は防げない。実際に20並列でアカウント登録を試したところ、
+    ロック追加前は19件が消失した（最後に書き込んだ1プロセスの内容だけが残る）
+    ことをテストで確認した。このリフレッシュを入れることで解消する。
+    """
+    os.makedirs(os.path.dirname(_LOCK_PATH), exist_ok=True)
+    with open(_LOCK_PATH, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            if authenticator is not None:
+                with open(CONFIG_PATH, encoding="utf-8") as cf:
+                    _fresh_cfg = yaml.safe_load(cf) or {}
+                authenticator.authentication_controller.authentication_model.credentials = (
+                    _fresh_cfg.get("credentials") or {"usernames": {}}
+                )
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 # Stripeが本番（ライブモード）審査中のため、新規申込みは一時的に停止し
 # 「近日公開」表示にしている（2026年8月）。STRIPE_SECRET_KEY等をsk_live_に
@@ -103,10 +152,11 @@ def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
 
     password = payments.gen_password()
     try:
-        authenticator.authentication_controller.register_user(
-            "会員", "登録", email, email, password, password, "",
-            roles=["paid"], captcha=False,
-        )
+        with config_lock(authenticator):
+            authenticator.authentication_controller.register_user(
+                "会員", "登録", email, email, password, password, "",
+                roles=["paid"], captcha=False,
+            )
     except stauth.RegisterError as e:
         if "already taken" in str(e):
             st.success("お申し込みは完了しています。「ログイン」タブからログインしてください。")
@@ -301,7 +351,8 @@ def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
     if not st.session_state.get("authentication_status"):
         token = authenticator.cookie_controller.get_cookie()
         if token:
-            authenticator.authentication_controller.login(token=token)
+            with config_lock(authenticator):
+                authenticator.authentication_controller.login(token=token)
         time.sleep(0.7)
 
 
@@ -349,7 +400,8 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
         st.error("メールアドレスとパスワードを入力してください")
         return
     try:
-        ok = authenticator.authentication_controller.login(_email, _pw)
+        with config_lock(authenticator):
+            ok = authenticator.authentication_controller.login(_email, _pw)
     except Exception as e:
         st.error(str(e))
         return
@@ -374,7 +426,8 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     if st.session_state.get("authentication_status"):
         if "suspended" in (st.session_state.get("roles") or []):
-            authenticator.logout(location="unrendered")
+            with config_lock(authenticator):
+                authenticator.logout(location="unrendered")
             st.error(
                 "このアカウントは利用停止中です。心当たりがない場合は "
                 "info@medilenz.jp までご連絡ください。"
@@ -463,7 +516,8 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
 
     if st.session_state.get("authentication_status"):
         if "admin" not in (st.session_state.get("roles") or []):
-            authenticator.logout(location="unrendered")
+            with config_lock(authenticator):
+                authenticator.logout(location="unrendered")
             st.error("このアプリは管理者専用です。")
             st.stop()
         if not st.session_state.get("_login_logged"):

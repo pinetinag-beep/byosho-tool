@@ -22,7 +22,7 @@ from data_processor import (
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
-from auth import require_login, get_authenticator
+from auth import require_login, get_authenticator, config_lock
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -660,23 +660,26 @@ def _render_header():
     with _uc2:
         with st.popover("🔑 変更"):
             try:
-                if _authenticator.reset_password(
-                    _user_email,
-                    location="main",
-                    key="_hdr_reset_pw_form",
-                    fields={
-                        "Form name": "パスワード変更",
-                        "Current password": "現在のパスワード",
-                        "New password": "新しいパスワード",
-                        "Repeat password": "新しいパスワード（確認）",
-                        "Reset": "変更する",
-                    },
-                ):
+                with config_lock(_authenticator):
+                    _pw_changed = _authenticator.reset_password(
+                        _user_email,
+                        location="main",
+                        key="_hdr_reset_pw_form",
+                        fields={
+                            "Form name": "パスワード変更",
+                            "Current password": "現在のパスワード",
+                            "New password": "新しいパスワード",
+                            "Repeat password": "新しいパスワード（確認）",
+                            "Reset": "変更する",
+                        },
+                    )
+                if _pw_changed:
                     st.success("パスワードを変更しました。")
             except Exception as e:
                 st.error(str(e))
     with _uc3:
-        _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
+        with config_lock(_authenticator):
+            _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
 
     if mode == "home":
         st.markdown(
