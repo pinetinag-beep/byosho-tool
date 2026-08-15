@@ -190,6 +190,10 @@ _COL_FMT = {
     "手術総数":         lambda s: pd.to_numeric(s, errors="coerce").fillna(0).apply(lambda x: "*" if x == -1 else f"{int(x):,}"),
     "全身麻酔手術数":   lambda s: pd.to_numeric(s, errors="coerce").fillna(0).apply(lambda x: "*" if x == -1 else f"{int(x):,}"),
     "内視鏡手術支援機器台数": lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
+    # 外来機能報告（紹介率）。値は文字列型で保持されているが、実データでは
+    # マスク値("*")が入らない列と確認済み（build_gairai_kinou_houkoku.py参照）。
+    "紹介率（年間）":     lambda s: pd.to_numeric(s, errors="coerce").round(1).astype(str) + "%",
+    "紹介患者数（年間）": lambda s: pd.to_numeric(s, errors="coerce").fillna(0).astype(int).apply(lambda x: f"{x:,}"),
 }
 
 

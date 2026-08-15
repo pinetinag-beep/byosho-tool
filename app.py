@@ -1024,6 +1024,46 @@ def _load_gakkai_nintei():
             df[col] = df[col].astype("category")
     return df
 
+GAIRAI_FORM1_ANNUAL_PARQUET = Path(__file__).parent / "gairai_form1_annual.parquet"
+GAIRAI_FORM2_PARQUET = Path(__file__).parent / "gairai_form2.parquet"
+_GAIRAI_CODE_COL = "オープンデータ\n医療機関コード"
+
+
+@st.cache_data(show_spinner=False)
+def _load_gairai_form1_annual():
+    if not GAIRAI_FORM1_ANNUAL_PARQUET.exists():
+        return None
+    return pd.read_parquet(GAIRAI_FORM1_ANNUAL_PARQUET)
+
+
+@st.cache_data(show_spinner=False)
+def _load_gairai_form2_annual():
+    """様式2は報告月0（年間）〜12の行持ちだが、病院詳細・検索・ランキングでは
+    年間値（報告月0）だけ使うので、ここで絞り込んでから返す（634万行規模の
+    DPCデータで確立した「用途ごとに絞ってから読む」方針と同じ考え方）。"""
+    if not GAIRAI_FORM2_PARQUET.exists():
+        return None
+    df = pd.read_parquet(GAIRAI_FORM2_PARQUET)
+    return df[df["報告月"] == "0"]
+
+
+def _gairai_code10(code) -> str:
+    """病床機能報告の医療機関コード（9〜10桁混在）を外来機能報告のオープン
+    データ医療機関コード（10桁固定）と同じ形式に揃える（CLAUDE.md参照）。"""
+    return str(code).zfill(10) if code else ""
+
+
+def _gairai_num(v):
+    """外来機能報告の値表示用（文字列型で保持しており、"*"は年間10件以下の
+    マスク値・"-"は非該当・空文字/Noneは未報告。数値ならカンマ区切り整数、
+    それ以外はそのまま返す）。"""
+    if v is None or (isinstance(v, float) and pd.isna(v)) or v in ("", "-", "*"):
+        return v if v in ("*", "-") else "―"
+    try:
+        return f"{int(float(v)):,}"
+    except (TypeError, ValueError):
+        return v
+
 
 def _build_integrated_excel(df_all: pd.DataFrame) -> bytes:
     """病床機能報告 × DPC × 施設基準届出 の統合表を Excel バイト列で返す。"""
@@ -5107,6 +5147,32 @@ if _dpc_matched_name is not None:
             _dct_agg["DPC症例数"] = _dct_agg[_dct_mdc_cols].sum(axis=1)
             _dpc_case_trend_df = _dct_agg[["年度", "DPC症例数"]].sort_values("年度")
 
+# 外来機能報告（病床機能報告の姉妹データ）。DPCと違いオープンデータ医療機関コードで
+# 直接突合できるため名称マッチングは不要。選択中の年度と同じ年度のみ使う
+# （DPCと同じく、年度がズレて誤解を招くのを避けるため）。
+_is_gairai = False
+_gairai_annual_row = None
+_gairai_form2_row = None
+if hosp_code:
+    _gairai_code = _gairai_code10(hosp_code)
+    _gairai_annual_all = _load_gairai_form1_annual()
+    if _gairai_annual_all is not None:
+        _ga_year = _gairai_annual_all[
+            (_gairai_annual_all[_GAIRAI_CODE_COL] == _gairai_code) &
+            (_gairai_annual_all["報告年度"] == year)
+        ]
+        if not _ga_year.empty:
+            _is_gairai = True
+            _gairai_annual_row = _ga_year.iloc[0]
+            _gairai_form2_all = _load_gairai_form2_annual()
+            if _gairai_form2_all is not None:
+                _gf2_year = _gairai_form2_all[
+                    (_gairai_form2_all[_GAIRAI_CODE_COL] == _gairai_code) &
+                    (_gairai_form2_all["報告年度"] == year)
+                ]
+                if not _gf2_year.empty:
+                    _gairai_form2_row = _gf2_year.iloc[0]
+
 
 # ── タブ ──────────────────────────────────────────────────
 
@@ -5121,6 +5187,8 @@ _tab_labels = [
     "スタッフ分析",
     "病床・手術分析",
 ]
+if _is_gairai:
+    _tab_labels.append("外来機能報告")
 if _is_dpc:
     _tab_labels.append("DPC分析")
 
@@ -5141,7 +5209,12 @@ st.caption(
 
 _all_tabs = st.tabs(_tab_labels)
 tab1, tab7, tab2, tab3, tab4, tab5, tab6 = _all_tabs[:7]
-tab_dpc = _all_tabs[7] if _is_dpc else None
+_next_tab_idx = 7
+tab_gairai = None
+if _is_gairai:
+    tab_gairai = _all_tabs[_next_tab_idx]
+    _next_tab_idx += 1
+tab_dpc = _all_tabs[_next_tab_idx] if _is_dpc else None
 
 
 # ── TAB 1: 病院概要 ─────────────────────────────────────────
@@ -5690,6 +5763,20 @@ with tab3:
             _rsy_m[_rjk] = _rsy_m[_rjk].astype(str).str.strip()
             _rank_df = _rank_df.merge(_rsy_m, on=_rjk, how="left", suffixes=("", "_sy"))
 
+    # 紹介率（外来機能報告）も手術件数と同じパターンでマージする。病床機能報告側の
+    # 医療機関コードは9/10桁混在のため.zfill(10)で外来機能報告の10桁コードに揃える
+    # （CLAUDE.md「医療機関コードの正規化」参照）。
+    _gairai_annual_for_rank = _load_gairai_form1_annual()
+    if (_gairai_annual_for_rank is not None and "医療機関コード" in _rank_df.columns):
+        _ga_rank_year = _gairai_annual_for_rank[_gairai_annual_for_rank["報告年度"] == year]
+        if not _ga_rank_year.empty:
+            _ga_rank_cols = ["紹介率（年間）", "紹介患者数（年間）"]
+            _ga_rank_m = _ga_rank_year[[_GAIRAI_CODE_COL] + _ga_rank_cols].drop_duplicates(_GAIRAI_CODE_COL).copy()
+            _ga_rank_m = _ga_rank_m.rename(columns={_GAIRAI_CODE_COL: "_code10"})
+            _rank_df = _rank_df.copy()
+            _rank_df["_code10"] = _rank_df["医療機関コード"].astype(str).str.zfill(10)
+            _rank_df = _rank_df.merge(_ga_rank_m, on="_code10", how="left")
+
     _RANK_OPTIONS = {
         "許可病床数":  {"col": "合計_許可病床数",  "show": ["合計_許可病床数", "合計_稼働病床数", "地域シェア(%)", "合計稼働率"], "labels": ["許可病床数", "稼働病床数", "地域シェア", "稼働率"]},
         "稼働率":      {"col": "合計稼働率",        "show": ["合計稼働率", "合計_許可病床数"],                                   "labels": ["稼働率",   "許可病床数"]},
@@ -5701,12 +5788,15 @@ with tab3:
         "CT":          {"col": "CT台数",             "show": ["CT台数", "合計_許可病床数"],                                       "labels": ["CT台数", "許可病床数"]},
         "MRI":         {"col": "MRI台数",            "show": ["MRI台数", "合計_許可病床数"],                                      "labels": ["MRI台数", "許可病床数"]},
         "ダビンチ":    {"col": "内視鏡手術支援機器台数", "show": ["内視鏡手術支援機器台数", "合計_許可病床数"],                     "labels": ["内視鏡手術支援ロボット", "許可病床数"]},
+        "紹介率":      {"col": "紹介率（年間）",      "show": ["紹介率（年間）", "紹介患者数（年間）"],                            "labels": ["紹介率（年間）", "紹介患者数（年間）"]},
     }
 
     rank_sel = st.radio("ランキング項目", list(_RANK_OPTIONS.keys()), horizontal=True, key="_rank_sel")
     _opt = _RANK_OPTIONS[rank_sel]
     if _opt["col"] not in _rank_df.columns:
-        if _opt["col"] in ("手術総数", "全身麻酔手術数") and _rank_surg_years and year not in _rank_surg_years:
+        if _opt["col"] == "紹介率（年間）":
+            st.info(f"{year}年度の外来機能報告データがありません。")
+        elif _opt["col"] in ("手術総数", "全身麻酔手術数") and _rank_surg_years and year not in _rank_surg_years:
             st.info(
                 f"{year}年度の手術実績（様式2）はまだ公開されていません"
                 f"（現在公開されているのは{min(_rank_surg_years)}〜{max(_rank_surg_years)}年度分）。"
@@ -6568,6 +6658,52 @@ with tab7:
                             mime="text/csv",
                             key="map_pt_csv_dl",
                         )
+
+
+# ── TAB 外来機能報告 ──────────────────────────────────────
+
+if tab_gairai is not None and _is_gairai and _gairai_annual_row is not None:
+    with tab_gairai:
+        st.markdown(_source_tag(f"{_reiwa_nendo(year)} 外来機能報告"), unsafe_allow_html=True)
+
+        st.markdown('<div class="section-header">紹介・逆紹介の状況</div>', unsafe_allow_html=True)
+        _gk1, _gk2, _gk3, _gk4, _gk5 = st.columns(5)
+        _gk1.metric("初診患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('初診患者数（年間）'))}人")
+        _gk2.metric("紹介患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('紹介患者数（年間）'))}人")
+        _gk3.metric("逆紹介患者数（年間）", f"{_gairai_num(_gairai_annual_row.get('逆紹介患者数（年間）'))}人")
+        _gr = _gairai_annual_row.get("紹介率（年間）")
+        _gr2 = _gairai_annual_row.get("逆紹介率（年間）")
+        _gk4.metric("紹介率（年間）", f"{_gr}%" if _gr not in (None, "*", "-") else _gairai_num(_gr))
+        _gk5.metric("逆紹介率（年間）", f"{_gr2}%" if _gr2 not in (None, "*", "-") else _gairai_num(_gr2))
+
+        st.divider()
+        st.markdown('<div class="section-header">外来を行っている診療科</div>', unsafe_allow_html=True)
+        _dept_active = [
+            re.sub(r"^外来を行っている診療科\s*\d+[．.]", "", c)
+            for c in _gairai_annual_row.index
+            if c.startswith("外来を行っている診療科") and _gairai_annual_row.get(c) == "〇"
+        ]
+        if _dept_active:
+            st.markdown("　".join(f"`{d}`" for d in _dept_active))
+        else:
+            st.caption("報告データがありません。")
+
+        if _gairai_form2_row is not None:
+            st.divider()
+            st.markdown('<div class="section-header">紹介受診重点外来（医療資源を重点的に活用する外来）</div>', unsafe_allow_html=True)
+            _gf2_patients = _gairai_form2_row.get("紹介受診重点外来の患者延べ数")
+            _gf2_ratio = _gairai_form2_row.get("紹介受診重点外来の患者割合")
+            try:
+                _gf2_implemented = float(_gf2_patients) > 0
+            except (TypeError, ValueError):
+                _gf2_implemented = False
+            if _gf2_implemented:
+                st.success("この病院は紹介受診重点外来を実施しています。")
+            else:
+                st.caption("紹介受診重点外来の実施は報告されていません。")
+            _gf1, _gf2c = st.columns(2)
+            _gf1.metric("紹介受診重点外来の患者延べ数（年間）", f"{_gairai_num(_gf2_patients)}人")
+            _gf2c.metric("紹介受診重点外来の患者割合", f"{_gf2_ratio}%" if _gf2_ratio not in (None, "*", "-") else _gairai_num(_gf2_ratio))
 
 
 # ── TAB DPC: DPC分析 ──────────────────────────────────────
