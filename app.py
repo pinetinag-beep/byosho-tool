@@ -2719,12 +2719,25 @@ if st.session_state.get("_view_mode") == "distance":
                 if not _dist_known:
                     st.warning("座標データが取得できる病院がありません。")
                 else:
-                    _dist_dests = [coords for _, coords in _dist_known]
                     if "車" in _dist_mode:
+                        # 都道府県で絞っていない場合、_dist_knownは全国7,000件規模になり、
+                        # そのままOSRM（無料公開サーバー）に投げるとバッチ往復（300件ずつ）が
+                        # 20回以上になり非常に遅い（本番で「激烈に遅い」と報告され発覚）。
+                        # 直線距離なら座標だけでネットワーク不要に計算できるので、明らかに
+                        # 時間内に届かない病院を先に除外してから渡す。時速120km（高速道路でも
+                        # 滅多に超えない上限）で計算した半径を使い、本来届く病院を誤って
+                        # 除外しないよう十分に余裕を持たせている。
+                        _dist_max_km_prefilter = _dist_max / 60.0 * 120.0
+                        _dist_known = [
+                            (n, coords) for n, coords in _dist_known
+                            if _dist_hkm(_origin[0], _origin[1], *coords) <= _dist_max_km_prefilter
+                        ]
+                        _dist_dests = [coords for _, coords in _dist_known]
                         with st.spinner("OSRM で所要時間を計算中..."):
                             _dist_durs = _dist_osrm(_origin[0], _origin[1], _dist_dests)
                         _transit_note = False
                     else:
+                        _dist_dests = [coords for _, coords in _dist_known]
                         _dist_durs = [
                             _dist_hkm(_origin[0], _origin[1], lat, lon) / 25.0 * 3600
                             for lat, lon in _dist_dests
