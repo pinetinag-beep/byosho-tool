@@ -414,6 +414,48 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
     time.sleep(0.7)
 
 
+def _render_forgot_password_form(authenticator: stauth.Authenticate, key: str) -> None:
+    """パスワードを忘れた場合の再発行フォーム。
+
+    メールアドレスの入力だけで新しいランダムパスワードを発行し、メールで送る
+    （streamlit-authenticator組み込みのforgot_password()を利用。username=emailの
+    ためユーザー名として渡せばよい）。入力されたメールアドレスが未登録の場合も
+    含め常に同じ成功メッセージを表示する——「このメールアドレスは登録されて
+    いません」のような個別メッセージを出すと、第三者が総当たりで登録済み
+    メールアドレスを探索できてしまう（メールアドレス列挙・enumeration対策）。
+    """
+    with st.form(key, clear_on_submit=True):
+        st.caption("登録済みのメールアドレスに新しいパスワードをお送りします。")
+        _email = st.text_input("メールアドレス", key=f"{key}_email", autocomplete="username")
+        _submitted = st.form_submit_button("パスワードを再発行する")
+
+    if not _submitted:
+        return
+    if not _email:
+        st.error("メールアドレスを入力してください")
+        return
+
+    with config_lock(authenticator):
+        _username, _found_email, _new_password = (
+            authenticator.authentication_controller.forgot_password(_email)
+        )
+
+    if _username and _found_email:
+        try:
+            mailer.send_password_reset_email(_found_email, _new_password)
+        except Exception as e:
+            st.error(
+                f"メール送信に失敗しました（{e}）。"
+                "お手数ですが info@medilenz.jp までご連絡ください。"
+            )
+            return
+
+    st.success(
+        "ご入力いただいたメールアドレスが登録済みであれば、"
+        "新しいパスワードを記載したメールをお送りしました。"
+    )
+
+
 def require_login(authenticator: stauth.Authenticate) -> None:
     """ログイン必須ゲート。未ログインならログイン/申込み画面を表示してst.stop()する。
 
@@ -465,6 +507,8 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     with _tab_login:
         _render_login_form(authenticator, "_login_form")
+        with st.expander("🔑 パスワードを忘れた方はこちら"):
+            _render_forgot_password_form(authenticator, "_forgot_pw_form")
 
     with _tab_register:
         if not _REGISTRATION_OPEN:
@@ -532,6 +576,8 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
         _render_login_form(authenticator, "_admin_login_form")
+        with st.expander("🔑 パスワードを忘れた方はこちら"):
+            _render_forgot_password_form(authenticator, "_admin_forgot_pw_form")
 
     if st.session_state.get("authentication_status"):
         # 即rerunしない理由は_render_login_form参照（Cookie書き込みのレース対策）。

@@ -20,6 +20,18 @@ SMTP_USER = _get_config("SMTP_USER", "info@medilenz.jp")
 SMTP_PASSWORD = _get_config("SMTP_PASSWORD")
 
 
+def _send(to_email: str, subject: str, body: str) -> None:
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = SMTP_USER
+    msg["To"] = to_email
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+
+
 def send_credentials_email(to_email: str, password: str) -> None:
     """決済完了後、発行したログイン情報をユーザーに送信する。"""
     body = f"""MedilenZにお申し込みいただきありがとうございます。
@@ -35,12 +47,24 @@ https://medilenz.jp からログインできます。
 --
 MedilenZ
 """
-    msg = MIMEText(body)
-    msg["Subject"] = "【MedilenZ】お申し込みが完了しました（ログイン情報のご案内）"
-    msg["From"] = SMTP_USER
-    msg["To"] = to_email
+    _send(to_email, "【MedilenZ】お申し込みが完了しました（ログイン情報のご案内）", body)
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+
+def send_password_reset_email(to_email: str, password: str) -> None:
+    """パスワード再発行（forgot password）で発行した新しいパスワードを送信する。"""
+    body = f"""MedilenZのパスワード再発行を承りました。
+
+以下の新しいパスワードでログインしてください。
+
+ログインID（メールアドレス）: {to_email}
+新しいパスワード: {password}
+
+https://medilenz.jp からログインできます。
+ログイン後、画面上部の「パスワード変更」からいつでもパスワードを変更できます。
+
+心当たりがない場合は、お手数ですが info@medilenz.jp までご連絡ください。
+
+--
+MedilenZ
+"""
+    _send(to_email, "【MedilenZ】パスワードを再発行しました", body)
