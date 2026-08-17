@@ -18,7 +18,6 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
-import jwt
 import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
@@ -51,46 +50,40 @@ def _claim_session(authenticator: "stauth.Authenticate", username: str) -> None:
     """新しいログイン（パスワード認証成功）のたびに、このセッションを
     アカウントの「現在の持ち主」として登録する。
 
-    ランダムなセッショントークンを発行し、(1) _active_sessions()の共有ストア、
-    (2) このタブのst.session_state、(3)「ログイン状態を保持する」時のCookie
-    （JWTにsession_tokenクレームを追加）の3箇所に反映する。Cookieへの反映は
-    ここでまとめて行うため、呼び出し側は別途authenticator.cookie_controller.
-    set_cookie()を呼ばないこと（呼ぶとsession_tokenクレーム無しの素のCookieで
-    上書きされ、この機能が効かなくなる）。
+    Cookie自体はstreamlit-authenticator組み込みのset_cookie()をそのまま
+    呼び、独自のエンコードは一切行わない。
+    （最初の実装ではJWTにsession_tokenという独自クレームを追加していたが、
+    本番のHTTPS＋nginx環境でのみCookieの復元に失敗し、ログイン直後に
+    検索カードを押すとログイン画面へ戻ってしまう回帰を起こした。この
+    開発環境では再現できず原因は特定できていないが、Cookieのエンコード
+    自体には一切手を入れない設計に変更して解消した——2026年8月。）
 
-    JWTにstreamlit-authenticator本来のusername/exp_date以外の独自クレーム
-    （session_token）を追加しても、ライブラリ側の複合化処理は無関係な
-    フィールドを無視するだけなので、既存の「ログイン状態を保持する」機能は
-    壊れない。
+    代わりに、set_cookie()が内部で計算するexp_date（datetime.now()を
+    マイクロ秒精度でタイムスタンプ化した値、streamlit-authenticatorが
+    元々JWTペイロードに含めている標準フィールド）を、そのままセッションの
+    識別子として流用する。同一マイクロ秒に2つのログインが重なる確率は
+    無視できるほど低く、「1アカウント1セッション」の目的（複数人での
+    使い回し防止）には十分な精度で足りる。
     """
-    token = secrets.token_hex(16)
+    authenticator.cookie_controller.set_cookie()
+    cm = authenticator.cookie_controller.cookie_model
+    token = cm.exp_date if cm.cookie_expiry_days != 0 else secrets.token_hex(16)
     _active_sessions()[username] = token
     st.session_state["_session_token"] = token
     st.session_state.pop("_logout_notice", None)
-
-    cm = authenticator.cookie_controller.cookie_model
-    if cm.cookie_expiry_days == 0:
-        return
-    exp_date = (datetime.now() + timedelta(days=cm.cookie_expiry_days)).timestamp()
-    jwt_cookie = jwt.encode(
-        {"username": username, "exp_date": exp_date, "session_token": token},
-        cm.cookie_key, algorithm="HS256",
-    )
-    cm.cookie_manager.set(
-        cm.cookie_name, jwt_cookie,
-        expires_at=datetime.now() + timedelta(days=cm.cookie_expiry_days),
-    )
 
 
 def _session_still_valid(username: str) -> bool:
     """このセッションのトークンが、そのアカウントの「現在の持ち主」と一致するか判定する。
 
     不一致＝別の端末・ブラウザで新しくログインされ、このセッションは追い出す
-    べき、ということ。session_stateにトークンが無い（旧形式Cookieでの復元、
-    または導入前からの継続セッション等）場合、既に別のセッションが正として
-    登録済みならそちらを優先して追い出す（安全側に倒す。旧Cookie側は
-    再ログインすれば新形式のトークンが発行される）。まだ誰も登録していない
-    場合（サーバー再起動直後等）はこのセッションを正として登録する。
+    べき、ということ。exp_dateはstreamlit-authenticatorが元々Cookieの
+    JWTペイロードに含めている標準フィールドなので、この機能の導入前から
+    残っているCookieでも正しく引き継がれる（_claim_session()参照）。
+    session_stateにトークンが無い場合（極めて稀なフォールバック——通常は
+    ログインまたはCookie復元のどちらかで必ず設定される）、既に別のセッションが
+    正として登録済みならそちらを優先して追い出す（安全側に倒す）。まだ誰も
+    登録していない場合（サーバー再起動直後等）はこのセッションを正として登録する。
     """
     store = _active_sessions()
     my_token = st.session_state.get("_session_token")
@@ -430,10 +423,10 @@ def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
             with config_lock(authenticator):
                 authenticator.authentication_controller.login(token=cookie_data)
             if st.session_state.get("authentication_status"):
-                # Cookieにsession_tokenクレームがあれば引き継ぐ（1アカウント1
-                # セッション制限用。無い場合＝導入前の旧形式Cookieはこの時点では
-                # Noneのまま——_session_still_valid()側でハンドリングする）。
-                st.session_state["_session_token"] = cookie_data.get("session_token")
+                # Cookieのexp_date（streamlit-authenticator標準フィールド）を
+                # そのままセッション識別子として引き継ぐ（1アカウント1セッション
+                # 制限用。詳細は_claim_session()のdocstring参照）。
+                st.session_state["_session_token"] = cookie_data.get("exp_date")
         time.sleep(0.7)
 
 
@@ -492,8 +485,8 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
         return
     if not _remember:
         authenticator.cookie_controller.cookie_model.cookie_expiry_days = 0
-    # set_cookie()は呼ばない。_claim_session()がCookie発行（session_token
-    # クレーム付き）も含めて行う（1アカウント1セッション制限。詳細は定義部参照）。
+    # _claim_session()がCookie発行（set_cookie()呼び出し含む）と1アカウント
+    # 1セッション制限の登録をまとめて行う（詳細は定義部のdocstring参照）。
     _claim_session(authenticator, st.session_state.get("username", ""))
     time.sleep(0.7)
 
