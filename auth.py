@@ -65,15 +65,26 @@ def _claim_session(authenticator: "stauth.Authenticate", username: str) -> None:
     無視できるほど低く、「1アカウント1セッション」の目的（複数人での
     使い回し防止）には十分な精度で足りる。
     """
-    import sys as _sys
+    # streamlit_authenticatorのlogout()はst.session_state['logout']をTrueに
+    # するが、ログイン成功時にFalseへ戻す処理がライブラリ側に無い
+    # （login()のコードには'logout'キーへの言及が一切無い）。CookieModel.
+    # get_cookie()は`if st.session_state['logout']: return False`を先頭で
+    # 判定しているため、一度でもlogout()が呼ばれたブラウザセッション
+    # （Streamlitは同一タブでのページ遷移時にセッションを裏で引き継ぐため、
+    # フルページ遷移をまたいでも消えない）は、その後何度パスワードで
+    # 再ログインしても次の画面遷移のたびにCookieでの自動ログイン判定だけが
+    # 無効化され続ける、というライブラリ側の不具合になっていた（2026年8月、
+    # 本番でjournalctlのデバッグ出力から特定：get_cookie()が毎回Noneでは
+    # なく明示的にFalseを返しており、Cookie自体は正しく存在していた）。
+    # ここで明示的にリセットすることで解消する。
+    st.session_state["logout"] = False
+
     authenticator.cookie_controller.set_cookie()
     cm = authenticator.cookie_controller.cookie_model
     token = cm.exp_date if cm.cookie_expiry_days != 0 else secrets.token_hex(16)
     _active_sessions()[username] = token
     st.session_state["_session_token"] = token
     st.session_state.pop("_logout_notice", None)
-    print(f"DEBUGAUTH _claim_session: username={username!r} cookie_expiry_days={cm.cookie_expiry_days!r} "
-          f"token={token!r}", file=_sys.stderr)
 
 
 def _session_still_valid(username: str) -> bool:
@@ -420,18 +431,11 @@ def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
     値を返すまでには往復が必要で、間を置かないとまだ読み取れていない
     Noneのまま「未ログイン」と判定してしまうことがある）。
     """
-    import sys as _sys
-    _raw_cookie_present = "medilenz_auth" in st.context.cookies
-    print(f"DEBUGAUTH _try_cookie_login: auth_status_before={st.session_state.get('authentication_status')!r} "
-          f"raw_cookie_present={_raw_cookie_present!r}", file=_sys.stderr)
     if not st.session_state.get("authentication_status"):
         cookie_data = authenticator.cookie_controller.get_cookie()
-        print(f"DEBUGAUTH _try_cookie_login: get_cookie()={cookie_data!r}", file=_sys.stderr)
         if cookie_data:
             with config_lock(authenticator):
                 authenticator.authentication_controller.login(token=cookie_data)
-            print(f"DEBUGAUTH _try_cookie_login: after login(token=...) "
-                  f"auth_status={st.session_state.get('authentication_status')!r}", file=_sys.stderr)
             if st.session_state.get("authentication_status"):
                 # Cookieのexp_date（streamlit-authenticator標準フィールド）を
                 # そのままセッション識別子として引き継ぐ（1アカウント1セッション
@@ -594,10 +598,6 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     if st.session_state.get("authentication_status"):
         _username = st.session_state.get("username", "")
-        import sys as _sys
-        print(f"DEBUGAUTH require_login: authenticated username={_username!r} "
-              f"session_token={st.session_state.get('_session_token')!r} "
-              f"active_token={_active_sessions().get(_username)!r}", file=_sys.stderr)
         if not _session_still_valid(_username):
             with config_lock(authenticator):
                 authenticator.logout(location="unrendered")
