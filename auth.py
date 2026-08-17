@@ -31,89 +31,6 @@ _LOCK_PATH = "data/auth_config.yaml.lock"
 _JST = timezone(timedelta(hours=9))
 
 
-@st.cache_resource
-def _active_sessions() -> dict:
-    """アカウントごとに「現在有効なセッショントークン」を保持する辞書。
-
-    st.cache_resourceでプロセス内の全セッションから共有される1つのインスタンスに
-    固定される（st.session_stateと違いブラウザセッションをまたいで共有される）。
-    1アカウント1セッションに制限するための実装（2026年8月導入）。新しいパスワード
-    ログインのたびに_claim_session()がここへ新しいトークンを書き込んで上書きし、
-    古いセッション側は次の操作のタイミングで_session_still_valid()がFalseを返し
-    自動ログアウトされる。プロセス再起動でリセットされるが実害はない
-    （その後最初にアクセスしたセッションがそのまま正として登録し直されるだけ）。
-    """
-    return {}
-
-
-def _claim_session(authenticator: "stauth.Authenticate", username: str) -> None:
-    """新しいログイン（パスワード認証成功）のたびに、このセッションを
-    アカウントの「現在の持ち主」として登録する。
-
-    Cookie自体はstreamlit-authenticator組み込みのset_cookie()をそのまま
-    呼び、独自のエンコードは一切行わない。
-    （最初の実装ではJWTにsession_tokenという独自クレームを追加していたが、
-    本番のHTTPS＋nginx環境でのみCookieの復元に失敗し、ログイン直後に
-    検索カードを押すとログイン画面へ戻ってしまう回帰を起こした。この
-    開発環境では再現できず原因は特定できていないが、Cookieのエンコード
-    自体には一切手を入れない設計に変更して解消した——2026年8月。）
-
-    代わりに、set_cookie()が内部で計算するexp_date（datetime.now()を
-    マイクロ秒精度でタイムスタンプ化した値、streamlit-authenticatorが
-    元々JWTペイロードに含めている標準フィールド）を、そのままセッションの
-    識別子として流用する。同一マイクロ秒に2つのログインが重なる確率は
-    無視できるほど低く、「1アカウント1セッション」の目的（複数人での
-    使い回し防止）には十分な精度で足りる。
-    """
-    # streamlit_authenticatorのlogout()はst.session_state['logout']をTrueに
-    # するが、ログイン成功時にFalseへ戻す処理がライブラリ側に無い
-    # （login()のコードには'logout'キーへの言及が一切無い）。CookieModel.
-    # get_cookie()は`if st.session_state['logout']: return False`を先頭で
-    # 判定しているため、一度でもlogout()が呼ばれたブラウザセッション
-    # （Streamlitは同一タブでのページ遷移時にセッションを裏で引き継ぐため、
-    # フルページ遷移をまたいでも消えない）は、その後何度パスワードで
-    # 再ログインしても次の画面遷移のたびにCookieでの自動ログイン判定だけが
-    # 無効化され続ける、というライブラリ側の不具合になっていた（2026年8月、
-    # 本番でjournalctlのデバッグ出力から特定：get_cookie()が毎回Noneでは
-    # なく明示的にFalseを返しており、Cookie自体は正しく存在していた）。
-    # ここで明示的にリセットすることで解消する。
-    st.session_state["logout"] = False
-
-    authenticator.cookie_controller.set_cookie()
-    cm = authenticator.cookie_controller.cookie_model
-    token = cm.exp_date if cm.cookie_expiry_days != 0 else secrets.token_hex(16)
-    _active_sessions()[username] = token
-    st.session_state["_session_token"] = token
-    st.session_state.pop("_logout_notice", None)
-
-
-def _session_still_valid(username: str) -> bool:
-    """このセッションのトークンが、そのアカウントの「現在の持ち主」と一致するか判定する。
-
-    不一致＝別の端末・ブラウザで新しくログインされ、このセッションは追い出す
-    べき、ということ。exp_dateはstreamlit-authenticatorが元々Cookieの
-    JWTペイロードに含めている標準フィールドなので、この機能の導入前から
-    残っているCookieでも正しく引き継がれる（_claim_session()参照）。
-    session_stateにトークンが無い場合（極めて稀なフォールバック——通常は
-    ログインまたはCookie復元のどちらかで必ず設定される）、既に別のセッションが
-    正として登録済みならそちらを優先して追い出す（安全側に倒す）。まだ誰も
-    登録していない場合（サーバー再起動直後等）はこのセッションを正として登録する。
-    """
-    store = _active_sessions()
-    my_token = st.session_state.get("_session_token")
-    active_token = store.get(username)
-
-    if my_token is None:
-        if active_token is None:
-            my_token = secrets.token_hex(16)
-            st.session_state["_session_token"] = my_token
-            store[username] = my_token
-            return True
-        return False
-
-    return my_token == active_token
-
-
 @contextmanager
 def config_lock(authenticator: "stauth.Authenticate | None" = None):
     """auth_config.yamlへの読み書きをプロセス間で排他制御する。
@@ -432,15 +349,10 @@ def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
     Noneのまま「未ログイン」と判定してしまうことがある）。
     """
     if not st.session_state.get("authentication_status"):
-        cookie_data = authenticator.cookie_controller.get_cookie()
-        if cookie_data:
+        token = authenticator.cookie_controller.get_cookie()
+        if token:
             with config_lock(authenticator):
-                authenticator.authentication_controller.login(token=cookie_data)
-            if st.session_state.get("authentication_status"):
-                # Cookieのexp_date（streamlit-authenticator標準フィールド）を
-                # そのままセッション識別子として引き継ぐ（1アカウント1セッション
-                # 制限用。詳細は_claim_session()のdocstring参照）。
-                st.session_state["_session_token"] = cookie_data.get("exp_date")
+                authenticator.authentication_controller.login(token=token)
         time.sleep(0.7)
 
 
@@ -460,13 +372,12 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
        ログイン成功時に必ず`cookie.expiry_days`（既定30日）ぶんの再ログイン用Cookieを
        発行する設計で、チェックボックス等でON/OFFする仕組みが無い。
        `cookie_model.cookie_expiry_days`を送信直前に一時的に0へ書き換えると
-       Cookie発行が何もしなくなる（`_claim_session()`内部の判定・ライブラリ側の
-       `set_cookie()`いずれも同じ仕様）ことを利用し、未チェック時はCookieを
-       発行しない＝ブラウザを閉じたら再ログインが必要、という制御を実現している。
+       `set_cookie()`が何もしなくなる（ライブラリ側の仕様）ことを利用し、
+       未チェック時はCookieを発行しない＝ブラウザを閉じたら再ログインが必要、
+       という制御を実現している。
 
-    呼び出し側で`st.rerun()`しないこと（重要）: Cookieの発行（`_claim_session()`が
-    内部で使うCookieManagerコンポーネント、ライブラリ本来の`set_cookie()`も同じ
-    仕組み）は「このCookieをセットして」という指示を送るだけで、実際に
+    呼び出し側で`st.rerun()`しないこと（重要）: `set_cookie()`はCookieManager
+    コンポーネントに「このCookieをセットして」という指示を送るだけで、実際に
     ブラウザへ書き込まれるのは少し後（フロントエンドの次の描画サイクル）になる。
     ここで即座に`st.rerun()`すると、書き込みが完了する前に画面が再構築されて
     しまい、Cookieが実際には保存されない競合状態になる（本番で発覚・実際に
@@ -499,9 +410,7 @@ def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
         return
     if not _remember:
         authenticator.cookie_controller.cookie_model.cookie_expiry_days = 0
-    # _claim_session()がCookie発行（set_cookie()呼び出し含む）と1アカウント
-    # 1セッション制限の登録をまとめて行う（詳細は定義部のdocstring参照）。
-    _claim_session(authenticator, st.session_state.get("username", ""))
+    authenticator.cookie_controller.set_cookie()
     time.sleep(0.7)
 
 
@@ -547,45 +456,6 @@ def _render_forgot_password_form(authenticator: stauth.Authenticate, key: str) -
     )
 
 
-def _set_logout_notice(message: str) -> None:
-    """強制ログアウト直後に表示したいメッセージをsession_stateへ退避する。
-
-    `authenticator.logout(location="unrendered")`は内部でCookie削除
-    （`cookie_controller.delete_cookie()`）を伴うが、これはCookie管理用の
-    カスタムコンポーネント（stx.CookieManager）への書き込みであり、
-    コンポーネントが値の変化をStreamlitへ報告する際に自動的にもう1回
-    スクリプトが再実行される（本来のCookie書き込みの完了通知のため。
-    `_render_login_form`のdocstringで説明している「Cookie書き込みは非同期」
-    と同根の挙動）。そのため、ログアウトを呼んだのと同じ実行内で
-    `st.error()`しても、直後の自動再実行で画面がまっさらな状態から
-    再構築され、メッセージは一瞬だけ表示されて消えてしまう（実際に
-    Playwrightで検証し、有効なのは最初の1回の実行だけで次の実行では
-    もう消えていることを確認した）。
-
-    session_stateはこの自動再実行をまたいで保持される（同じブラウザ
-    セッション内である限り、何がきっかけの再実行でも消えない）ため、
-    ここに退避しておき、ログイン画面側（`_show_logout_notice`）で
-    一度だけ取り出して表示する。
-    """
-    st.session_state["_logout_notice"] = message
-
-
-def _show_logout_notice() -> None:
-    """_set_logout_notice()で退避したメッセージがあれば表示する。
-
-    読んだ場で消費（pop）はしない。ログアウト直後はCookie削除や他の
-    カスタムコンポーネントの値変化をきっかけに短時間に何度も自動再実行が
-    連鎖して起こるため、「1回読んだら消す」実装だと、そのうちどれか1回だけ
-    たまたま表示されて次の自動再実行でもう消えている、という人間の目には
-    留まらない一瞬の表示になってしまう（実際にPlaywrightで検証し、pop方式
-    では表示されているのを検出できたのは1000msの1点だけで、1500ms時点では
-    既に消えていた）。ここでは消さずに保持し続け、次に新しいログインが
-    成立した瞬間（`_claim_session`）でまとめてクリアする。
-    """
-    if st.session_state.get("_logout_notice"):
-        st.error(st.session_state["_logout_notice"])
-
-
 def require_login(authenticator: stauth.Authenticate) -> None:
     """ログイン必須ゲート。未ログインならログイン/申込み画面を表示してst.stop()する。
 
@@ -597,33 +467,20 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     _try_cookie_login(authenticator)
 
     if st.session_state.get("authentication_status"):
-        _username = st.session_state.get("username", "")
-        if not _session_still_valid(_username):
-            with config_lock(authenticator):
-                authenticator.logout(location="unrendered")
-            _set_logout_notice(
-                "別の端末・ブラウザでこのアカウントにログインされたため、"
-                "自動的にログアウトしました（1アカウントにつき同時に1セッションまで"
-                "のご利用となります）。心当たりがない場合は info@medilenz.jp まで"
-                "ご連絡ください。"
-            )
-            st.stop()
         if "suspended" in (st.session_state.get("roles") or []):
             with config_lock(authenticator):
                 authenticator.logout(location="unrendered")
-            _set_logout_notice(
+            st.error(
                 "このアカウントは利用停止中です。心当たりがない場合は "
                 "info@medilenz.jp までご連絡ください。"
             )
             st.stop()
         if not st.session_state.get("_login_logged"):
-            _log_login(_username)
+            _log_login(st.session_state.get("username", ""))
             st.session_state["_login_logged"] = True
         return
 
     _handle_payment_return(authenticator)
-
-    _show_logout_notice()
 
     # ブロックコンテナ先頭の圧縮はapp.pyのグローバルCSS
     # （[data-testid="stMainBlockContainer"] > ... > div:first-child）が
@@ -702,23 +559,13 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
     _try_cookie_login(authenticator)
 
     if st.session_state.get("authentication_status"):
-        _username = st.session_state.get("username", "")
-        if not _session_still_valid(_username):
-            with config_lock(authenticator):
-                authenticator.logout(location="unrendered")
-            _set_logout_notice(
-                "別の端末・ブラウザでこのアカウントにログインされたため、"
-                "自動的にログアウトしました（1アカウントにつき同時に1セッションまで"
-                "のご利用となります）。"
-            )
-            st.stop()
         if "admin" not in (st.session_state.get("roles") or []):
             with config_lock(authenticator):
                 authenticator.logout(location="unrendered")
-            _set_logout_notice("このアプリは管理者専用です。")
+            st.error("このアプリは管理者専用です。")
             st.stop()
         if not st.session_state.get("_login_logged"):
-            _log_login(_username)
+            _log_login(st.session_state.get("username", ""))
             st.session_state["_login_logged"] = True
         return
 
@@ -728,7 +575,6 @@ def require_admin_login(authenticator: stauth.Authenticate) -> None:
     )
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
-        _show_logout_notice()
         _render_login_form(authenticator, "_admin_login_form")
         with st.expander("🔑 パスワードを忘れた方はこちら"):
             _render_forgot_password_form(authenticator, "_admin_forgot_pw_form")
