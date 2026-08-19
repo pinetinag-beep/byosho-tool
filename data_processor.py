@@ -576,6 +576,19 @@ def load_mhlw_byosho_extended(file_bytes: bytes, year: int = 2024) -> tuple[pd.D
     yurou_col    = _col_by_keyword("うち、社会福祉施設・有料老人ホーム等に入所")
     shimon_col   = _col_by_keyword("うち、終了（死亡退院等）")
 
+    # 分娩件数: 「分娩件数（正常分娩、帝王切開を含む、死産を除く）」という年間列の
+    # 直後に月別列（「...　令和6年4月」等）が12個続く構造のため、単純な部分一致
+    # だと月別列を拾ってしまう危険がある（救急搬送件数で完全一致を使っている
+    # のと同じ理由）。年間列の正式名称に完全一致するものを優先し、無ければ
+    # 「月」を含まない列にフォールバックする。
+    _bunben_exact = "分娩件数（正常分娩、帝王切開を含む、死産を除く）"
+    if _bunben_exact in cols_list:
+        bunben_col = _bunben_exact
+    else:
+        bunben_col = next(
+            (c for c in cols_list if "分娩件数" in c and "月" not in c), None
+        )
+
     pref_code_col = "都道府県コード"
 
     ippan_kyoka = "一般病床_許可病床"
@@ -647,6 +660,17 @@ def load_mhlw_byosho_extended(file_bytes: bytes, year: int = 2024) -> tuple[pd.D
             return pd.to_numeric(df_valid[col_name], errors="coerce").fillna(0).values
         return np.zeros(len(df_valid))
 
+    def _safe_num_masked(col_name):
+        """年間10件以下の実績は"*"（全角＊含む）で報告されるため、0とは
+        区別できるよう-1をセンチネル値として保持する（手術・DPCデータと
+        同じ方針。表示側での"*"変換はapp.py側で行う）。"""
+        if col_name and col_name in df_valid.columns:
+            raw = df_valid[col_name].astype(str).str.strip()
+            is_masked = raw.isin(["*", "＊"])
+            numeric = pd.to_numeric(df_valid[col_name], errors="coerce").fillna(0)
+            return numeric.where(~is_masked, -1).values
+        return np.zeros(len(df_valid))
+
     ward_df["新規入棟患者数"]   = _safe_num(shinki_col)
     ward_df["救急入院患者数"]   = _safe_num(kyukyu_col)
     ward_df["退棟患者数"]       = _safe_num(taitou_col)
@@ -658,6 +682,7 @@ def load_mhlw_byosho_extended(file_bytes: bytes, year: int = 2024) -> tuple[pd.D
         _safe_num(kaigo_iryoin_col) + _safe_num(yurou_col)
     )
     ward_df["死亡退院数"]       = _safe_num(shimon_col)
+    ward_df["分娩件数"]         = _safe_num_masked(bunben_col)
     ward_df["報告年度"]         = year
 
     ward_df = ward_df.reset_index(drop=True)
