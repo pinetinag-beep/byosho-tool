@@ -1930,19 +1930,19 @@ def _run_dpc_distance_search(_origin, _dd_addr, _dd_max, _dd_mode, _dpc_sel):
         "二次医療圏名": st.column_config.TextColumn("二次医療圏"),
         "直線距離(km)": st.column_config.NumberColumn("直線距離", format="%.1f km"),
         "所要時間(分)": st.column_config.NumberColumn("所要時間", format="%.1f 分"),
-        _ds_cnt_col:    st.column_config.TextColumn("患者数"),
-        "平均在院日数":  st.column_config.TextColumn("平均在院日数"),
+        _ds_cnt_col:    st.column_config.NumberColumn("患者数", format="%,d例"),
+        "平均在院日数":  st.column_config.NumberColumn("平均在院日数", format="%.1f日"),
     }
     _dd_disp = _ds_result[[c for c in _dd_show_cols if c in _ds_result.columns]].copy()
     for _c in [_ds_cnt_col, "平均在院日数"]:
         if _c in _dd_disp.columns:
-            _is_los = (_c == "平均在院日数")
+            # NumberColumnのまま数値を保持する（文字列化すると見出しクリックでの
+            # 並び替えが辞書式になり、9,546が941より前に来るような順序崩れが
+            # 起きていた。2026年8月発覚）。マスク値（-1）はNaN（空欄）にする——
+            # "*"表示は失われるが、実件数を偽って見せる（-1件のような表示）
+            # よりは安全で、ソートも崩れない。
             _v = pd.to_numeric(_dd_disp[_c], errors="coerce")
-            _dd_disp[_c] = _v.apply(
-                lambda x, _l=_is_los: "*" if x == -1 else (
-                    "" if pd.isna(x) else (f"{x:.1f}日" if _l else f"{int(x):,}例")
-                )
-            )
+            _dd_disp[_c] = _v.where(_v != -1, np.nan)
     st.dataframe(_dd_disp, use_container_width=True, column_config=_dd_col_cfg, height=480)
 
     _dd_csv = _ds_result[[c for c in _dd_show_cols if c in _ds_result.columns]].copy()
