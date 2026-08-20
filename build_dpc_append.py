@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DPC公開データの追加年度を、既存の dpc_*.parquet に追記する。
+DPC公開データの年度別データを、既存の dpc_*.parquet に追記・上書きする。
 
 本番サーバーにはDuckDBが無くparquet直接運用のため、build_dpc.py の
 loader関数を直接使って年度別DataFrameを作り、既存parquetに追記する。
 年度は各ファイルの現在年シート（R0x全体 等）で検証済みの正しい値を渡す。
+_union_append()は同一年度の既存行を削除してから追記するため、既に
+収録済みの年度を再指定しても安全に上書きできる（2026年8月、令和6年度分の
+生データがVPS上に完全な形でアーカイブできたことを受け、当時DuckDB経由で
+取り込んだ際に取りこぼしが無かったか再検証する目的でJOBSに追加した）。
 
   令和4年度 2022 → DPC_file_R4
   令和5年度 2023 → DPC_file_R5
-  （令和6年度 2024 は既存parquetに収録済み）
+  令和6年度 2024 → DPC_file_R6
 """
 import glob
 import warnings
@@ -38,7 +42,7 @@ TABLES = [
     ("surgery_detail",  "dpc_surgery_detail.parquet",  load_surgery_detail),
 ]
 
-JOBS = [(2022, "DPC_file_R4"), (2023, "DPC_file_R5")]
+JOBS = [(2022, "DPC_file_R4"), (2023, "DPC_file_R5"), (2024, "DPC_file_R6")]
 
 
 def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
