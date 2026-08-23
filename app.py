@@ -324,19 +324,12 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 .method-card .mc-title { font-size: 0.98rem; font-weight: 700; margin-bottom: 7px; }
 .method-card .mc-desc  { font-size: 0.8rem; color: var(--ink-muted); line-height: 1.7; }
 
-/* ── カード全体をクリック可能にする（stretched-link パターン） ── */
+/* ── カード全体をクリック可能にする ── */
 .method-card--link {
     position: relative;
     display: flex;
     flex-direction: column;
     cursor: pointer;
-}
-.method-card--link .mc-stretch {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    border-radius: inherit;
-    text-decoration: none;
 }
 .method-card--link .mc-cta {
     margin-top: auto;
@@ -349,6 +342,41 @@ header[data-testid="stHeader"] { background: var(--paper) !important; }
 }
 .method-card--link:hover .mc-cta { transform: translateX(3px); }
 .method-card--link:hover .mc-icon svg { stroke: var(--brand-deep); }
+
+/* カードに重ねる透明なst.button（_method_card_nav参照）。以前は
+   <a href="?go=...">をカード全面に重ねる方式（stretched-link）だったが、
+   本物のページ遷移になり遷移のたびに白画面が点滅していた。st.button()を
+   透明化してカードに重ね、クリックをStreamlit内部の再実行にすることで
+   ページ全体の再読み込みを避けている（2026年8月）。 */
+/* 3枚のカードそのもの（外側コンテナ）だけをposition:relativeにする。 */
+.st-key-home_card_name_search,
+.st-key-home_card_distance,
+.st-key-home_card_search {
+    position: relative;
+}
+/* ボタンのすぐ内側のコンテナ（st-key-home_card_name_search_btn等）は
+   Streamlit側のデフォルトCSSで既にposition:relativeが付いており、
+   これがボタンの絶対配置の基準になってしまい、カード全面を覆えず
+   クリックしても反応しない不具合になっていた（2026年8月発覚）。
+   staticに戻し、外側のカード自体を基準にさせる。 */
+[class*="st-key-home_card_"][class*="_btn"] {
+    position: static !important;
+}
+[class*="st-key-home_card_"] div[data-testid="stButton"] {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 1;
+    width: 100% !important;
+    height: 100% !important;
+}
+[class*="st-key-home_card_"] div[data-testid="stButton"] button {
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+}
 
 /* ── ランディングのグループ見出し（絵文字 → ブランド緑のドット） ── */
 .landing-group-title { font-size: 1.08rem; font-weight: 700; color: var(--ink); margin: 0 0 4px; }
@@ -2207,26 +2235,39 @@ if st.session_state.get("_view_mode") == "home":
     )
 
     # ── 検索メソッドカード（「何がしたいか」で3グループに分類）──
-    # go を渡すとカード全体がクリック可能になる。Streamlitのmarkdownは
-    # <a>（インライン）の中にブロック<div>を入れると構造が壊れるため、
-    # カードは<div>のままにして、透明な<a>を absolute で全面に重ねる
-    # （stretched-link パターン）。
     def _method_card(icon, title, desc, go=None):
-        _link = (
-            f"<a class='mc-stretch' href='?go={go}' target='_self' "
-            f"aria-label='{title}'></a>" if go else ""
-        )
         _cta = "<div class='mc-cta'>ひらく →</div>" if go else ""
         _cls = "method-card method-card--link" if go else "method-card"
         return (
             f"<div class='{_cls}'>"
-            f"{_link}"
             f"<div class='mc-icon'>{icon}</div>"
             f"<div class='mc-title'>{title}</div>"
             f"<div class='mc-desc'>{desc}</div>"
             f"{_cta}"
             f"</div>"
         )
+
+    def _method_card_nav(icon, title, desc, go, key):
+        """検索メソッドカードを描画し、カード全体をクリック可能にする。
+
+        以前は透明な<a href="?go=...">をカード全面に重ねる実装
+        （stretched-linkパターン）だったが、これは本物のブラウザ遷移
+        （フルページの読み込み直し）を引き起こし、遷移のたびに白画面が
+        一瞬点滅すると指摘された（2026年8月）。st.button()をカードに
+        重ねて透明化する方式に変更し、クリックをStreamlit内部の再実行
+        （st.session_state + st.rerun()）にすることでページ全体の
+        再読み込みを避け、体感を滑らかにした。
+
+        ?go=<mode> のクエリパラメータによる遷移（他画面からの内部リンクや
+        直接アクセス用）は既存のハンドラで引き続き動作するため、この
+        カードのクリックだけが新しい経路を通る形になる。
+        """
+        with st.container(key=key):
+            st.markdown(_method_card(icon, title, desc, go=go), unsafe_allow_html=True)
+            if st.button(title, key=f"{key}_btn"):
+                st.session_state["_view_mode"] = go
+                st.session_state["_scroll_to_top"] = True
+                st.rerun()
 
     # 線画SVGアイコン（feather/lucide系・24x24 stroke）。絵文字は環境依存で
     # 見た目が変わり品位も落ちるため、カードのアイコンはSVGに統一する。
@@ -2266,17 +2307,17 @@ if st.session_state.get("_view_mode") == "home":
     _landing_group_header("病院を探す")
     _mc1, _mc4, _mc5 = st.columns(3, gap="medium")
     with _mc1:
-        st.markdown(_method_card(_ICON_SEARCH, "病院名で探す",
+        _method_card_nav(_ICON_SEARCH, "病院名で探す",
             "病院名の一部を入力して<br>候補をリストアップします",
-            go="name_search"), unsafe_allow_html=True)
+            go="name_search", key="home_card_name_search")
     with _mc4:
-        st.markdown(_method_card(_ICON_CLOCK, "距離・所要時間で探す",
+        _method_card_nav(_ICON_CLOCK, "距離・所要時間で探す",
             "住所やランドマークから<br>N分以内の病院を一覧表示します",
-            go="distance"), unsafe_allow_html=True)
+            go="distance", key="home_card_distance")
     with _mc5:
-        st.markdown(_method_card(_ICON_SLIDERS, "設備・手術条件で探す",
+        _method_card_nav(_ICON_SLIDERS, "設備・手術条件で探す",
             "CT/MRI台数・手術件数・<br>スタッフ数などで全国を絞り込み",
-            go="search"), unsafe_allow_html=True)
+            go="search", key="home_card_search")
 
     _render_footer()
     st.stop()
