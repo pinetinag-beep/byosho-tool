@@ -2506,7 +2506,7 @@ if st.session_state.get("_view_mode") == "map":
                 # 見る」ボタンに到達しにくくなるため）。ズームは +/- とダブルクリック。
                 _ms_m = folium.Map(
                     location=[_ms_center_lat, _ms_center_lon], zoom_start=_ms_zoom,
-                    tiles="CartoDB positron", scrollWheelZoom=False,
+                    tiles="OpenStreetMap", scrollWheelZoom=False,
                 )
                 _ms_max_beds = max(int(_ms_valid["合計_許可病床数"].max() or 1), 1)
 
@@ -6552,7 +6552,7 @@ with tab7:
                 _m = folium.Map(
                     location=[center_lat, center_lon],
                     zoom_start=zoom,
-                    tiles="CartoDB positron",
+                    tiles="OpenStreetMap",
                     scrollWheelZoom=False,
                 )
 
