@@ -15,6 +15,7 @@ import fcntl
 import os
 import secrets
 import time
+import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -169,6 +170,7 @@ def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
             "「ログイン」タブからログインしてください。"
         )
     except Exception as e:
+        traceback.print_exc()
         st.error(f"アカウントは発行されましたが、メール送信に失敗しました（{e}）。"
                   "お手数ですがサポートまでご連絡ください。")
 
@@ -453,6 +455,7 @@ def _render_forgot_password_form(authenticator: stauth.Authenticate, key: str) -
         try:
             mailer.send_password_reset_email(_found_email, _new_password)
         except Exception as e:
+            traceback.print_exc()
             st.error(
                 f"メール送信に失敗しました（{e}）。"
                 "お手数ですが info@medilenz.jp までご連絡ください。"
