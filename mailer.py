@@ -1,6 +1,7 @@
 """info@medilenz.jp（ConoHa WING）からのメール送信（SMTP）。"""
 import os
 import smtplib
+from email.header import Header
 from email.mime.text import MIMEText
 
 import streamlit as st
@@ -21,8 +22,8 @@ SMTP_PASSWORD = _get_config("SMTP_PASSWORD")
 
 
 def _send(to_email: str, subject: str, body: str) -> None:
-    msg = MIMEText(body)
-    msg["Subject"] = subject
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
     msg["From"] = SMTP_USER
     msg["To"] = to_email
 
