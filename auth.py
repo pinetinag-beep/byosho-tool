@@ -76,10 +76,8 @@ def config_lock(authenticator: "stauth.Authenticate | None" = None):
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
-# Stripeが本番（ライブモード）審査中のため、新規申込みは一時的に停止し
-# 「近日公開」表示にしている（2026年8月）。STRIPE_SECRET_KEY等をsk_live_に
-# 切り替えて本番稼働を始めるタイミングで、このフラグをTrueに戻すこと。
-_REGISTRATION_OPEN = False
+# Stripeのライブモード審査が完了し、本番キー(sk_live_)へ切り替え済み（2026年9月）。
+_REGISTRATION_OPEN = True
 
 _PASSWORD_INSTRUCTIONS = """
 **パスワードの条件:**
@@ -279,15 +277,26 @@ def _render_landing_content() -> None:
   <div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
               padding:24px;text-align:center;margin:0 0 24px;">
     <div style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.05em;">
-      近日公開
+      お試し価格
     </div>
     <div style="margin:6px 0 4px;">
       <span style="font-size:2.2rem;font-weight:900;color:#26251F;">¥500</span>
-      <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込・予定）</span>
+      <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込）</span>
     </div>
     <div style="font-size:0.8rem;color:#6E6A5E;">
-      新規のお申し込みは近日公開予定です。しばらくお待ちください。
+      2026年12月末までの特別価格・クレジットカード決済ですぐにご利用いただけます
     </div>
+  </div>
+
+  <div style="background:#EAF4F0;border:1px solid #BFDFD4;border-radius:14px;
+              padding:20px 24px;margin:0 0 28px;">
+    <div style="font-weight:800;color:#26251F;margin-bottom:10px;">使い方</div>
+    <ol style="margin:0;padding-left:20px;color:#4b5563;font-size:0.9rem;line-height:1.9;">
+      <li>下の「新規利用申し込み」タブでメールアドレスを入力</li>
+      <li>Stripeの決済ページでお支払い（月額500円）</li>
+      <li>決済完了後、自動でアカウントが発行され、ログイン情報がメールで届きます</li>
+      <li>メールに記載のIDとパスワードで「ログイン」タブからログイン</li>
+    </ol>
   </div>
 </div>""",
         unsafe_allow_html=True,
