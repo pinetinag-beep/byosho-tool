@@ -130,6 +130,21 @@ def _log_login(email: str) -> None:
         writer.writerow([datetime.now(_JST).strftime("%Y-%m-%d %H:%M:%S"), email])
 
 
+def _email_registered(authenticator: stauth.Authenticate, email: str) -> bool:
+    """指定のメールアドレスが既に会員登録済み（退会処理で削除されていない）かを調べる。
+
+    config_lock()経由で読み直すことで、直近の登録・退会処理を確実に反映した
+    最新の状態と照合する。
+    """
+    with config_lock(authenticator):
+        _usernames = (
+            authenticator.authentication_controller.authentication_model
+            .credentials.get("usernames") or {}
+        )
+    _target = email.strip().lower()
+    return any(u.lower() == _target for u in _usernames)
+
+
 def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
     """Stripe Checkoutからのリダイレクト（?payment=success&session_id=...）を処理する。
 
@@ -541,6 +556,12 @@ def require_login(authenticator: stauth.Authenticate) -> None:
             if _signup_submitted:
                 if not _signup_email or "@" not in _signup_email:
                     st.error("正しいメールアドレスを入力してください")
+                elif _email_registered(authenticator, _signup_email):
+                    st.error(
+                        "このメールアドレスは既にご登録済みです。"
+                        "「ログイン」タブからログインしてください。"
+                        "パスワードが分からない場合は「パスワードを忘れた方はこちら」から再発行できます。"
+                    )
                 else:
                     try:
                         _checkout_url = payments.create_checkout_session(_signup_email)
