@@ -12,8 +12,6 @@ Stripe Checkout（月額サブスクリプション）での決済完了後に�
 """
 import csv
 import fcntl
-import html
-import json
 import os
 import secrets
 import time
@@ -23,7 +21,6 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
-import streamlit.components.v1 as components
 import streamlit_authenticator as stauth
 import yaml
 
@@ -150,52 +147,45 @@ def _email_registered(authenticator: stauth.Authenticate, email: str) -> bool:
 
 
 def _redirect_to_signup_checkout(checkout_url: str) -> None:
-    """新規申込み確定時、GA4計測のため一度 /signup を経由してからStripeへ転送する。
+    """新規申込み確定時、GA4計測のため一度 /signup を経由してからStripeへ進む。
 
     トップページ（medilenz.jp）で申し込んだ場合でも、実際に「新規登録の
     アクションがあった」タイミングでブラウザURLが/signupになるようにし、
     広告の遷移先URL設定に関わらずコンバージョンを正しく計測できるようにする
     （/signupはnginx側でこのアプリのルートにプロキシされているだけで、
     アプリの表示内容自体はトップページと同じ。詳細はDEPLOY.md参照）。
+
+    ページ遷移は本物の<a>リンク（st.link_button）で行う。JSでの
+    window.parent.location操作は、Streamlitのcomponents.html()が生成する
+    iframeにトップレベルナビゲーション権限が無いためブラウザにブロックされ、
+    実際に本番で動作しなかった（2026年9月確認）。
     """
     _redirect_url = (
         payments.APP_BASE_URL.rstrip("/") + "/signup?checkout="
         + urllib.parse.quote(checkout_url, safe="")
     )
-    components.html(
-        f"<script>window.parent.location.href = {json.dumps(_redirect_url)};</script>",
-        height=0,
-    )
-    st.markdown(
-        f'<p style="text-align:center;color:#6E6A5E;margin:24px 0;">'
-        f'決済ページへ移動しています…しばらく待っても切り替わらない場合は '
-        f'<a href="{html.escape(checkout_url)}">こちら</a> をクリックしてください。</p>',
-        unsafe_allow_html=True,
-    )
+    st.link_button("💳 決済ページへ進む（月額500円）", _redirect_url, type="primary")
 
 
 def _handle_signup_redirect_target() -> bool:
-    """/signup?checkout=... で読み込まれた場合、Stripe決済ページへ自動転送する。
+    """/signup?checkout=... で読み込まれた場合、Stripe決済ページへのリンクを表示する。
 
     checkout パラメータはブラウザ経由で往復するため、Stripe以外のURLへの
     オープンリダイレクトに悪用されないよう、checkout.stripe.com のURLで
-    あることを確認してからのみ転送する。
+    あることを確認してからのみリンクを表示する。
 
     戻り値がTrueの場合、呼び出し側は通常のLP描画をスキップしてst.stop()すること。
     """
     checkout_url = st.query_params.get("checkout", "")
     if not checkout_url.startswith("https://checkout.stripe.com/"):
         return False
-    components.html(
-        f"<script>window.parent.location.href = {json.dumps(checkout_url)};</script>",
-        height=0,
-    )
-    st.markdown(
-        f'<p style="text-align:center;color:#6E6A5E;margin:80px 0;">'
-        f'決済ページへ移動しています…しばらく待っても切り替わらない場合は '
-        f'<a href="{html.escape(checkout_url)}">こちら</a> をクリックしてください。</p>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div style='margin:80px 0 0;'></div>", unsafe_allow_html=True)
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        st.link_button(
+            "💳 決済ページへ進む（月額500円）", checkout_url,
+            type="primary", use_container_width=True,
+        )
     return True
 
 
