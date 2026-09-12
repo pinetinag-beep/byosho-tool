@@ -309,6 +309,15 @@ def _render_landing_content() -> None:
         全国の病院を絞り込めます。住所からの距離・所要時間での検索にも対応。
       </div>
     </div>
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">🤝</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">候補者への提案材料に</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        地域シェア・稼働率・経年の病床数推移から、病院の実態や成長性を数字で提示。
+        医師・看護師への転職提案に説得力を持たせられます。
+      </div>
+    </div>
   </div>
 </div>""",
         unsafe_allow_html=True,
