@@ -241,11 +241,12 @@ def _render_landing_content() -> None:
 <div style="max-width:680px;margin:0 auto;">
   <div style="text-align:center;margin:0 0 32px;">
     <h2 style="font-size:1.7rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.5;">
-      地域医療のリアルを、公的データで一目に。
+      会社の導入を待たずに、あなた個人の武器に。
     </h2>
     <p style="font-size:0.95rem;color:#6E6A5E;max-width:520px;margin:0 auto;line-height:1.9;">
-      病床機能報告・DPC・施設基準届出など、バラバラな公的統計をMedilenZが横断的に統合。
-      競合病院との比較や地域内でのポジション把握が、ひとつの画面で完結します。
+      病床機能報告・DPC・施設基準届出など、バラバラな公的データを横断検索。
+      稼働率などの分析指標も自動計算済みで、そのままCSVに出力できます。
+      データ収集・指標計算に時間をかける必要はありません。
     </p>
   </div>
 
@@ -284,11 +285,30 @@ def _render_landing_content() -> None:
   <div style="display:flex;flex-wrap:wrap;gap:16px;margin:0 0 32px;">
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
                 border-radius:14px;padding:20px;">
-      <div style="font-size:1.4rem;">🏆</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">自院の立ち位置が分かる</div>
+      <div style="font-size:1.4rem;">🔍</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">病院データを横断検索してCSVで出力</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        稼働率・地域シェア・地域内順位を自動算出。自院が地域でどんな役割を担っているか、
-        数字で把握できます。
+        エリア・設備・手術件数・救急搬送件数などの条件で全国の病院を一括検索。
+        稼働率など生データからの計算が面倒な指標もあらかじめ算出済みで、
+        そのままCSVに出力できます。
+      </div>
+    </div>
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">🤝</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">候補者（医師・看護師）への提案材料に</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        検索結果をそのまま、地域シェア・稼働率・経年の病床数推移といった数字で
+        病院の実態や成長性を提示。転職提案に説得力を持たせられます。
+      </div>
+    </div>
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;">
+      <div style="font-size:1.4rem;">🏆</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">病院の立ち位置が分かる</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        稼働率・地域シェア・地域内順位を自動算出。その病院が地域でどんな役割を
+        担っているか、数字で把握できます。
       </div>
     </div>
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
@@ -296,26 +316,8 @@ def _render_landing_content() -> None:
       <div style="font-size:1.4rem;">📈</div>
       <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">経年トレンドで推移を把握</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        病床数・稼働率・手術件数などの推移を年度ごとに確認可能。自院や
-        気になる病院の変化を追えます。
-      </div>
-    </div>
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
-      <div style="font-size:1.4rem;">🔍</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">条件で全国から検索</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        CT/MRI台数・手術件数・救急搬送件数・DPC疾患名など、豊富な条件で
-        全国の病院を絞り込めます。住所からの距離・所要時間での検索にも対応。
-      </div>
-    </div>
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
-      <div style="font-size:1.4rem;">🤝</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">候補者への提案材料に</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        地域シェア・稼働率・経年の病床数推移から、病院の実態や成長性を数字で提示。
-        医師・看護師への転職提案に説得力を持たせられます。
+        病床数・稼働率・手術件数などの推移を年度ごとに確認可能。気になる病院の
+        変化を追えます。
       </div>
     </div>
   </div>
