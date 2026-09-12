@@ -241,7 +241,7 @@ def _render_landing_content() -> None:
 <div style="max-width:680px;margin:0 auto;">
   <div style="text-align:center;margin:0 0 32px;">
     <h2 style="font-size:1.7rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.5;">
-      会社の導入を待たずに、あなた個人の武器に。
+      感覚の提案から、データの提案へ。
     </h2>
     <p style="font-size:0.95rem;color:#6E6A5E;max-width:520px;margin:0 auto;line-height:1.9;">
       病床機能報告・DPC・施設基準届出など、バラバラな公的データを横断検索。
