@@ -12,14 +12,18 @@ Stripe Checkout（月額サブスクリプション）での決済完了後に�
 """
 import csv
 import fcntl
+import html
+import json
 import os
 import secrets
 import time
 import traceback
+import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
+import streamlit.components.v1 as components
 import streamlit_authenticator as stauth
 import yaml
 
@@ -143,6 +147,56 @@ def _email_registered(authenticator: stauth.Authenticate, email: str) -> bool:
         )
     _target = email.strip().lower()
     return any(u.lower() == _target for u in _usernames)
+
+
+def _redirect_to_signup_checkout(checkout_url: str) -> None:
+    """新規申込み確定時、GA4計測のため一度 /signup を経由してからStripeへ転送する。
+
+    トップページ（medilenz.jp）で申し込んだ場合でも、実際に「新規登録の
+    アクションがあった」タイミングでブラウザURLが/signupになるようにし、
+    広告の遷移先URL設定に関わらずコンバージョンを正しく計測できるようにする
+    （/signupはnginx側でこのアプリのルートにプロキシされているだけで、
+    アプリの表示内容自体はトップページと同じ。詳細はDEPLOY.md参照）。
+    """
+    _redirect_url = (
+        payments.APP_BASE_URL.rstrip("/") + "/signup?checkout="
+        + urllib.parse.quote(checkout_url, safe="")
+    )
+    components.html(
+        f"<script>window.parent.location.href = {json.dumps(_redirect_url)};</script>",
+        height=0,
+    )
+    st.markdown(
+        f'<p style="text-align:center;color:#6E6A5E;margin:24px 0;">'
+        f'決済ページへ移動しています…しばらく待っても切り替わらない場合は '
+        f'<a href="{html.escape(checkout_url)}">こちら</a> をクリックしてください。</p>',
+        unsafe_allow_html=True,
+    )
+
+
+def _handle_signup_redirect_target() -> bool:
+    """/signup?checkout=... で読み込まれた場合、Stripe決済ページへ自動転送する。
+
+    checkout パラメータはブラウザ経由で往復するため、Stripe以外のURLへの
+    オープンリダイレクトに悪用されないよう、checkout.stripe.com のURLで
+    あることを確認してからのみ転送する。
+
+    戻り値がTrueの場合、呼び出し側は通常のLP描画をスキップしてst.stop()すること。
+    """
+    checkout_url = st.query_params.get("checkout", "")
+    if not checkout_url.startswith("https://checkout.stripe.com/"):
+        return False
+    components.html(
+        f"<script>window.parent.location.href = {json.dumps(checkout_url)};</script>",
+        height=0,
+    )
+    st.markdown(
+        f'<p style="text-align:center;color:#6E6A5E;margin:80px 0;">'
+        f'決済ページへ移動しています…しばらく待っても切り替わらない場合は '
+        f'<a href="{html.escape(checkout_url)}">こちら</a> をクリックしてください。</p>',
+        unsafe_allow_html=True,
+    )
+    return True
 
 
 def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
@@ -509,6 +563,9 @@ def require_login(authenticator: stauth.Authenticate) -> None:
 
     _handle_payment_return(authenticator)
 
+    if _handle_signup_redirect_target():
+        st.stop()
+
     # ブロックコンテナ先頭の圧縮はapp.pyのグローバルCSS
     # （[data-testid="stMainBlockContainer"] > ... > div:first-child）が
     # ログイン前後どちらの画面にも適用されるため、ここで個別に負のmarginを
@@ -565,12 +622,10 @@ def require_login(authenticator: stauth.Authenticate) -> None:
                 else:
                     try:
                         _checkout_url = payments.create_checkout_session(_signup_email)
-                        st.link_button(
-                            "💳 決済ページへ進む（月額500円）", _checkout_url,
-                            type="primary",
-                        )
                     except Exception as e:
                         st.error(f"決済ページの作成に失敗しました（{e}）")
+                    else:
+                        _redirect_to_signup_checkout(_checkout_url)
 
     st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
     _render_tokushoho()
