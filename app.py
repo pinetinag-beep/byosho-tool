@@ -656,6 +656,25 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
 [data-testid="stCaptionContainer"] p {
     font-size: 0.82rem !important;
 }
+
+/* ── Plotlyグラフをコンテナ幅に完全追従させる（2026年9月対応）──
+   StreamlitはPlotlyの各グラフをSVGとして描画する際、レイアウト幅を
+   width="612"のような固定ピクセル値としてSVG要素自身に焼き込む
+   （Plotly本来のautosize機構は使われていない）。この値はStreamlit側の
+   ResizeObserverがコンテナの実際のサイズ変化を検知した時だけ再計算される。
+   ブラウザのページズーム（Ctrl+スクロール等）はCSS上のピクセル寸法を
+   変えないまま画面全体を拡大縮小するため、このResizeObserverが反応せず、
+   SVGだけが古い固定幅のまま取り残され、周囲のテキスト・カードとの
+   拡大率がズレて見える不具合があった（2026年9月、本番で報告）。
+   width:100%を!importantで強制することで、SVG自体を純粋なCSSで
+   コンテナ幅に追従する流動的な描画に切り替える。CSSによる幅の再計算は
+   ブラウザの通常の描画パイプラインの一部としてズーム時にも必ず行われる
+   ため、JS側のresizeイベント検知に依存する対症療法（一度試して効果が
+   無かった）より確実に効く。高さは元々固定値（420px等）で問題ないため
+   対象にしていない。 */
+div.js-plotly-plot svg.main-svg {
+    width: 100% !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
