@@ -340,6 +340,24 @@ def _render_landing_content() -> None:
             unsafe_allow_html=True,
         )
 
+    st.markdown("<div style='margin:36px 0 20px;'></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
+        "margin:0 0 8px;'>📋 病院ごとのPDF資料も出力できます</p>",
+        unsafe_allow_html=True,
+    )
+    _shot3_l, _shot3_c, _shot3_r = st.columns([1, 8, 1])
+    with _shot3_c:
+        with st.container(border=True):
+            st.image("assets/lp_report_sample.png", use_container_width=True)
+        st.markdown(
+            "<p style='text-align:center;font-size:0.78rem;color:#6E6A5E;margin:6px 0 0;'>"
+            "病床数・稼働率・医療専門職数・施設基準届出などをまとめた1病院ぶんの資料をPDFで出力できます"
+            "</p>",
+            unsafe_allow_html=True,
+        )
+
     st.markdown("<div style='margin:36px 0 0;'></div>", unsafe_allow_html=True)
 
     st.markdown(
