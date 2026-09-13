@@ -24,6 +24,7 @@ from data_processor import (
 )
 from auth import require_login, get_authenticator, config_lock
 import report_pdf
+import community
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -713,7 +714,7 @@ def _render_header():
     _pref     = st.session_state.get("_sel_pref", "")
     _region   = st.session_state.get("_sel_region", "")
 
-    _uc1, _uc2, _uc3 = st.columns([7.6, 1.4, 1.4])
+    _uc1, _uc2, _uc3, _uc4 = st.columns([6.2, 1.4, 1.4, 1.4])
     with _uc1:
         _user_email = st.session_state.get("username", "")
         if _user_email:
@@ -723,6 +724,11 @@ def _render_header():
                 unsafe_allow_html=True,
             )
     with _uc2:
+        if st.button("💬 コミュニティ", key="_hdr_community_btn", use_container_width=True):
+            st.session_state["_view_mode"] = "community"
+            st.session_state["_scroll_to_top"] = True
+            st.rerun()
+    with _uc3:
         with st.popover("🔑 変更"):
             try:
                 with config_lock(_authenticator):
@@ -742,7 +748,7 @@ def _render_header():
                     st.success("パスワードを変更しました。")
             except Exception as e:
                 st.error(str(e))
-    with _uc3:
+    with _uc4:
         with config_lock(_authenticator):
             _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
 
@@ -2198,7 +2204,7 @@ _qp_go = st.query_params.get("go")
 if _qp_go:
     _GO_MODES = {
         "name_search", "map", "distance", "search",
-        "dpc_search", "clinic_search", "region_vision",
+        "dpc_search", "clinic_search", "region_vision", "community",
     }
     if _qp_go in _GO_MODES:
         st.session_state["_view_mode"] = _qp_go
@@ -5034,6 +5040,104 @@ if st.session_state.get("_view_mode") == "dpc_search":
     # 検索UI・集計・結果表は「条件で病院を検索」画面の「DPCで探す」タブと共通
     # （_render_dpc_search_tab に集約。重複実装を避けるため）。
     _render_dpc_search_tab()
+
+    _render_footer()
+    st.stop()
+
+
+# ══════════════════════════════════════════════════════════
+# コミュニティ掲示板（会員同士のQ&A・運営への要望/不具合報告）
+# ══════════════════════════════════════════════════════════
+
+if st.session_state.get("_view_mode") == "community":
+    _cbc1, _cbc2 = st.columns([8, 2])
+    with _cbc1:
+        st.markdown("## 💬 コミュニティ掲示板")
+        st.caption("データの見方や探し方の質問、運営への要望・不具合報告を投稿できます（ログイン済み会員なら誰でも閲覧できます）")
+    with _cbc2:
+        if st.button("← ホームに戻る", use_container_width=True, key="_cb_back"):
+            st.session_state["_view_mode"] = "home"
+            st.rerun()
+
+    _cb_email = st.session_state.get("username", "")
+    _cb_nickname = community.get_nickname(_cb_email)
+
+    with st.expander(f"🙂 ニックネーム設定（現在: {_cb_nickname}）"):
+        with st.form("_cb_nickname_form", clear_on_submit=False):
+            _cb_new_nickname = st.text_input("表示名", value=_cb_nickname, max_chars=30)
+            _cb_nickname_submitted = st.form_submit_button("保存する")
+        if _cb_nickname_submitted:
+            if _cb_new_nickname.strip():
+                community.set_nickname(_cb_email, _cb_new_nickname.strip())
+                st.success("ニックネームを保存しました。")
+                st.rerun()
+            else:
+                st.error("表示名を入力してください")
+
+    st.markdown('<div class="section-header">新しく投稿する</div>', unsafe_allow_html=True)
+    with st.form("_cb_new_post_form", clear_on_submit=True):
+        _cb_category = st.radio(
+            "分類", list(community.CATEGORIES.keys()),
+            format_func=lambda k: community.CATEGORIES[k],
+            horizontal=True,
+        )
+        _cb_body = st.text_area("内容", height=100, placeholder="例：地域シェアの計算方法が分かりません。どのタブを見ればよいですか？")
+        _cb_post_submitted = st.form_submit_button("投稿する")
+    if _cb_post_submitted:
+        if _cb_body.strip():
+            community.add_post(_cb_email, _cb_nickname, _cb_category, _cb_body.strip())
+            st.success("投稿しました。")
+            st.rerun()
+        else:
+            st.error("内容を入力してください")
+
+    st.markdown("<div style='margin:12px 0;'></div>", unsafe_allow_html=True)
+
+    _cb_tab_q, _cb_tab_r = st.tabs(["❓ 質問", "📝 要望・不具合"])
+    _cb_posts = community.load_posts()
+
+    def _render_cb_posts(category: str):
+        _filtered = [p for p in _cb_posts if p.get("category") == category]
+        if not _filtered:
+            st.caption("まだ投稿がありません。")
+            return
+        for _post in _filtered:
+            with st.container(border=True):
+                st.markdown(
+                    f"**{_post.get('nickname', '匿名')}** "
+                    f"<span style='color:#9ca3af;font-size:0.8rem;'>"
+                    f"{community.format_timestamp(_post.get('created_at', ''))}</span>",
+                    unsafe_allow_html=True,
+                )
+                st.write(_post.get("body", ""))
+
+                for _reply in _post.get("replies", []):
+                    st.markdown(
+                        f"<div style='margin-left:20px;padding:8px 12px;background:#F7F6F2;"
+                        f"border-radius:8px;margin-top:6px;'>"
+                        f"<b>{_reply.get('nickname', '匿名')}</b> "
+                        f"<span style='color:#9ca3af;font-size:0.78rem;'>"
+                        f"{community.format_timestamp(_reply.get('created_at', ''))}</span>"
+                        f"<div style='margin-top:4px;'>{_reply.get('body', '')}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                with st.expander("返信する"):
+                    with st.form(f"_cb_reply_form_{_post['id']}", clear_on_submit=True):
+                        _cb_reply_body = st.text_area("返信内容", key=f"_cb_reply_body_{_post['id']}", height=80)
+                        _cb_reply_submitted = st.form_submit_button("返信する")
+                    if _cb_reply_submitted:
+                        if _cb_reply_body.strip():
+                            community.add_reply(_post["id"], _cb_email, _cb_nickname, _cb_reply_body.strip())
+                            st.rerun()
+                        else:
+                            st.error("返信内容を入力してください")
+
+    with _cb_tab_q:
+        _render_cb_posts("question")
+    with _cb_tab_r:
+        _render_cb_posts("request")
 
     _render_footer()
     st.stop()

@@ -35,6 +35,11 @@ data/auth_config.yaml
 # ログイン履歴（会員管理アプリ用）
 data/login_log.csv
 
+# コミュニティ掲示板（会員の投稿データ・ニックネーム対応表）
+data/community_posts.json
+data/community_nicknames.json
+data/community.lock
+
 # 一時ファイル
 _probe.xlsx
 _yshiki2.xlsx
