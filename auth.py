@@ -12,6 +12,7 @@ Stripe Checkout（月額サブスクリプション）での決済完了後に�
 """
 import csv
 import fcntl
+import json
 import os
 import secrets
 import time
@@ -21,6 +22,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
+import streamlit.components.v1 as components
 import streamlit_authenticator as stauth
 import yaml
 
@@ -146,6 +148,30 @@ def _email_registered(authenticator: stauth.Authenticate, email: str) -> bool:
     return any(u.lower() == _target for u in _usernames)
 
 
+def _fire_ga_event(event_name: str, params: dict | None = None) -> None:
+    """GA4にサーバーサイドで発生したイベント（決済関連）を送信する。
+
+    app.py側で読み込み済みのgtag.js（window.parent.gtag、本番ドメイン
+    medilenz.jpのみ）をcomponents.html()経由で呼び出す。st.markdown内の
+    <script>はinnerHTML経由のため実行されない（既知の制約、app.py側の
+    GA4読み込みコメント参照）ので、ここでも同じcomponents.html()方式を使う。
+    ホスト名判定はgtag自体の読み込み判定と重複するが、gtag未読み込みの
+    環境（ローカル開発等）で window.parent.gtag が未定義のままエラーに
+    ならないよう、呼び出し側でも念のため確認する。
+    """
+    _params_json = json.dumps(params or {}, ensure_ascii=False)
+    components.html(
+        f"""
+<script>
+if (window.parent.location.hostname === 'medilenz.jp' && window.parent.gtag) {{
+    window.parent.gtag('event', '{event_name}', {_params_json});
+}}
+</script>
+""",
+        height=0,
+    )
+
+
 def _redirect_to_signup_checkout(checkout_url: str) -> None:
     """新規申込み確定時、GA4計測のため一度 /signup を経由してからStripeへ進む。
 
@@ -164,6 +190,7 @@ def _redirect_to_signup_checkout(checkout_url: str) -> None:
         payments.APP_BASE_URL.rstrip("/") + "/signup?checkout="
         + urllib.parse.quote(checkout_url, safe="")
     )
+    _fire_ga_event("begin_checkout", {"currency": "JPY", "value": 500})
     st.link_button("💳 決済ページへ進む（月額500円）", _redirect_url, type="primary")
 
 
@@ -221,6 +248,16 @@ def _handle_payment_return(authenticator: stauth.Authenticate) -> None:
         else:
             st.error(str(e))
         return
+
+    # アカウント発行はここで初めて成立する（"already taken"分岐に来た場合は
+    # 既に発行済み＝過去のリロードで送信済みのため、ここには来ない。
+    # つまりこの下は「新規に決済が成立した」タイミングでしか実行されず、
+    # 二重計測にならない）。
+    _fire_ga_event("purchase", {
+        "currency": "JPY",
+        "value": 500,
+        "transaction_id": session_id,
+    })
 
     try:
         mailer.send_credentials_email(email, password)
