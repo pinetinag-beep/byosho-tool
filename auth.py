@@ -571,8 +571,27 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     # ログイン前後どちらの画面にも適用されるため、ここで個別に負のmarginを
     # 足す必要はない（2026年8月、二重に圧縮されてズレる事故を避けるため
     # ここでの調整は撤去した。経緯はapp.py側のコメント参照）。
+    #
+    # LP全体を1つの max-width コンテナに揃える（2026年9月対応）:
+    # 以前は見出し・タブ（ログイン/申込み）・利用条件は幅制限なし（wide
+    # レイアウトの画面幅いっぱい）で描画され、_render_landing_content() 側の
+    # 機能紹介・画像だけが個別に max-width:680px/820px;margin:0 auto で
+    # 中央寄せされていた。ブラウザをズームすると、幅制限の無い部分は左右の
+    # 端（画面幅いっぱい）に張り付いたまま、幅制限のある部分だけ中心に
+    # 向かって縮む——同じページ内で動き方がバラバラに見える、という指摘を
+    # 受けて統一した。ここで st.container(key="_lp_wrap") から
+    # _render_tokushoho() までを1つの820px枠に入れ、LPの全セクションが
+    # 常に同じ中心線・同じ縮尺で動くようにする。
     st.markdown(
         """
+<style>
+.st-key-_lp_wrap { max-width: 820px; margin: 0 auto; }
+</style>""",
+        unsafe_allow_html=True,
+    )
+    with st.container(key="_lp_wrap"):
+        st.markdown(
+            """
 <div style="text-align:center;padding:40px 0 20px;">
   <h1 style="font-size:2.4rem;font-weight:900;color:#26251F;margin:0 0 6px;
              letter-spacing:-0.01em;font-family:'Helvetica Neue',Arial,sans-serif;">
@@ -582,53 +601,53 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     地域の医療をひらく、公的データのまど
   </p>
 </div>""",
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
-    _render_landing_content()
+        _render_landing_content()
 
-    _tab_register, _tab_login = st.tabs(["🆕 新規利用申し込み", "ログイン"])
+        _tab_register, _tab_login = st.tabs(["🆕 新規利用申し込み", "ログイン"])
 
-    with _tab_login:
-        _render_login_form(authenticator, "_login_form")
-        with st.expander("🔑 パスワードを忘れた方はこちら"):
-            _render_forgot_password_form(authenticator, "_forgot_pw_form")
+        with _tab_login:
+            _render_login_form(authenticator, "_login_form")
+            with st.expander("🔑 パスワードを忘れた方はこちら"):
+                _render_forgot_password_form(authenticator, "_forgot_pw_form")
 
-    with _tab_register:
-        if not _REGISTRATION_OPEN:
-            st.info(
-                "🚧 新規のお申し込みは近日公開予定です。準備が整い次第、こちらから"
-                "お申し込みいただけるようになります。しばらくお待ちください。"
-            )
-        else:
-            st.markdown(
-                "<p style='font-size:0.85rem;color:#6E6A5E;'>"
-                "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
-                "</p>",
-                unsafe_allow_html=True,
-            )
-            with st.form("_signup_form", clear_on_submit=False):
-                _signup_email = st.text_input("メールアドレス", autocomplete="off")
-                _signup_submitted = st.form_submit_button("お申し込みへ進む")
-            if _signup_submitted:
-                if not _signup_email or "@" not in _signup_email:
-                    st.error("正しいメールアドレスを入力してください")
-                elif _email_registered(authenticator, _signup_email):
-                    st.error(
-                        "このメールアドレスは既にご登録済みです。"
-                        "「ログイン」タブからログインしてください。"
-                        "パスワードが分からない場合は「パスワードを忘れた方はこちら」から再発行できます。"
-                    )
-                else:
-                    try:
-                        _checkout_url = payments.create_checkout_session(_signup_email)
-                    except Exception as e:
-                        st.error(f"決済ページの作成に失敗しました（{e}）")
+        with _tab_register:
+            if not _REGISTRATION_OPEN:
+                st.info(
+                    "🚧 新規のお申し込みは近日公開予定です。準備が整い次第、こちらから"
+                    "お申し込みいただけるようになります。しばらくお待ちください。"
+                )
+            else:
+                st.markdown(
+                    "<p style='font-size:0.85rem;color:#6E6A5E;'>"
+                    "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
+                    "</p>",
+                    unsafe_allow_html=True,
+                )
+                with st.form("_signup_form", clear_on_submit=False):
+                    _signup_email = st.text_input("メールアドレス", autocomplete="off")
+                    _signup_submitted = st.form_submit_button("お申し込みへ進む")
+                if _signup_submitted:
+                    if not _signup_email or "@" not in _signup_email:
+                        st.error("正しいメールアドレスを入力してください")
+                    elif _email_registered(authenticator, _signup_email):
+                        st.error(
+                            "このメールアドレスは既にご登録済みです。"
+                            "「ログイン」タブからログインしてください。"
+                            "パスワードが分からない場合は「パスワードを忘れた方はこちら」から再発行できます。"
+                        )
                     else:
-                        _redirect_to_signup_checkout(_checkout_url)
+                        try:
+                            _checkout_url = payments.create_checkout_session(_signup_email)
+                        except Exception as e:
+                            st.error(f"決済ページの作成に失敗しました（{e}）")
+                        else:
+                            _redirect_to_signup_checkout(_checkout_url)
 
-    st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
-    _render_tokushoho()
+        st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
+        _render_tokushoho()
 
     if st.session_state.get("authentication_status"):
         # ここまでLPの残りを描画し終えたことで、直前のログイン成功時に発行した
