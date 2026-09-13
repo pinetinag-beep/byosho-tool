@@ -675,6 +675,23 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
 div.js-plotly-plot svg.main-svg {
     width: 100% !important;
 }
+
+/* ── st.image()もPlotlyと同じ理由でズームに追従しない（2026年9月対応）──
+   LPの「実際の病院詳細画面」マーケティング用スクリーンショット画像
+   （assets/lp_hospital_detail.png 等、st.image(..., use_container_width=True)）
+   で発見。Plotlyと同じく、Streamlitは画像のCSS幅もコンテナのサイズ変化を
+   ResizeObserverで検知した時だけJSで再計算し、"949.328px"のような固定
+   ピクセル値をimg要素のインラインstyleに焼き込む方式で、CSSの100%指定では
+   ない。ブラウザのページズームはこの検知の対象になるCSS寸法を変えない
+   ため、周囲の見出しテキスト（純粋なCSSで伸縮する）はズームに追従するのに
+   画像だけ取り残されて見える。Plotly同様、width:100%を!importantで強制し
+   純粋なCSS駆動の伸縮に切り替える。現状 st.image(use_container_width=True)
+   はこのLPマーケティング画像2箇所にしか使っていないため、全画像に対する
+   影響は無い。 */
+[data-testid="stImage"] img {
+    width: 100% !important;
+    height: auto !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
