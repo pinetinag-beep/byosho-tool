@@ -23,6 +23,7 @@ from data_processor import (
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
 from auth import require_login, get_authenticator, config_lock
+import report_pdf
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -5268,6 +5269,252 @@ if hosp_code:
                 ]
                 if not _gf2_year.empty:
                     _gairai_form2_row = _gf2_year.iloc[0]
+
+
+# ── PDF資料出力（人材紹介エージェント等が候補病院の情報を一括で見て
+#    そのまま出力できるようにするための機能。2026年9月追加）────────
+#    タブ内（with tab1:等）で計算される値を使い回すと、そのタブが
+#    描画されるまで変数が定義されないため、ここで独立に集計し直す。
+
+
+def _build_hospital_report_data() -> dict:
+    _rep_bed_rows = []
+    if isinstance(hosp_row, pd.Series):
+        for _t in BED_TYPES:
+            _k = _si(hosp_row.get(f"{_t}_許可病床数", 0))
+            _z = _si(hosp_row.get(f"{_t}_在棟延べ数", 0))
+            _comp = bed_composition(hosp_row)[_t]
+            _avg = f"{_z / 365:.1f}人/日" if _z > 0 else "―"
+            _occ_rate = f"{_z / 365 / _k * 100:.1f}%" if (_z > 0 and _k > 0) else "―"
+            _rep_bed_rows.append({
+                "病床種別": _t, "許可病床数": _k,
+                "平均在棟患者数": _avg, "稼働率": _occ_rate, "構成比": f"{_comp:.1f}%",
+            })
+
+    _STAFF_DEFS_PDF = [
+        ("常勤医師数", "非常勤医師数", "医師"),
+        ("常勤看護師数", "非常勤看護師数", "看護師"),
+        ("常勤理学療法士数", "非常勤理学療法士数", "理学療法士（PT）"),
+        ("常勤作業療法士数", "非常勤作業療法士数", "作業療法士（OT）"),
+        ("常勤言語聴覚士数", "非常勤言語聴覚士数", "言語聴覚士（ST）"),
+        ("常勤薬剤師数", "非常勤薬剤師数", "薬剤師"),
+        ("常勤診療放射線技師数", "非常勤診療放射線技師数", "診療放射線技師"),
+        ("常勤臨床検査技師数", "非常勤臨床検査技師数", "臨床検査技師"),
+    ]
+    _rep_staff = []
+    if isinstance(hosp_row, pd.Series):
+        for _ccol, _pcol, _lbl in _STAFF_DEFS_PDF:
+            if _ccol in hosp_row.index and pd.notna(hosp_row.get(_ccol)):
+                _ft = _si(hosp_row.get(_ccol))
+                _pt = _si(hosp_row.get(_pcol)) if _pcol in hosp_row.index and pd.notna(hosp_row.get(_pcol)) else None
+                _rep_staff.append((_lbl, _ft, _pt))
+
+    # 救急搬送 - 二次医療圏シェア（このPDF専用の新規計算。region_share()には
+    # 地域シェア(%)＝許可病床数ベースのものしか無いため）
+    _rep_emergency = None
+    _er_count = _si(hosp_row.get("救急搬送件数", 0)) if isinstance(hosp_row, pd.Series) else 0
+    if _er_count > 0:
+        _er_region_total = (
+            pd.to_numeric(region_df["救急搬送件数"], errors="coerce").fillna(0).sum()
+            if "救急搬送件数" in region_df.columns else 0
+        )
+        _rep_emergency = {
+            "count": _er_count,
+            "region_share_pct": round(_er_count / _er_region_total * 100, 1) if _er_region_total > 0 else None,
+        }
+
+    # 手術（TAB「病床・手術分析」と同じ集計をこの時点で独立に行う）
+    _rep_surgery = None
+    _surgery_df_all = st.session_state.get("surgery_df")
+    if _surgery_df_all is not None:
+        _hs_mask = _match_this_hospital(_surgery_df_all, yr=year) if "報告年度" in _surgery_df_all.columns \
+            else _match_this_hospital(_surgery_df_all)
+        _hosp_surg = _surgery_df_all[_hs_mask]
+        if not _hosp_surg.empty:
+            _surg_row = _hosp_surg.iloc[0]
+            _SURG_COLS_PDF = {
+                "手術総数": "手術総数", "全身麻酔手術数": "全身麻酔", "腹腔鏡下手術数": "腹腔鏡下",
+                "胸腔鏡下手術数": "胸腔鏡下", "ロボット支援手術数": "ロボット支援",
+                "悪性腫瘍手術数": "悪性腫瘍", "脳血管内手術数": "脳血管内", "人工心肺手術数": "人工心肺",
+            }
+            _surg_total = _si(_surg_row.get("手術総数", 0))
+            _surg_total_disp = "*件" if _surg_total == -1 else f"{_surg_total:,}件"
+            _surg_breakdown = []
+            if _surg_total > 0:
+                for _col, _lbl in _SURG_COLS_PDF.items():
+                    if _col == "手術総数":
+                        continue
+                    _raw = _si(_surg_row.get(_col, 0))
+                    if _raw == 0:
+                        continue
+                    _val = 0 if _raw == -1 else _raw
+                    _disp = "*" if _raw == -1 else f"{_val:,}"
+                    _pct = round(_val / _surg_total * 100, 1)
+                    _surg_breakdown.append([_lbl, f"{_disp}件", f"{_pct}%"])
+            _surg_region_share = None
+            if "二次医療圏名" in _surgery_df_all.columns and _surg_total > 0:
+                _rmask = _surgery_df_all["二次医療圏名"] == region
+                if "都道府県名" in _surgery_df_all.columns:
+                    _rmask = _rmask & (_surgery_df_all["都道府県名"] == pref)
+                if "報告年度" in _surgery_df_all.columns:
+                    _rmask = _rmask & (_surgery_df_all["報告年度"] == year)
+                _region_surg = _surgery_df_all[_rmask]
+                _region_total_surg = (
+                    pd.to_numeric(_region_surg["手術総数"], errors="coerce").clip(lower=0).sum()
+                    if "手術総数" in _region_surg.columns else 0
+                )
+                if _region_total_surg > 0:
+                    _surg_region_share = round(_surg_total / _region_total_surg * 100, 1)
+            _rep_surgery = {
+                "total_disp": _surg_total_disp,
+                "region_share_pct": _surg_region_share,
+                "breakdown": _surg_breakdown,
+            }
+
+    # DPC（院内シェア・二次医療圏シェアはこのPDF専用の新規計算）
+    _rep_dpc = None
+    _dpc_unavail_note = None
+    if _is_dpc and _dpc_ban is not None:
+        _dpc_cases_all_rep = _load_dpc_mdc_cases()
+        if _dpc_cases_all_rep is not None:
+            _hosp_dpc_cases = _dpc_cases_all_rep[_dpc_cases_all_rep["告示番号"] == _dpc_ban]
+            if "年度" in _hosp_dpc_cases.columns:
+                _hosp_dpc_cases = _hosp_dpc_cases[_hosp_dpc_cases["年度"] == year]
+            if not _hosp_dpc_cases.empty:
+                _mdc_keys = [k for k in MDC_LABELS if k in _hosp_dpc_cases.columns]
+                _mdc_sum = _hosp_dpc_cases[_mdc_keys].sum()
+                _total_cases = int(_mdc_sum.sum())
+                if _total_cases > 0:
+                    _top3 = _mdc_sum[_mdc_sum > 0].sort_values(ascending=False).head(3)
+                    _top_mdc_rows = [
+                        [MDC_LABELS.get(_k, _k), f"{int(_v):,}件", f"{round(_v / _total_cases * 100, 1)}%"]
+                        for _k, _v in _top3.items()
+                    ]
+                    _region_dpc_total = None
+                    if _dpc_match_all is not None and "医療機関名" in region_df.columns:
+                        _region_names = set(region_df["医療機関名"])
+                        _region_dpc_names = set(
+                            _dpc_match_all[
+                                _dpc_match_all["病床報告施設名"].isin(_region_names)
+                                & (~_dpc_match_all["マッチ状態"].astype(str).str.contains("未結合"))
+                            ]["DPC施設名"]
+                        )
+                        if _region_dpc_names:
+                            _region_dpc_cases = _dpc_cases_all_rep[_dpc_cases_all_rep["施設名"].isin(_region_dpc_names)]
+                            if "年度" in _region_dpc_cases.columns:
+                                _region_dpc_cases = _region_dpc_cases[_region_dpc_cases["年度"] == year]
+                            if not _region_dpc_cases.empty:
+                                _region_dpc_total = float(_region_dpc_cases[_mdc_keys].sum().sum())
+                    _rep_dpc = {
+                        "total_cases": _total_cases,
+                        "region_share_pct": (
+                            round(_total_cases / _region_dpc_total * 100, 1)
+                            if _region_dpc_total and _region_dpc_total > 0 else None
+                        ),
+                        "top_mdc": _top_mdc_rows,
+                    }
+    if _rep_dpc is None:
+        if _dpc_avail_years and not _is_dpc:
+            _dpc_unavail_note = (
+                f"この病院のDPCデータは{'・'.join(_reiwa_nendo(_y) for _y in _dpc_avail_years)}にあります"
+                "（選択年度と異なるため、この資料には含まれていません）。"
+            )
+        elif _dpc_matched_name is None:
+            _dpc_unavail_note = "この病院はDPC対象病院として確認できませんでした。"
+
+    # 施設基準届出（タブ内の計算をこの時点で独立に再現。ward_dfからの
+    # 区分バックフィルは簡略化のためPDFでは行わない）
+    _rep_shisetsu = None
+    _rep_emergency_designations: list[str] = []
+    _sk_df_rep = _load_shisetsu_kijun()
+    if _sk_df_rep is not None and isinstance(hosp_row, pd.Series):
+        _sk_name_norm = _normalize_hospital_for_match(hospital)
+        _sk_pref_code = next((c for c, n in PREF_CODE_MAP.items() if n == pref), None)
+        _sk_matched = pd.DataFrame()
+        if _sk_pref_code:
+            _sk_matched = _sk_df_rep[
+                (_sk_df_rep["医療機関名_正規化"] == _sk_name_norm)
+                & (_sk_df_rep["都道府県コード"] == _sk_pref_code)
+            ]
+            if _sk_matched.empty and _sk_name_norm:
+                _sk_matched = _sk_df_rep[
+                    (_sk_df_rep["医療機関名_正規化"].str.endswith(_sk_name_norm))
+                    & (_sk_df_rep["都道府県コード"] == _sk_pref_code)
+                ]
+        if not _sk_matched.empty:
+            _sk_detail_cols = [c for c in ["区分"] if c in _sk_matched.columns]
+            _sk_items_df_rep = (
+                _sk_matched[["受理届出名称"] + _sk_detail_cols].drop_duplicates().reset_index(drop=True)
+            )
+            _sk_ym = _sk_matched["年月"].iloc[0] if "年月" in _sk_matched.columns else ""
+            _MAX_SK_ITEMS = 25
+            _sk_records = _sk_items_df_rep.to_dict("records")
+            # 「二次救急告示」のような行政上の指定区分はこのアプリのデータには無い
+            # （施設基準届出は診療報酬上の届出であり、消防法・医療法上の救急告示とは
+            # 別制度）。独自の区分判定はせず、実際に届出されている救急関連の項目名を
+            # そのまま抜き出して見出し直下に事実として示す。
+            _rep_emergency_designations = sorted({
+                r.get("受理届出名称", "") for r in _sk_records
+                if ("救急" in str(r.get("受理届出名称", "")) or "救命" in str(r.get("受理届出名称", "")))
+            })
+            _rep_shisetsu = {
+                "items": [
+                    {"受理届出名称": r.get("受理届出名称", ""), "区分": r.get("区分", "")}
+                    for r in _sk_records[:_MAX_SK_ITEMS]
+                ],
+                "truncated_count": max(0, len(_sk_records) - _MAX_SK_ITEMS),
+                "source": f"診療報酬 施設基準届出情報（{_sk_ym}現在）" if _sk_ym else "診療報酬 施設基準届出情報",
+            }
+
+    # 外来機能報告
+    _rep_gairai = None
+    if _is_gairai and _gairai_annual_row is not None:
+        _gr_rate = _gairai_annual_row.get("紹介率（年間）")
+        _gr2_rate = _gairai_annual_row.get("逆紹介率（年間）")
+        _rep_gairai = {
+            "shoshin": f"{_gairai_num(_gairai_annual_row.get('初診患者数（年間）'))}人",
+            "shokai": f"{_gairai_num(_gairai_annual_row.get('紹介患者数（年間）'))}人",
+            "gyakushokai": f"{_gairai_num(_gairai_annual_row.get('逆紹介患者数（年間）'))}人",
+            "shokai_rate": f"{_gr_rate}%" if _gr_rate not in (None, "*", "-") else _gairai_num(_gr_rate),
+            "gyakushokai_rate": f"{_gr2_rate}%" if _gr2_rate not in (None, "*", "-") else _gairai_num(_gr2_rate),
+            "source": f"{_reiwa_nendo(year)} 外来機能報告",
+        }
+
+    return {
+        "hospital": hospital, "pref": pref, "region": region, "year": year,
+        "nendo_label": _reiwa_nendo(year),
+        "address": _h_address,
+        "emergency_designations": _rep_emergency_designations,
+        "region_share_pct": region_share_val if len(region_rank_row) > 0 else None,
+        "region_rank": region_rank if isinstance(region_rank, int) else None,
+        "region_n": len(region_df),
+        "beds": {
+            "total_kyoka": total_kyoka, "total_kado": total_kado,
+            "occ_pct": occ * 100 if occ else None,
+            "detail_rows": _rep_bed_rows,
+        },
+        "staff": _rep_staff,
+        "emergency": _rep_emergency,
+        "surgery": _rep_surgery,
+        "dpc": _rep_dpc,
+        "dpc_source": _dpc_source(year),
+        "dpc_unavailable_note": _dpc_unavail_note,
+        "shisetsu": _rep_shisetsu,
+        "gairai": _rep_gairai,
+    }
+
+
+_rep_col1, _rep_col2 = st.columns([5, 1])
+with _rep_col2:
+    try:
+        _rep_pdf_bytes = report_pdf.build_hospital_report_pdf(_build_hospital_report_data())
+        st.download_button(
+            "📄 PDF資料を出力", data=_rep_pdf_bytes,
+            file_name=f"{hospital}_{year}年度_医療機関情報資料.pdf",
+            mime="application/pdf", use_container_width=True,
+        )
+    except Exception as _rep_err:
+        st.caption(f"PDF資料の生成に失敗しました（{_rep_err}）")
 
 
 # ── タブ ──────────────────────────────────────────────────
