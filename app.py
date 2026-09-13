@@ -5061,6 +5061,7 @@ if st.session_state.get("_view_mode") == "community":
 
     _cb_email = st.session_state.get("username", "")
     _cb_nickname = community.get_nickname(_cb_email)
+    _cb_is_admin = "admin" in (st.session_state.get("roles") or [])
 
     with st.expander(f"🙂 ニックネーム設定（現在: {_cb_nickname}）"):
         with st.form("_cb_nickname_form", clear_on_submit=False):
@@ -5103,25 +5104,39 @@ if st.session_state.get("_view_mode") == "community":
             return
         for _post in _filtered:
             with st.container(border=True):
-                st.markdown(
-                    f"**{_post.get('nickname', '匿名')}** "
-                    f"<span style='color:#9ca3af;font-size:0.8rem;'>"
-                    f"{community.format_timestamp(_post.get('created_at', ''))}</span>",
-                    unsafe_allow_html=True,
-                )
+                _cb_pc1, _cb_pc2 = st.columns([9, 1])
+                with _cb_pc1:
+                    st.markdown(
+                        f"**{_post.get('nickname', '匿名')}** "
+                        f"<span style='color:#9ca3af;font-size:0.8rem;'>"
+                        f"{community.format_timestamp(_post.get('created_at', ''))}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with _cb_pc2:
+                    if _cb_is_admin:
+                        if st.button("🗑️", key=f"_cb_del_post_{_post['id']}", help="この投稿を削除（管理者）"):
+                            community.delete_post(_post["id"])
+                            st.rerun()
                 st.write(_post.get("body", ""))
 
                 for _reply in _post.get("replies", []):
-                    st.markdown(
-                        f"<div style='margin-left:20px;padding:8px 12px;background:#F7F6F2;"
-                        f"border-radius:8px;margin-top:6px;'>"
-                        f"<b>{_reply.get('nickname', '匿名')}</b> "
-                        f"<span style='color:#9ca3af;font-size:0.78rem;'>"
-                        f"{community.format_timestamp(_reply.get('created_at', ''))}</span>"
-                        f"<div style='margin-top:4px;'>{_reply.get('body', '')}</div>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
+                    _cb_rc1, _cb_rc2 = st.columns([9, 1])
+                    with _cb_rc1:
+                        st.markdown(
+                            f"<div style='margin-left:20px;padding:8px 12px;background:#F7F6F2;"
+                            f"border-radius:8px;margin-top:6px;'>"
+                            f"<b>{_reply.get('nickname', '匿名')}</b> "
+                            f"<span style='color:#9ca3af;font-size:0.78rem;'>"
+                            f"{community.format_timestamp(_reply.get('created_at', ''))}</span>"
+                            f"<div style='margin-top:4px;'>{_reply.get('body', '')}</div>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with _cb_rc2:
+                        if _cb_is_admin:
+                            if st.button("🗑️", key=f"_cb_del_reply_{_reply['id']}", help="この返信を削除（管理者）"):
+                                community.delete_reply(_post["id"], _reply["id"])
+                                st.rerun()
 
                 with st.expander("返信する"):
                     with st.form(f"_cb_reply_form_{_post['id']}", clear_on_submit=True):

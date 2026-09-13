@@ -106,6 +106,33 @@ def add_reply(post_id: str, email: str, nickname: str, body: str) -> bool:
         return False
 
 
+def delete_post(post_id: str) -> bool:
+    """投稿（とその返信すべて）を削除する。管理者のみが呼ぶ想定（呼び出し側で権限チェックする）。"""
+    with _lock():
+        posts = _read_json(POSTS_PATH, [])
+        remaining = [p for p in posts if p.get("id") != post_id]
+        if len(remaining) == len(posts):
+            return False
+        _write_json(POSTS_PATH, remaining)
+        return True
+
+
+def delete_reply(post_id: str, reply_id: str) -> bool:
+    """特定の返信だけを削除する。管理者のみが呼ぶ想定（呼び出し側で権限チェックする）。"""
+    with _lock():
+        posts = _read_json(POSTS_PATH, [])
+        for post in posts:
+            if post.get("id") == post_id:
+                _before = post.get("replies", [])
+                _after = [r for r in _before if r.get("id") != reply_id]
+                if len(_after) == len(_before):
+                    return False
+                post["replies"] = _after
+                _write_json(POSTS_PATH, posts)
+                return True
+        return False
+
+
 def format_timestamp(iso_str: str) -> str:
     try:
         dt = datetime.fromisoformat(iso_str)
