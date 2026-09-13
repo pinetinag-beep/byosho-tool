@@ -319,6 +319,15 @@ def _render_landing_content() -> None:
         変化を追えます。
       </div>
     </div>
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+                border-radius:14px;padding:20px;display:flex;flex-direction:column;">
+      <div style="font-size:1.4rem;">💬</div>
+      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">コミュニティで質問・要望を投稿</div>
+      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+        データの見方や探し方を会員同士で質問し合えます。運営への要望や
+        不具合報告もここから投稿できます。
+      </div>
+    </div>
   </div>
 </div>""",
         unsafe_allow_html=True,
