@@ -282,19 +282,18 @@ def _render_landing_content() -> None:
     st.markdown(
         """
 <div style="max-width:820px;margin:0 auto;">
-  <div style="display:flex;flex-wrap:wrap;gap:16px;margin:0 0 32px;">
+  <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:16px;margin:0 0 32px;">
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
+                border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">🔍</div>
       <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">病院データを横断検索してCSVで出力</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
-        エリア・設備・手術件数・救急搬送件数などの条件で全国の病院を一括検索。
-        稼働率など生データからの計算が面倒な指標もあらかじめ算出済みで、
-        そのままCSVに出力できます。
+        エリア・設備・手術件数などの条件で全国の病院を一括検索。
+        面倒な稼働率計算も済んだ状態でCSVに出力できます。
       </div>
     </div>
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
+                border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">🤝</div>
       <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">候補者（医師・看護師）への提案材料に</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
@@ -303,7 +302,7 @@ def _render_landing_content() -> None:
       </div>
     </div>
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
+                border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">🏆</div>
       <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">病院の立ち位置が分かる</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
@@ -312,7 +311,7 @@ def _render_landing_content() -> None:
       </div>
     </div>
     <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
-                border-radius:14px;padding:20px;">
+                border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">📈</div>
       <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">経年トレンドで推移を把握</div>
       <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
