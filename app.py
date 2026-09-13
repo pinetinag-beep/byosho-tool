@@ -4620,7 +4620,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             dragmode=False,
             xaxis_title="病床数（床）",
         )
-        st.plotly_chart(fig_rv_stack, use_container_width=True)
+        st.plotly_chart(fig_rv_stack, use_container_width=True, config={"responsive": True})
 
     # ════════════════════════════════════
     # Section 2 : 急性期拠点スコアリング
@@ -4729,7 +4729,7 @@ if st.session_state.get("_view_mode") == "region_vision":
         plot_bgcolor="rgba(0,0,0,0)",
         legend=dict(orientation="v", x=1.01, font=dict(size=11)),
     )
-    st.plotly_chart(fig_rv_scatter, use_container_width=True)
+    st.plotly_chart(fig_rv_scatter, use_container_width=True, config={"responsive": True})
     if _rv_surg_total == 0:
         st.caption("⚠️ 手術データが未登録のため Y軸（手術件数）はすべて 0 になっています")
 
@@ -4961,7 +4961,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             legend=dict(orientation="v", x=1.01, font=dict(size=10)),
             dragmode=False,
         )
-        st.plotly_chart(fig_rv_proj, use_container_width=True)
+        st.plotly_chart(fig_rv_proj, use_container_width=True, config={"responsive": True})
 
     # 注意書き
     st.markdown("""
@@ -5612,11 +5612,11 @@ with tab1:
 
         c1, c2 = st.columns([1, 1])
         with c1:
-            st.plotly_chart(bed_donut(hosp_row, hospital), use_container_width=True)
+            st.plotly_chart(bed_donut(hosp_row, hospital), use_container_width=True, config={"responsive": True})
         with c2:
-            st.plotly_chart(occupancy_gauge(occ, "総稼働率"), use_container_width=True)
+            st.plotly_chart(occupancy_gauge(occ, "総稼働率"), use_container_width=True, config={"responsive": True})
 
-        st.plotly_chart(bed_type_occupancy_bar(hosp_row, hospital), use_container_width=True)
+        st.plotly_chart(bed_type_occupancy_bar(hosp_row, hospital), use_container_width=True, config={"responsive": True})
 
         st.markdown('<div class="section-header">病床種別詳細</div>', unsafe_allow_html=True)
         st.markdown(_source_tag("病床機能報告"), unsafe_allow_html=True)
@@ -6053,11 +6053,11 @@ with tab2:
 
     c1, c2 = st.columns([3, 2])
     with c1:
-        st.plotly_chart(regional_bed_comparison(region_df, hospital), use_container_width=True)
+        st.plotly_chart(regional_bed_comparison(region_df, hospital), use_container_width=True, config={"responsive": True})
     with c2:
-        st.plotly_chart(share_bar(region_df, hospital), use_container_width=True)
+        st.plotly_chart(share_bar(region_df, hospital), use_container_width=True, config={"responsive": True})
 
-    st.plotly_chart(occupancy_scatter(region_df, hospital), use_container_width=True)
+    st.plotly_chart(occupancy_scatter(region_df, hospital), use_container_width=True, config={"responsive": True})
 
     st.markdown('<div class="section-header">地域全体の集計</div>', unsafe_allow_html=True)
     agg = {
@@ -6149,8 +6149,7 @@ with tab3:
     else:
         st.plotly_chart(
             ranking_table_fig(_rank_df, hospital, rank_col=_opt["col"], show_cols=_opt["show"], col_labels=_opt["labels"]),
-            use_container_width=True,
-        )
+            use_container_width=True, config={"responsive": True},)
 
 
 # ── TAB 4: 経年トレンド ────────────────────────────────────
@@ -6163,9 +6162,9 @@ with tab4:
     else:
         c1, c2 = st.columns(2)
         with c1:
-            st.plotly_chart(trend_beds(trend_df, hospital), use_container_width=True)
+            st.plotly_chart(trend_beds(trend_df, hospital), use_container_width=True, config={"responsive": True})
         with c2:
-            st.plotly_chart(trend_occupancy(trend_df, hospital), use_container_width=True)
+            st.plotly_chart(trend_occupancy(trend_df, hospital), use_container_width=True, config={"responsive": True})
 
         _los_trend_df = hospital_los_trend(st.session_state.ward_df, hospital, hospital_code=hosp_code)
         _has_los_trend = len(_los_trend_df.dropna(subset=["平均在院日数"])) >= 2
@@ -6175,14 +6174,14 @@ with tab4:
             c3, c4 = st.columns(2)
             if _has_los_trend:
                 with c3:
-                    st.plotly_chart(trend_los(_los_trend_df, hospital), use_container_width=True)
+                    st.plotly_chart(trend_los(_los_trend_df, hospital), use_container_width=True, config={"responsive": True})
                     st.markdown(_source_tag("病床機能報告（在棟延べ数・新規入棟患者数・退棟患者数）"), unsafe_allow_html=True)
             if _has_dpc_trend:
                 with c4:
-                    st.plotly_chart(trend_dpc_cases(_dpc_case_trend_df, hospital), use_container_width=True)
+                    st.plotly_chart(trend_dpc_cases(_dpc_case_trend_df, hospital), use_container_width=True, config={"responsive": True})
                     st.markdown(_source_tag("DPC導入の影響評価に係る調査"), unsafe_allow_html=True)
 
-        st.plotly_chart(trend_staff(trend_df, hospital), use_container_width=True)
+        st.plotly_chart(trend_staff(trend_df, hospital), use_container_width=True, config={"responsive": True})
 
         st.markdown('<div class="section-header">年度別データ一覧</div>', unsafe_allow_html=True)
         _disp_df = trend_df
@@ -6337,19 +6336,17 @@ with tab5:
 
         # ── 地域内スタッフ比較 ──────────────────────────────────────
         st.markdown('<div class="section-header">地域内スタッフ比較</div>', unsafe_allow_html=True)
-        st.plotly_chart(staff_scatter(region_df_staff, hospital), use_container_width=True)
+        st.plotly_chart(staff_scatter(region_df_staff, hospital), use_container_width=True, config={"responsive": True})
 
         c1, c2 = st.columns(2)
         with c1:
             st.plotly_chart(
                 staff_bar_region(region_df_staff, hospital, "医師数_per100床", "医師数"),
-                use_container_width=True,
-            )
+                use_container_width=True, config={"responsive": True},)
         with c2:
             st.plotly_chart(
                 staff_bar_region(region_df_staff, hospital, "看護師数_per100床", "看護師数"),
-                use_container_width=True,
-            )
+                use_container_width=True, config={"responsive": True},)
 
         st.markdown('<div class="section-header">選択病院 vs 地域平均</div>', unsafe_allow_html=True)
         if len(region_df_staff) > 0:
@@ -6434,7 +6431,7 @@ with tab6:
 
             c1, c2 = st.columns(2)
             with c1:
-                st.plotly_chart(admission_route_pie(hosp_ward, hospital), use_container_width=True)
+                st.plotly_chart(admission_route_pie(hosp_ward, hospital), use_container_width=True, config={"responsive": True})
                 # ── 入院経路 件数表 ──
                 _adm_total  = _si0(hosp_ward, "新規入棟患者数")
                 _adm_kyukyu = _si0(hosp_ward, "救急入院患者数")
@@ -6452,7 +6449,7 @@ with tab6:
                 )
 
             with c2:
-                st.plotly_chart(discharge_route_pie(hosp_ward, hospital), use_container_width=True)
+                st.plotly_chart(discharge_route_pie(hosp_ward, hospital), use_container_width=True, config={"responsive": True})
                 # ── 退院経路 件数表 ──
                 _dis_total    = _si0(hosp_ward, "退棟患者数")
                 _dis_katei    = _si0(hosp_ward, "家庭退院数")
@@ -6511,8 +6508,7 @@ with tab6:
             if not region_ward.empty:
                 st.plotly_chart(
                     home_return_rate_bar(region_ward, hospital, region),
-                    use_container_width=True,
-                )
+                    use_container_width=True, config={"responsive": True},)
             else:
                 st.info("地域内比較データがありません。")
 
@@ -6599,7 +6595,7 @@ with tab6:
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     dragmode=False,
                 )
-                st.plotly_chart(fig_surg, use_container_width=True)
+                st.plotly_chart(fig_surg, use_container_width=True, config={"responsive": True})
 
             st.markdown('<div class="section-header">二次医療圏内 手術数シェア</div>', unsafe_allow_html=True)
             # 年度フィルター（複数年度データが混在するとバーが重複するため）
@@ -6640,7 +6636,7 @@ with tab6:
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     dragmode=False,
                 )
-                st.plotly_chart(fig_share, use_container_width=True)
+                st.plotly_chart(fig_share, use_container_width=True, config={"responsive": True})
 
                 tbl = region_surg[["医療機関名", "手術総数", "全身麻酔手術数", "シェア(%)", "全身麻酔率(%)"]].sort_values("手術総数", ascending=False).reset_index(drop=True)
                 tbl.index += 1
@@ -7233,7 +7229,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
                     dragmode=False,
                 )
-                st.plotly_chart(_fig_mdc, use_container_width=True)
+                st.plotly_chart(_fig_mdc, use_container_width=True, config={"responsive": True})
 
         # ── 再入院・再転棟率 ──
         # 2026年7月に発覚: detect_file_type()の「再入院」文字列部分一致による
@@ -7284,7 +7280,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                     font=dict(family="Noto Sans JP, sans-serif", size=12),
                     dragmode=False,
                 )
-                st.plotly_chart(_fig_r, use_container_width=True)
+                st.plotly_chart(_fig_r, use_container_width=True, config={"responsive": True})
 
         # ── 主要疾患・手術 TOP20 ──
         if not _dp_surg.empty:
