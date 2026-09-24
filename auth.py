@@ -26,6 +26,7 @@ import streamlit.components.v1 as components
 import streamlit_authenticator as stauth
 import yaml
 
+import demo
 import mailer
 import payments
 
@@ -298,6 +299,16 @@ def _render_landing_content() -> None:
         unsafe_allow_html=True,
     )
 
+    _demo_l, _demo_c, _demo_r = st.columns([1, 2, 1])
+    with _demo_c:
+        if st.button(
+            "▶ ログイン不要で、実際の画面を試してみる",
+            key="_lp_demo_btn", type="primary", use_container_width=True,
+        ):
+            st.query_params["demo"] = "1"
+            st.rerun()
+    st.markdown("<div style='margin:0 0 28px;'></div>", unsafe_allow_html=True)
+
     st.markdown(
         "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
         "margin:0 0 8px;'>📋 実際の病院詳細画面</p>",
@@ -500,6 +511,42 @@ def _try_cookie_login(authenticator: stauth.Authenticate) -> None:
         time.sleep(0.7)
 
 
+def _render_signup_panel(authenticator: stauth.Authenticate, form_key: str) -> None:
+    """新規申込みフォーム（メールアドレス入力→Stripe決済ページへ）。LPとデモ画面の両方で使う。"""
+    if not _REGISTRATION_OPEN:
+        st.info(
+            "🚧 新規のお申し込みは近日公開予定です。準備が整い次第、こちらから"
+            "お申し込みいただけるようになります。しばらくお待ちください。"
+        )
+        return
+    st.markdown(
+        "<p style='font-size:0.85rem;color:#6E6A5E;'>"
+        "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
+        "</p>",
+        unsafe_allow_html=True,
+    )
+    with st.form(form_key, clear_on_submit=False):
+        _signup_email = st.text_input("メールアドレス", autocomplete="off")
+        _signup_submitted = st.form_submit_button("お申し込みへ進む")
+    if not _signup_submitted:
+        return
+    if not _signup_email or "@" not in _signup_email:
+        st.error("正しいメールアドレスを入力してください")
+    elif _email_registered(authenticator, _signup_email):
+        st.error(
+            "このメールアドレスは既にご登録済みです。"
+            "トップページの「ログイン」タブからログインしてください。"
+            "パスワードが分からない場合は「パスワードを忘れた方はこちら」から再発行できます。"
+        )
+    else:
+        try:
+            _checkout_url = payments.create_checkout_session(_signup_email)
+        except Exception as e:
+            st.error(f"決済ページの作成に失敗しました（{e}）")
+        else:
+            _redirect_to_signup_checkout(_checkout_url)
+
+
 def _render_login_form(authenticator: stauth.Authenticate, key: str) -> None:
     """ログインフォームを描画する。
 
@@ -630,6 +677,13 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     if _handle_signup_redirect_target():
         st.stop()
 
+    if st.query_params.get("demo") == "1":
+        demo.render_demo(
+            lambda key: _render_signup_panel(authenticator, key),
+            on_view=lambda: _fire_ga_event("demo_view", {"hospital_code": demo.DEMO_HOSPITAL_CODE}),
+        )
+        st.stop()
+
     # ブロックコンテナ先頭の圧縮はapp.pyのグローバルCSS
     # （[data-testid="stMainBlockContainer"] > ... > div:first-child）が
     # ログイン前後どちらの画面にも適用されるため、ここで個別に負のmarginを
@@ -678,37 +732,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
                 _render_forgot_password_form(authenticator, "_forgot_pw_form")
 
         with _tab_register:
-            if not _REGISTRATION_OPEN:
-                st.info(
-                    "🚧 新規のお申し込みは近日公開予定です。準備が整い次第、こちらから"
-                    "お申し込みいただけるようになります。しばらくお待ちください。"
-                )
-            else:
-                st.markdown(
-                    "<p style='font-size:0.85rem;color:#6E6A5E;'>"
-                    "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
-                    "</p>",
-                    unsafe_allow_html=True,
-                )
-                with st.form("_signup_form", clear_on_submit=False):
-                    _signup_email = st.text_input("メールアドレス", autocomplete="off")
-                    _signup_submitted = st.form_submit_button("お申し込みへ進む")
-                if _signup_submitted:
-                    if not _signup_email or "@" not in _signup_email:
-                        st.error("正しいメールアドレスを入力してください")
-                    elif _email_registered(authenticator, _signup_email):
-                        st.error(
-                            "このメールアドレスは既にご登録済みです。"
-                            "「ログイン」タブからログインしてください。"
-                            "パスワードが分からない場合は「パスワードを忘れた方はこちら」から再発行できます。"
-                        )
-                    else:
-                        try:
-                            _checkout_url = payments.create_checkout_session(_signup_email)
-                        except Exception as e:
-                            st.error(f"決済ページの作成に失敗しました（{e}）")
-                        else:
-                            _redirect_to_signup_checkout(_checkout_url)
+            _render_signup_panel(authenticator, "_signup_form")
 
         st.markdown("<div style='margin:40px 0 8px;'></div>", unsafe_allow_html=True)
         _render_tokushoho()
