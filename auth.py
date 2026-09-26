@@ -473,9 +473,9 @@ def _render_tokushoho() -> None:
 
 **サービス提供時期**：決済完了後、即時にご利用いただけます
 
-**解約について**：現在、解約手続きはご自身では行えません。解約をご希望の場合は
-info@medilenz.jp までご連絡ください。デジタルサービスの性質上、お支払い済みの
-期間分の返金には原則対応しておりません。
+**解約について**：ログイン後、画面右上の「⚙️ アカウント」→「お支払い管理画面を開く」から
+いつでもご自身で解約できます。解約後も、お支払い済みの期間の末日まではご利用いただけます。
+デジタルサービスの性質上、お支払い済みの期間分の返金には原則対応しておりません。
 
 ---
 
@@ -648,6 +648,98 @@ def _render_forgot_password_form(authenticator: stauth.Authenticate, key: str) -
     )
 
 
+def member_emails(authenticator: stauth.Authenticate) -> list[str]:
+    """ログイン中の会員のメールアドレス候補（Stripe顧客の検索用）。
+
+    会員ID（username）はstreamlit-authenticatorが小文字化して保存するが、
+    Stripe側は決済時に入力されたままの大文字小文字で保存され、しかもStripeの
+    email絞り込みは大文字小文字を区別する。そのため登録時のemail欄も候補に含める。
+    """
+    username = st.session_state.get("username", "") or ""
+    creds = (
+        authenticator.authentication_controller.authentication_model
+        .credentials.get("usernames") or {}
+    )
+    stored = (creds.get(username) or {}).get("email", "") or ""
+    return [username, stored]
+
+
+def _check_subscription(authenticator: stauth.Authenticate) -> None:
+    """解約済み（Stripe上で利用可能なサブスクリプションが無い）会員を止める。
+
+    利用者が自分で解約できるStripe Customer Portalを導入した（2026年9月）ことで、
+    「解約したのにログインすれば使い続けられる」状態になるのを防ぐ。
+    Portalでの解約は期間末までStripe上"active"のままなので、支払い済み期間中は
+    そのまま使える。Stripe顧客が存在しない手動発行アカウント（運営者等）と
+    adminロールは対象外。
+
+    Stripe APIの障害で課金中の会員を締め出さないよう、確認に失敗した場合は
+    通す（fail open）。確認はブラウザセッションごとに1回だけ行う。
+    """
+    if not payments.STRIPE_SECRET_KEY or st.session_state.get("_sub_ok"):
+        return
+    if "admin" in (st.session_state.get("roles") or []):
+        st.session_state["_sub_ok"] = True
+        return
+    try:
+        state = payments.subscription_state(member_emails(authenticator))
+    except Exception:
+        traceback.print_exc()
+        state = "error"
+    if state != "ended":
+        st.session_state["_sub_ok"] = True
+        return
+
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        st.markdown(
+            "<h3 style='text-align:center;margin:60px 0 16px;'>ご契約が終了しています</h3>",
+            unsafe_allow_html=True,
+        )
+        st.info(
+            "MedilenZのご契約（月額プラン）は解約済みです。"
+            "引き続きご利用になる場合は、以下から再度お申し込みください。"
+            "これまでのログインID・パスワードはそのままお使いいただけます。"
+        )
+        # 決済完了後は ?payment=success で戻ってくるが、Cookieでログイン済みのまま
+        # なので require_login の認証済み分岐に入り、新しいブラウザセッションとして
+        # ここで再判定される（新しいサブスクリプションが見つかり通れる）。
+        _username, _stored_email = member_emails(authenticator)
+        try:
+            _url = payments.create_checkout_session(_stored_email or _username)
+        except Exception as e:
+            traceback.print_exc()
+            st.error(f"決済ページの作成に失敗しました（{e}）")
+        else:
+            st.link_button("💳 契約を再開する（月額500円）", _url,
+                           type="primary", use_container_width=True)
+        st.caption("ご不明な点は info@medilenz.jp までご連絡ください。")
+        with config_lock(authenticator):
+            authenticator.logout("ログアウト", "main", key="_resub_logout_btn")
+    st.stop()
+
+
+def render_billing_section(authenticator: stauth.Authenticate) -> None:
+    """ヘッダーの「⚙️ アカウント」内に表示する、お支払い・解約の導線。"""
+    st.markdown("**お支払い・解約**")
+    st.caption(
+        "カードの変更・領収書の確認・解約は、Stripe（決済代行会社）の管理画面で行えます。"
+        "解約後も、お支払い済みの期間の末日まではご利用いただけます。"
+    )
+    if not st.button("お支払い管理画面を開く", key="_hdr_portal_btn", use_container_width=True):
+        return
+    try:
+        _url = payments.create_portal_url(member_emails(authenticator))
+    except Exception:
+        traceback.print_exc()
+        st.error("管理画面を開けませんでした。お手数ですが info@medilenz.jp までご連絡ください。")
+        return
+    if _url:
+        st.link_button("🔗 Stripeの管理画面へ進む", _url, type="primary", use_container_width=True)
+    else:
+        st.info("このアカウントには決済情報がありません（運営が発行したアカウントです）。")
+
+
 def require_login(authenticator: stauth.Authenticate) -> None:
     """ログイン必須ゲート。未ログインならログイン/申込み画面を表示してst.stop()する。
 
@@ -667,6 +759,7 @@ def require_login(authenticator: stauth.Authenticate) -> None:
                 "info@medilenz.jp までご連絡ください。"
             )
             st.stop()
+        _check_subscription(authenticator)
         if not st.session_state.get("_login_logged"):
             _log_login(st.session_state.get("username", ""))
             st.session_state["_login_logged"] = True

@@ -22,7 +22,8 @@ from data_processor import (
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
-from auth import require_login, get_authenticator, config_lock
+from auth import require_login, get_authenticator, config_lock, render_billing_section
+import backup
 import report_pdf
 import community
 
@@ -704,6 +705,9 @@ div.js-plotly-plot svg.main-svg {
 # Streamlitの重複keyエラーになる）。_render_header()のログアウトボタンも
 # この同じインスタンスを使い回す。
 _authenticator = get_authenticator()
+# 会員データの日次バックアップ（その日の最初のアクセス時にバックグラウンドで1回だけ。
+# ログイン前に呼ぶのは、LPへのアクセスだけの日でも確実に実行するため）
+backup.run_daily_if_needed()
 require_login(_authenticator)
 
 
@@ -714,7 +718,7 @@ def _render_header():
     _pref     = st.session_state.get("_sel_pref", "")
     _region   = st.session_state.get("_sel_region", "")
 
-    _uc1, _uc2, _uc3, _uc4 = st.columns([6.2, 1.4, 1.4, 1.4])
+    _uc1, _uc2, _uc3, _uc4 = st.columns([5.2, 1.8, 1.8, 1.4])
     with _uc1:
         _user_email = st.session_state.get("username", "")
         if _user_email:
@@ -729,7 +733,7 @@ def _render_header():
             st.session_state["_scroll_to_top"] = True
             st.rerun()
     with _uc3:
-        with st.popover("🔑 変更"):
+        with st.popover("⚙️ アカウント", use_container_width=True):
             try:
                 with config_lock(_authenticator):
                     _pw_changed = _authenticator.reset_password(
@@ -748,6 +752,8 @@ def _render_header():
                     st.success("パスワードを変更しました。")
             except Exception as e:
                 st.error(str(e))
+            st.divider()
+            render_billing_section(_authenticator)
     with _uc4:
         with config_lock(_authenticator):
             _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")

@@ -361,12 +361,62 @@ sudo systemctl restart byosho-tool
 
 ---
 
+## 会員データのバックアップと復元（backup.py、2026年9月〜）
+
+会員アカウント（`data/auth_config.yaml`）・ログイン履歴・コミュニティ投稿はgitに入らず
+VPS上にしか無いため、アプリが1日1回（その日の最初のアクセス時）自動で退避する。
+cron等の設定は不要。
+
+- **VPS内**: `~/byosho-tool/data/backups/medilenz_userdata_YYYYMMDD.tar.gz`（30日分保持）
+- **VPS外**: `info@medilenz.jp` 宛に同じ内容をメール添付で送信（件名「【MedilenZ】会員データ自動バックアップ」）。
+  VPSごと失われた場合の復元用なので、このメールは削除しないこと。
+  メール版はCookie署名鍵だけ伏せ字にしてある（メールボックスが漏れても
+  ログインCookieを偽造されないため）。
+
+動作確認・手動実行（SSHで）:
+```bash
+cd ~/byosho-tool
+ls -l data/backups/                 # 当日分のファイルがあるか
+venv/bin/python backup.py           # 手動で今すぐ実行（VPS内のみ。SMTPパスワードは
+                                    # systemdのユニットにしか無いため、手動実行ではメールは送られない）
+```
+
+**復元手順**（例: auth_config.yamlが壊れた時）:
+```bash
+cd ~/byosho-tool
+sudo systemctl stop byosho-tool byosho-admin
+mkdir -p /tmp/restore && tar xzf data/backups/medilenz_userdata_YYYYMMDD.tar.gz -C /tmp/restore
+cp /tmp/restore/data/auth_config.yaml data/auth_config.yaml   # 必要なファイルだけ戻す
+sudo systemctl start byosho-tool byosho-admin
+```
+メール添付から復元した場合は、`auth_config.yaml`の`cookie: key:`が伏せ字なので
+`python3 -c "import secrets;print(secrets.token_hex(32))"`で作った値に置き換えてから起動する
+（全員が一度再ログインになるだけで、アカウント・パスワードはそのまま使える）。
+
+---
+
+## Stripe カスタマーポータル（ユーザー自身での解約・カード変更、2026年9月〜）
+
+ログイン後ヘッダーの「⚙️ アカウント」→「お支払い管理画面を開く」で、Stripeの
+カスタマーポータル（解約・カード変更・領収書）に移動する。**Stripeダッシュボード側で
+ポータルの設定を一度「保存」しておかないとAPIがエラーを返す**ため、初回のみ次を行う:
+
+1. Stripeダッシュボード（本番モード）→ 設定 → Billing → カスタマーポータル
+2. 「サブスクリプションのキャンセル」をオン（キャンセルのタイミングは「請求期間の終了時」）
+3. 「支払い方法の更新」「請求書履歴」をオン
+4. 「変更を保存」
+
+解約した会員は、支払い済み期間の末日を過ぎるとログインしても「ご契約が終了しています」
+画面になり、そこから再契約できる（`auth._check_subscription`）。Stripe顧客が存在しない
+手動発行アカウント・adminロールは対象外。Stripe APIの障害時は締め出さずに通す。
+
+---
+
 ## 未検討・今後の課題
 
 - **メモリ監視**: 2GBプランで実際にどれだけ余裕があるか、本番トラフィックで様子を見る
   （`free -h` や `htop` で確認。窮屈ならConoHaのプラン変更で4GBに増設可能）
-- **バックアップ**: VPSのスナップショット機能を定期的に使うか、`data/`配下の重要ファイルを
-  外部（S3等）にも退避するか検討
+- **バックアップ**: 会員データは`backup.py`で日次退避済み（上記）。parquet等のデータはgitにあるので対象外
 - **監視・アラート**: サービスが落ちた時に気づける仕組み（UptimeRobot等の外形監視が手軽）
 - **Streamlit Cloud（現行）との並行運用期間**: 切り替え時にどちらを正としてDNSを向けるか、
   切り替えのタイミングと切り戻し手順

@@ -58,3 +58,7 @@ DPC_file_R4/
 DPC_file_R5/
 shisetsu_new_20260712/
 外来機能報告/
+
+# 会員データの日次バックアップ（backup.py。パスワードハッシュを含む）
+data/backups/
+data/auth_config.yaml.lock
