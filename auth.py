@@ -26,6 +26,7 @@ import streamlit.components.v1 as components
 import streamlit_authenticator as stauth
 import yaml
 
+import data_sources
 import demo
 import mailer
 import payments
@@ -491,6 +492,8 @@ def _render_tokushoho() -> None:
 | 販売価格 | 月額500円（税込）※お試し価格、2026年12月末まで |
 """
             )
+        with st.expander("データの出典と利用条件"):
+            st.markdown(data_sources.attribution_markdown())
 
 
 def _try_cookie_login(authenticator: stauth.Authenticate) -> None:

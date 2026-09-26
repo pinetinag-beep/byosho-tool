@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import data_sources
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A3, A4
 from reportlab.lib.styles import ParagraphStyle
@@ -75,8 +77,9 @@ def _section_header(text: str, styles: dict) -> Table:
     return t
 
 
-def _source_note(text: str, styles: dict) -> Paragraph:
-    return Paragraph(f"データ出典：{text}", styles["note"])
+def _source_note(text: str, styles: dict, publisher: str = "厚生労働省", detail: str = "") -> Paragraph:
+    """出典（公共データ利用規約PDL1.0に従い「加工して作成」を明記。data_sources参照）。"""
+    return Paragraph(f"出典：{data_sources.credit(text, publisher, detail)}", styles["note"])
 
 
 def _kpi_row(items: list[tuple[str, str]], styles: dict, col_widths=None) -> Table:
@@ -167,7 +170,7 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
 
     # ── 病床数・稼働率 ──
     story.append(_section_header("病床数・病床稼働率", styles))
-    story.append(_source_note("病床機能報告", styles))
+    story.append(_source_note(f"{data.get('nendo_label', '')}病床機能報告", styles))
     beds = data["beds"]
     kpi_items = [
         ("許可病床数", f"{beds['total_kyoka']:,}床"),
@@ -190,7 +193,7 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
     # ── 医療専門職の人数 ──
     if data.get("staff"):
         story.append(_section_header("医療専門職の人数", styles))
-        story.append(_source_note("病床機能報告", styles))
+        story.append(_source_note(f"{data.get('nendo_label', '')}病床機能報告", styles))
         story.append(_data_table(
             ["職種", "常勤", "非常勤"],
             [[lbl, f"{ft:,}人" if ft is not None else "―", f"{pt:,}人" if pt is not None else "―"]
@@ -203,7 +206,7 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
     story.append(_section_header("診療実績", styles))
     er = data.get("emergency")
     if er is not None:
-        story.append(_source_note("病床機能報告", styles))
+        story.append(_source_note(f"{data.get('nendo_label', '')}病床機能報告", styles))
         items = [("救急搬送件数（年間）", f"{er['count']:,}件")]
         if er.get("region_share_pct") is not None:
             items.append(("二次医療圏シェア", f"{er['region_share_pct']:.1f}%"))
@@ -212,7 +215,7 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
 
     surg = data.get("surgery")
     if surg is not None:
-        story.append(_source_note(f"{data.get('nendo_label', '')}病床機能報告 様式2（手術）", styles))
+        story.append(_source_note(f"{data.get('nendo_label', '')}病床機能報告", styles, detail="様式2（手術）"))
         surg_items = [("手術総数（年間）", surg["total_disp"])]
         if surg.get("region_share_pct") is not None:
             surg_items.append(("二次医療圏内シェア", f"{surg['region_share_pct']:.1f}%"))
@@ -229,7 +232,7 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
 
     dpc = data.get("dpc")
     if dpc is not None:
-        story.append(_source_note(data.get("dpc_source", "DPC導入の影響評価に係る調査"), styles))
+        story.append(_source_note(data.get("dpc_source", "DPC導入の影響評価に係る調査「退院患者調査」"), styles))
         dpc_items = [("DPC症例数（年間・全MDC合計）", f"{dpc['total_cases']:,}件")]
         if dpc.get("region_share_pct") is not None:
             dpc_items.append(("二次医療圏内シェア", f"{dpc['region_share_pct']:.1f}%"))
@@ -249,7 +252,8 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
     story.append(_section_header("施設基準届出（診療報酬）", styles))
     sk = data.get("shisetsu")
     if sk:
-        story.append(_source_note(sk.get("source", "診療報酬 施設基準届出情報"), styles))
+        story.append(_source_note("施設基準の届出受理状況", styles, publisher="各地方厚生局",
+                                 detail=sk.get("source_detail", "")))
         rows = [[item["受理届出名称"], item.get("区分", "") or "―"] for item in sk["items"]]
         story.append(_data_table(["受理届出名称", "区分"], rows, styles, col_widths=[None, 70 * mm]))
         if sk.get("truncated_count"):
@@ -273,6 +277,17 @@ def build_hospital_report_pdf(data: dict, page_size: str = "A4") -> bytes:
     story.append(Paragraph(
         f"MedilenZ（https://medilenz.jp）で生成　｜　"
         f"出典データの年度は各項目の表記に準拠し、数値の独自補正は行っていません。",
+        styles["note"],
+    ))
+    # 公共データ利用規約（PDL1.0）: 出典URL・加工した旨・国が作成したものではない旨を明記
+    # （PDFは単体で第三者に渡る資料のため、画面と違いここに一覧を載せる）
+    story.append(Spacer(1, 2 * mm))
+    for s in data_sources.SOURCES:
+        story.append(Paragraph(
+            f"出典：「{s['title']}」（{s['publisher']}）（{s['url']}）", styles["note"]))
+    story.append(Paragraph(
+        "上記の公表データを、公共データ利用規約（第1.0版）に基づきMedilenZが編集・加工して作成。"
+        + data_sources.NOT_GOVT_NOTICE.replace("上記の公表データを", "公表データを"),
         styles["note"],
     ))
 

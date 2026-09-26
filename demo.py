@@ -11,6 +11,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 import charts
+import data_sources
 from data_processor import hospital_trend, region_share
 
 DEMO_HOSPITAL_CODE = "3939020052"  # 近森病院（高知県・中央）。LPのスクリーンショットと同じ病院
@@ -31,6 +32,10 @@ def _load_demo_data(code: str):
     return hosp_all, region_share(region_rows, year, pref, region), year, pref, region
 
 
+def _reiwa(year: int) -> str:
+    return f"令和{year - 2018}年度"
+
+
 def _kpi_card(col, label, value, sub=""):
     col.markdown(
         f'<div class="metric-card"><div class="metric-label">{label}</div>'
@@ -43,7 +48,7 @@ def _kpi_card(col, label, value, sub=""):
 def _source_note(text: str) -> None:
     st.markdown(
         f"<div style='text-align:right;font-size:0.75rem;color:#6E6A5E;margin:4px 0 0;'>"
-        f"データ出典：{text}</div>",
+        f"出典：{text}</div>",
         unsafe_allow_html=True,
     )
 
@@ -107,7 +112,7 @@ def render_demo(render_signup, on_view=None) -> None:
         _kpi_card(m3, "地域内順位", f"{int(rank_row['地域内順位'])}位", f"/ {len(region_df)}院中")
         _kpi_card(m4, "地域シェア", f"{float(rank_row['地域シェア(%)']):.1f}%", "許可病床数ベース")
         _kpi_card(m5, "常勤医師数", f"{doctors:,}人", f"看護師 {nurses:,}人")
-        _source_note(f"{year}年度 病床機能報告（厚生労働省）")
+        _source_note(data_sources.credit(f"{_reiwa(year)}病床機能報告"))
 
         c1, c2 = st.columns(2)
         with c1:
@@ -128,7 +133,7 @@ def render_demo(render_signup, on_view=None) -> None:
             charts.regional_bed_comparison(region_df, name),
             use_container_width=True, config={"responsive": True},
         )
-        _source_note(f"{year}年度 病床機能報告（厚生労働省）")
+        _source_note(data_sources.credit(f"{_reiwa(year)}病床機能報告"))
 
         st.markdown(
             """
@@ -145,3 +150,6 @@ def render_demo(render_signup, on_view=None) -> None:
             unsafe_allow_html=True,
         )
         render_signup("_demo_signup_form")
+
+        with st.expander("データの出典と利用条件"):
+            st.markdown(data_sources.attribution_markdown())

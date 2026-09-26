@@ -24,6 +24,7 @@ from data_processor import (
 )
 from auth import require_login, get_authenticator, config_lock, render_billing_section
 import backup
+import data_sources
 import report_pdf
 import community
 
@@ -51,15 +52,27 @@ def _byosho_source(year: int) -> str:
 
 
 def _dpc_source(year: int) -> str:
-    """DPC調査データの出典ラベル（例：令和6年度 DPC導入の影響評価調査）。"""
-    return f"{_reiwa_nendo(year)} DPC導入の影響評価に係る調査"
+    """DPC調査データの出典ラベル（例：令和5年度DPC導入の影響評価に係る調査「退院患者調査」）。
+
+    令和6年度調査から名称が「DPCの評価・検証等に係る調査」に変わったため年度で出し分ける
+    （PDL1.0の出典記載は公表資料の名称どおりに書く）。
+    """
+    try:
+        _name = "DPCの評価・検証等に係る調査" if int(year) >= 2024 else "DPC導入の影響評価に係る調査"
+    except (TypeError, ValueError):
+        _name = "DPC導入の影響評価に係る調査"
+    return f"{_reiwa_nendo(year)}{_name}「退院患者調査」"
 
 
-def _source_tag(text: str) -> str:
-    """リスト右上などに置く控えめな出典ラベル（右寄せHTML）。"""
+def _source_tag(text: str, detail: str = "") -> str:
+    """リスト右上などに置く控えめな出典ラベル（右寄せHTML）。
+
+    公共データ利用規約（PDL1.0）に従い、出典名・公表元に加えて「加工して作成」を明記する
+    （data_sources.credit参照。表示している値はいずれも集計・指標計算した加工物のため）。
+    """
     return (
         f"<div style='text-align:right;font-size:0.72rem;color:#6E6A5E;"
-        f"margin:-6px 0 2px;'>データ出典：{text}</div>"
+        f"margin:-6px 0 2px;'>出典：{data_sources.credit(text, detail=detail)}</div>"
     )
 
 def _normalize_name(name: str) -> str:
@@ -815,7 +828,7 @@ def _render_footer():
             st.markdown("""
 <div style="font-size:0.85rem; color:#555; line-height:1.6;">
 
-本ツールは、厚生労働省が公表する**病床機能報告**のデータをもとに集計・分析を行うものです。
+本ツールは、厚生労働省・地方厚生局が公表する**病床機能報告・DPC調査・外来機能報告・施設基準の届出受理状況**等のデータをもとに、MedilenZが集計・分析を行うものです。分析結果は厚生労働省・地方厚生局が作成したものではありません（出典の詳細は「📄 データの出典と利用条件」参照）。
 
 **ご利用にあたっての注意事項：**
 
@@ -827,6 +840,8 @@ def _render_footer():
 
 </div>
 """, unsafe_allow_html=True)
+        with st.expander("📄 データの出典と利用条件"):
+            st.markdown(data_sources.attribution_markdown())
 
     with _fb:
         if "admin" in (st.session_state.get("roles") or []):
@@ -924,7 +939,7 @@ def _render_footer():
 
     st.markdown(
         "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
-        "© MedilenZ — データ出典: 厚生労働省「病床機能報告」</div>",
+        f"© MedilenZ — {data_sources.FOOTER_CREDIT}</div>",
         unsafe_allow_html=True,
     )
 
@@ -4146,7 +4161,7 @@ if st.session_state.get("_view_mode") == "region_vision":
     # ── ヘッダー
     st.markdown(f"## {_rv_region} 地域医療構想分析")
     st.caption(
-        f"データ出典：{_byosho_source(_rv_year)}　|　{_rv_pref}　{_rv_region}　"
+        f"出典：{data_sources.credit(_byosho_source(_rv_year))}　|　{_rv_pref}　{_rv_region}　"
         "※ 本分析は病床機能報告データに基づく参考情報です。"
         "実際の構想策定には一次データ・専門家の関与が必要です。"
     )
@@ -5624,7 +5639,7 @@ def _build_hospital_report_data() -> dict:
                     for r in _sk_records[:_MAX_SK_ITEMS]
                 ],
                 "truncated_count": max(0, len(_sk_records) - _MAX_SK_ITEMS),
-                "source": f"診療報酬 施設基準届出情報（{_sk_ym}現在）" if _sk_ym else "診療報酬 施設基準届出情報",
+                "source_detail": f"{_sk_ym}現在" if _sk_ym else "",
             }
 
     # 外来機能報告
@@ -5638,7 +5653,7 @@ def _build_hospital_report_data() -> dict:
             "gyakushokai": f"{_gairai_num(_gairai_annual_row.get('逆紹介患者数（年間）'))}人",
             "shokai_rate": f"{_gr_rate}%" if _gr_rate not in (None, "*", "-") else _gairai_num(_gr_rate),
             "gyakushokai_rate": f"{_gr2_rate}%" if _gr2_rate not in (None, "*", "-") else _gairai_num(_gr2_rate),
-            "source": f"{_reiwa_nendo(year)} 外来機能報告",
+            "source": f"{_reiwa_nendo(year)}外来機能報告",
         }
 
     return {
@@ -6013,7 +6028,8 @@ with tab1:
                             _sk_items_df["区分"] = _sk_items_df.apply(_fill_kubun, axis=1)
                 _sk_ym = _sk_matched["年月"].iloc[0] if "年月" in _sk_matched.columns else ""
                 if _sk_ym:
-                    st.caption(f"出典：診療報酬 施設基準届出情報（{_sk_ym} 現在）")
+                    st.caption("出典：" + data_sources.credit(
+                        "施設基準の届出受理状況", publisher="各地方厚生局", detail=f"{_sk_ym} 現在"))
 
                 # 施設種別（病院／有床診療所／無床診療所）バッジ。入院基本料の届出
                 # パターンから判定した値（build_shisetsu_kijun.py の _classify_facility_types）。
@@ -6336,11 +6352,11 @@ with tab4:
             if _has_los_trend:
                 with c3:
                     st.plotly_chart(trend_los(_los_trend_df, hospital), use_container_width=True, config={"responsive": True})
-                    st.markdown(_source_tag("病床機能報告（在棟延べ数・新規入棟患者数・退棟患者数）"), unsafe_allow_html=True)
+                    st.markdown(_source_tag("病床機能報告", detail="在棟延べ数・新規入棟患者数・退棟患者数"), unsafe_allow_html=True)
             if _has_dpc_trend:
                 with c4:
                     st.plotly_chart(trend_dpc_cases(_dpc_case_trend_df, hospital), use_container_width=True, config={"responsive": True})
-                    st.markdown(_source_tag("DPC導入の影響評価に係る調査"), unsafe_allow_html=True)
+                    st.markdown(_source_tag("DPC導入の影響評価に係る調査「退院患者調査」"), unsafe_allow_html=True)
 
         st.plotly_chart(trend_staff(trend_df, hospital), use_container_width=True, config={"responsive": True})
 
@@ -7164,7 +7180,7 @@ with tab7:
 
 if tab_gairai is not None and _is_gairai and _gairai_annual_row is not None:
     with tab_gairai:
-        st.markdown(_source_tag(f"{_reiwa_nendo(year)} 外来機能報告"), unsafe_allow_html=True)
+        st.markdown(_source_tag(f"{_reiwa_nendo(year)}外来機能報告"), unsafe_allow_html=True)
 
         st.markdown('<div class="section-header">紹介・逆紹介の状況</div>', unsafe_allow_html=True)
         _gk1, _gk2, _gk3, _gk4, _gk5 = st.columns(5)
