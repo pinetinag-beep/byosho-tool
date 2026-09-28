@@ -22,7 +22,7 @@ from data_processor import (
     load_hospitals_from_db, load_wards_from_db, load_surgery_from_db, get_db_meta,
     BED_TYPES, BED_COLORS, PREF_CODE_MAP,
 )
-from auth import require_login, get_authenticator, config_lock, render_billing_section
+from auth import open_access_gate, get_authenticator, config_lock, render_billing_section
 import backup
 import data_sources
 import report_pdf
@@ -710,18 +710,19 @@ div.js-plotly-plot svg.main-svg {
 </style>
 """, unsafe_allow_html=True)
 
-# ── ログイン必須ゲート ──────────────────────────────────────
-# 未ログインの場合はここでログイン/新規登録画面を表示してst.stop()する。
-# 以降のデータ読み込み・画面描画はログイン済みユーザーにしか到達しない。
+# ── 入口（会員制度は2026年9月に廃止。誰でもログイン無しで使える）──────────
+# 以前はここで未ログインユーザーをLP（ログイン/新規申込み画面）で止めていた
+# （auth.require_login）。現在は管理者だけが ?login=1 からログインする
+# （auth.open_access_gate）。
 # stauth.Authenticateは1回のスクリプト実行につき1個だけ生成すること
 # （内部のCookie管理コンポーネントが固定keyを使うため、複数回生成すると
 # Streamlitの重複keyエラーになる）。_render_header()のログアウトボタンも
 # この同じインスタンスを使い回す。
 _authenticator = get_authenticator()
 # 会員データの日次バックアップ（その日の最初のアクセス時にバックグラウンドで1回だけ。
-# ログイン前に呼ぶのは、LPへのアクセスだけの日でも確実に実行するため）
+# ゲートより前に呼ぶのは、?login=1 の画面で止まった場合でも確実に実行するため）
 backup.run_daily_if_needed()
-require_login(_authenticator)
+open_access_gate(_authenticator)
 
 
 def _render_header():
@@ -731,45 +732,48 @@ def _render_header():
     _pref     = st.session_state.get("_sel_pref", "")
     _region   = st.session_state.get("_sel_region", "")
 
-    _uc1, _uc2, _uc3, _uc4 = st.columns([5.2, 1.8, 1.8, 1.4])
-    with _uc1:
-        _user_email = st.session_state.get("username", "")
-        if _user_email:
-            st.markdown(
-                f"<div style='font-size:0.72rem;color:#9ca3af;padding:6px 0 0;'>"
-                f"{_user_email}</div>",
-                unsafe_allow_html=True,
-            )
-    with _uc2:
-        if st.button("💬 コミュニティ", key="_hdr_community_btn", use_container_width=True):
-            st.session_state["_view_mode"] = "community"
-            st.session_state["_scroll_to_top"] = True
-            st.rerun()
-    with _uc3:
-        with st.popover("⚙️ アカウント", use_container_width=True):
-            try:
-                with config_lock(_authenticator):
-                    _pw_changed = _authenticator.reset_password(
-                        _user_email,
-                        location="main",
-                        key="_hdr_reset_pw_form",
-                        fields={
-                            "Form name": "パスワード変更",
-                            "Current password": "現在のパスワード",
-                            "New password": "新しいパスワード",
-                            "Repeat password": "新しいパスワード（確認）",
-                            "Reset": "変更する",
-                        },
-                    )
-                if _pw_changed:
-                    st.success("パスワードを変更しました。")
-            except Exception as e:
-                st.error(str(e))
-            st.divider()
-            render_billing_section(_authenticator)
-    with _uc4:
-        with config_lock(_authenticator):
-            _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
+    # 会員制度の廃止（2026年9月）後、ログインは管理者だけ（auth.open_access_gate）。
+    # 未ログインの一般利用者にはアカウント関連の行を出さない。
+    if st.session_state.get("authentication_status"):
+        _uc1, _uc2, _uc3, _uc4 = st.columns([5.2, 1.8, 1.8, 1.4])
+        with _uc1:
+            _user_email = st.session_state.get("username", "")
+            if _user_email:
+                st.markdown(
+                    f"<div style='font-size:0.72rem;color:#9ca3af;padding:6px 0 0;'>"
+                    f"{_user_email}</div>",
+                    unsafe_allow_html=True,
+                )
+        with _uc2:
+            if st.button("💬 コミュニティ", key="_hdr_community_btn", use_container_width=True):
+                st.session_state["_view_mode"] = "community"
+                st.session_state["_scroll_to_top"] = True
+                st.rerun()
+        with _uc3:
+            with st.popover("⚙️ アカウント", use_container_width=True):
+                try:
+                    with config_lock(_authenticator):
+                        _pw_changed = _authenticator.reset_password(
+                            _user_email,
+                            location="main",
+                            key="_hdr_reset_pw_form",
+                            fields={
+                                "Form name": "パスワード変更",
+                                "Current password": "現在のパスワード",
+                                "New password": "新しいパスワード",
+                                "Repeat password": "新しいパスワード（確認）",
+                                "Reset": "変更する",
+                            },
+                        )
+                    if _pw_changed:
+                        st.success("パスワードを変更しました。")
+                except Exception as e:
+                    st.error(str(e))
+                st.divider()
+                render_billing_section(_authenticator)
+        with _uc4:
+            with config_lock(_authenticator):
+                _authenticator.logout("ログアウト", "main", key="_hdr_logout_btn")
 
     if mode == "home":
         st.markdown(
@@ -4503,7 +4507,9 @@ if st.session_state.get("_view_mode") == "region_vision":
         _ant_key = ""
     _ant_key = _ant_key or os.environ.get("ANTHROPIC_API_KEY", "")
     _rv_ai_results: dict = {}
-    if _ant_key:
+    # Claude APIの利用料がかかるため、会員制度の廃止（誰でも使える状態）後は
+    # 管理者ログイン時だけ生成する（ボットの巡回で課金が膨らむのを防ぐ）
+    if _ant_key and "admin" in (st.session_state.get("roles") or []):
         _rv_total_beds = int(rv_df["合計_許可病床数"].fillna(0).sum())
         def _rv_avg(col):
             v = pd.to_numeric(rv_df[col], errors="coerce")
@@ -5069,6 +5075,13 @@ if st.session_state.get("_view_mode") == "dpc_search":
 # ══════════════════════════════════════════════════════════
 # コミュニティ掲示板（会員同士のQ&A・運営への要望/不具合報告）
 # ══════════════════════════════════════════════════════════
+
+# 投稿者の識別にログインが必要なため、会員制度の廃止（2026年9月）後は
+# ログイン済み（管理者）だけが開ける。?go=community で直接来た未ログインの
+# 利用者はホームへ戻す。
+if (st.session_state.get("_view_mode") == "community"
+        and not st.session_state.get("authentication_status")):
+    st.session_state["_view_mode"] = "home"
 
 if st.session_state.get("_view_mode") == "community":
     _cbc1, _cbc2 = st.columns([8, 2])

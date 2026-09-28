@@ -841,6 +841,51 @@ def require_login(authenticator: stauth.Authenticate) -> None:
     st.stop()
 
 
+def open_access_gate(authenticator: stauth.Authenticate) -> None:
+    """会員制度を廃止した後（2026年9月〜）のアプリ入口。誰でもログイン無しで使える。
+
+    有料会員・ログイン必須（require_login）は、ユーザー判断でプロジェクトの有料化を
+    いったん終了したため廃止した。ログインは管理者用（フッターの管理パネル・
+    コミュニティ投稿の削除）にだけ残し、`?login=1` のときだけフォームを出す。
+
+    Cookieからのログイン復元（_try_cookie_login）は毎回0.7秒待つため、全訪問者に
+    かけると操作のたびに遅くなる。そのため `?login=1` の時だけ行い、一度ログインした
+    ブラウザセッションの間はsession_stateで保持する。
+    """
+    if st.session_state.get("authentication_status"):
+        if not st.session_state.get("_login_logged"):
+            _log_login(st.session_state.get("username", ""))
+            st.session_state["_login_logged"] = True
+        return
+    if st.query_params.get("login") != "1":
+        return
+
+    _try_cookie_login(authenticator)
+    if st.session_state.get("authentication_status"):
+        del st.query_params["login"]
+        st.rerun()
+
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        st.markdown(
+            "<h3 style='text-align:center;margin:60px 0 16px;'>管理者ログイン</h3>",
+            unsafe_allow_html=True,
+        )
+        _render_login_form(authenticator, "_login_form")
+        with st.expander("🔑 パスワードを忘れた方はこちら"):
+            _render_forgot_password_form(authenticator, "_forgot_pw_form")
+        if st.button("← ログインせずに使う", key="_login_cancel_btn"):
+            del st.query_params["login"]
+            st.rerun()
+
+    if st.session_state.get("authentication_status"):
+        # 即rerunしない理由は_render_login_form参照（Cookie書き込みのレース対策）
+        time.sleep(0.5)
+        del st.query_params["login"]
+        st.rerun()
+    st.stop()
+
+
 def require_admin_login(authenticator: stauth.Authenticate) -> None:
     """会員管理アプリ（admin_app.py）用のログインゲート。
 
