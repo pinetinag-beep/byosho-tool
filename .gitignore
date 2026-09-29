@@ -62,3 +62,7 @@ shisetsu_new_20260712/
 # 会員データの日次バックアップ（backup.py。パスワードハッシュを含む）
 data/backups/
 data/auth_config.yaml.lock
+
+# VPS解約時に手元へ退避したデータ（会員データはパスワードハッシュを含むため必ず除外）
+vps_raw_data_archive/
+vps_data_backup/
