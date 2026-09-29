@@ -51,6 +51,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 率・指標・スコアは必ず公的機関（厚労省・総務省等）の定義に基づいて実装すること。  
 独自解釈による指標の作成・表示は禁止。定義の出典を必ず把握した上で実装する。
 
+> **【2026年9月29日・Streamlit Community Cloudに戻した】** 有料化の終了で会員制度が不要になったため、ユーザー判断で年間約1.5〜3万円かかるConoHa VPSをやめ、無料のStreamlit Community Cloud（`https://byosho-tool-testver.streamlit.app`、`master`を参照）に戻した。VPSは前払い（1ヶ月単位）プランのため公開APIからは削除できず、コントロールパネルで削除予約（自動更新OFF）した——**2026年10月10日の有効期限で自動削除され、それまでは`medilenz.jp`も動いている**。削除前に、VPS上にしか無かった`~/raw_data_archive`（病床機能報告の令和6・7年度の生Excel、外来機能報告等）と`~/byosho-tool/data`（会員データ・コミュニティ投稿・バックアップ）をユーザーのPCの作業フォルダに`vps_raw_data_archive/`・`vps_data_backup/`として退避済み（どちらも`.gitignore`対象）。ドメイン`medilenz.jp`とメール（ConoHa WING）は別契約で、この時点では残っている。Streamlit Cloudでは`data/auth_config.yaml`が再起動のたびに消えるため管理者ログイン（`?login=1`）は実質使えず、`backup.py`もSMTP未設定のためローカル保存のみになる。以下のVPS移行の経緯は、再度VPSに移る場合の参考として残している。
+
 ### インフラ・技術スタック検討 → 2026年8月に方針決定（VPS移行を開始、作り直しは見送り）
 
 「Streamlit Community Cloudから本番インフラへの移行」について、2026年7月に2つの軸で比較検討した内容のメモ。**2026年8月、方針が決定した**：
@@ -161,6 +163,8 @@ python build_byosho_r7.py --dir byosho_file_R7 --year 2025 \
 - **【2026年8月・git履歴のクリーンアップ実施】** 過去にこの規則が無かったため、`byosho_file_R4`〜`R7`・`DPC_file_R4`/`R5`の生データフォルダが**すべて一度git履歴に直接commitされてから後で削除される**、という運用になっていた（`.gitignore`されていても、過去にcommitされた分は履歴の中に残り続ける）。結果として`.git`が1.3GBまで肥大化していたため、`git filter-repo --path <各フォルダ> --invert-paths`で該当パスを全履歴から除去し、287MB（約78%削減）まで圧縮した。全commitのハッシュが変わるため、事前に`git bundle create`でフルバックアップを取ってから実施し、`origin`への`git push --force`で反映した（`git filter-repo`はデフォルトでoriginリモートを自動削除するため、実行後に`git remote add origin <URL>`で再設定し、`git branch --set-upstream-to=origin/master master`でtracking関係も再設定する必要がある）。**今後は上記の命名規則（gitignore対象は最初からcommitしない）を徹底し、この種の履歴肥大化を再発させないこと。**
 
 ## 生データの永続アーカイブ（VPS: `~/raw_data_archive`）
+
+> **【2026年9月29日】VPSの解約に伴い、このアーカイブはユーザーのPCの作業フォルダ `C:\Users\inter\OneDrive\Desktop\byosho_tool\vps_raw_data_archive\` に移した**（中身は下記の構成のまま。実際には病床機能報告の令和6・7年度分＝`001299xxx`・`001717xxx`の生Excelも入っていた）。以下の記述はVPS時代の運用記録。今後の生データは、このPC上のフォルダ（またはクラウドストレージ等）に保管すること。
 
 2026年8月、「後から列を追加したくなった時、生Excelがもうどこにも残っていない」という問題（分娩件数の追加を検討した際に発覚——病床機能報告の病院票には分娩件数の項目があるはずだが`data_cache.parquet`に未収録で、確認しようにも生Excelが手元に無かった）を受けて、VPS上（gitリポジトリ`~/byosho-tool`の外）に生データの永続保存場所を新設した。
 

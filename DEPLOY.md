@@ -1,5 +1,7 @@
 # 本番VPS移行手順（ConoHa VPS）
 
+> **【2026年9月29日・VPSは解約済み】** 有料化の終了に伴い、アプリはStreamlit Community Cloud（`https://byosho-tool-testver.streamlit.app`）に戻した。ConoHa VPS（byosho-tool-prod）は自動更新OFFで削除予約済みで、**2026年10月10日の有効期限で自動削除される**。この手順書は、再度VPSで運用する場合の参考として残している。
+
 2026年8月、Streamlit Community Cloudから本番用のVPSへ移行する方針が決まった際の手順書。
 背景・比較検討の経緯は `CLAUDE.md` の「インフラ・技術スタック検討」セクション参照。
 
