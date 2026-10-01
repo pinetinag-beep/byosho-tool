@@ -1,0 +1,31 @@
+# Streamlit Community Cloud のアプリ（12時間アクセスが無いとスリープする）を
+# 6時間おきにブラウザで開いて起こしておく。詳細は scripts/keep_awake.py 参照。
+name: Keep Streamlit app awake
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"   # UTC。00:17/06:17/12:17/18:17（毎正時は混み合うので少しずらす）
+  workflow_dispatch:          # Actions画面から手動実行もできる
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Visit the app
+        run: python scripts/keep_awake.py
+      - name: Upload screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keep-awake-failure
+          path: keep_awake_failure.png
+          if-no-files-found: ignore
