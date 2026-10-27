@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}データの出典と利用条件{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › データの出典と利用条件</p>
+<h1>データの出典と利用条件</h1>
+
+<h2>出典</h2>
+<p>本サイトは、各地方厚生局が公表している「施設基準の届出受理状況（届出受理医療機関名簿）」（<a href="{{ kouseikyoku_url }}" rel="noopener">{{ kouseikyoku_url }}</a>）を、全国47都道府県分集めて編集・加工して作成しています。</p>
+<p>これらのデータは「<a href="{{ pdl_url }}" rel="noopener">公共データ利用規約（第1.0版）</a>」（PDL1.0）（<a href="{{ mhlw_terms_url }}" rel="noopener">厚生労働省の利用規約</a>）に基づいて利用しています。</p>
+<p class="callout">本サイトで表示・出力する検索結果・一覧・集計は、公表データをMedilenZが編集・加工して作成したものであり、厚生労働省・地方厚生局が作成したものではありません。また、本サイトは国の機関の承認・推奨を受けたものではありません。</p>
+
+<h2>データの時点（都道府県別）</h2>
+<p>データは毎月1回を目安に、最新の公表分へ更新しています。厚生局ごとに公表のタイミングが異なるため、都道府県によって時点が違います。</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>都道府県</th><th>データ時点</th><th class="num">医療機関数</th><th class="num">届出数</th></tr></thead>
+  <tbody>{% for p in prefs %}<tr><td><a href="/pref/{{ p.name }}">{{ p.name }}</a></td><td>{{ p.as_of_label }}</td><td class="num">{{ "{:,}".format(p.n_facilities) }}</td><td class="num">{{ "{:,}".format(p.n_filings) }}</td></tr>{% endfor %}</tbody>
+</table>
+</div>
+
+<h2>収録範囲と注意事項</h2>
+<ul>
+  <li>医科の保険医療機関（病院・有床診療所・無床診療所）の届出を収録しています。歯科・保険薬局・訪問看護ステーションは含みません。</li>
+  <li>「病院／有床診療所／無床診療所」の区別は、届け出ている入院基本料の種類からMedilenZが判定したものです。</li>
+  <li>区分（急性期一般入院料１など）や病棟の内訳は、厚生局によって公表されていない場合があり、空欄になることがあります。</li>
+  <li>公表データの誤り・更新の遅れ等により、実際の届出状況と異なる場合があります。正確な情報は各地方厚生局の公表資料でご確認ください。</li>
+  <li>本サイトの利用によって生じたいかなる損害についても、MedilenZは責任を負いません。</li>
+</ul>
+
+<h2>CSVの二次利用について</h2>
+<p>CSVは無料・登録不要でダウンロードできます。ダウンロードしたデータを第三者に提供・公表する場合は、上記の出典と、MedilenZが加工したものである旨を記載してください。</p>
+<p class="small muted">最終更新：{{ meta.built_at }}</p>
+{% endblock %}

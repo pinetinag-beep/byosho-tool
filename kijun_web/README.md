@@ -1,0 +1,56 @@
+# 施設基準届出 検索サイト（kijun_web）
+
+全国の病院・診療所の施設基準届出を、無料で検索・CSVダウンロードできるWebサイト。
+medilenz.jp のトップとして公開する想定（2026年10月〜開発）。既存のStreamlit版（病床機能報告・DPCの分析）は
+そのまま残し、病院ページから「病床機能報告・DPCで詳しく見る」でリンクする。
+
+## なぜStreamlitとは別に作ったか
+
+- Streamlitの画面はJavaScriptで描かれるため、Googleが中身を読めず検索結果にほぼ出ない。
+  このサイトはページをサーバー側で組み立てて返すので、「○○病院 施設基準」「○○県 ○○加算 届出」のような
+  検索から人が来られる（医療機関ページ9万件・施設基準×都道府県ページ約3.6万件をsitemapで案内）。
+- 競合の施設基準検索サービスはCSVが有料・伏せ字付きのものが多い。ここでは**CSVを無料・伏せ字なし**で出す。
+
+## 構成
+
+| ファイル | 役割 |
+|---|---|
+| `build_db.py` | リポジトリ直下の `shisetsu_kijun_cache.parquet` → `data/kijun.sqlite`（約150MB、git管理外） |
+| `app.py` | FastAPI。ページはJinja2テンプレート（`templates/`）でサーバー側生成 |
+| `static/style.css` | Streamlit版と同じブランドトークン（緑 #12886D、暖色グレー） |
+| `tests/test_app.py` | 主要ページ・CSV・sitemapの動作確認 |
+
+URL:
+- `/` トップ（検索フォーム・よく調べられる施設基準・都道府県）
+- `/search?k=施設基準&q=医療機関名or住所&pref=都道府県コード&ftype=種類` 検索結果（noindex）、`/search.csv` そのCSV
+  - `k` が施設基準の正式名称と完全一致すればその1つだけ、そうでなければ名称の一部としてまとめて探す
+- `/facility/{都道府県コード2桁+医療機関番号7桁}` 医療機関ページ、`.csv` でCSV
+- `/kijun` 施設基準の一覧、`/kijun/{名称}` 都道府県別の届出数、`/kijun/{名称}/{都道府県名}` 医療機関一覧
+- `/pref/{都道府県名}`、`/about`（出典・PDL1.0・データ時点）、`/sitemap.xml`、`/robots.txt`
+
+## 開発時の起動（リポジトリ直下で）
+
+```bash
+pip install -r kijun_web/requirements.txt
+python kijun_web/build_db.py          # 20秒ほど。ピークメモリ約600MB
+uvicorn kijun_web.app:app --reload    # http://localhost:8000
+python -m pytest kijun_web/tests -q
+```
+
+環境変数: `SITE_URL`（canonical・sitemapのURL、既定 `https://medilenz.jp`）、
+`STREAMLIT_URL`（分析版へのリンク先）、`KIJUN_DB`（DBの場所）。
+
+## 毎月の更新
+
+1. ユーザー: 各地方厚生局の最新の「届出受理医療機関名簿」（全件Excel）を `shisetsu_raw/` に置いてpush
+2. Claude: `build_shisetsu_kijun.py --dir shisetsu_raw/` で parquet を作り直し、行数が不自然に減っていないか
+   旧データと比べてからコミット（CLAUDE.md「施設基準届出データを追加・更新する際の注意」参照）
+3. サーバー: `git pull` → `python kijun_web/build_db.py` → `sudo systemctl restart kijun-web`
+   - DBは一時ファイルに書いてから置き換えるので、作り直し中もサイトは古いDBで動き続ける
+   - 直前のDBは `data/kijun.prev.sqlite` に残る（「今月の新規届出・取り下げ」機能の比較元にする予定）
+
+## 本番環境（予定）
+
+- VPS メモリ2GB推奨（アプリ自体は軽いが、`build_db.py` の実行時に約600MBを使う。1GBならスワップを足す）
+- uvicorn（systemd常駐、127.0.0.1:8000）＋ nginx ＋ Let's Encrypt。手順は既存の `DEPLOY.md`（ConoHa VPS時代）とほぼ同じ
+- ドメイン medilenz.jp（お名前.comで管理）のAレコードを新サーバーへ向ける

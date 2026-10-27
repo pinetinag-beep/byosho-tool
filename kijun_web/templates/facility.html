@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ f.name }}（{{ f.pref_name }}）の施設基準届出一覧{% endblock %}
+{% block description %}{{ f.pref_name }}の{{ f.ftype }}「{{ f.name }}」が地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。CSVで無料ダウンロードできます。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ f.pref_name }}">{{ f.pref_name }}</a> › {{ f.name }}</p>
+<h1>{{ f.name }}</h1>
+<p class="lead"><span class="tag {% if f.ftype == '病院' %}hosp{% endif %}">{{ f.ftype }}</span>　{{ f.pref_name }}{{ f.address }}</p>
+
+<div class="facts">
+  <div class="fact"><div class="k">届け出ている施設基準</div><div class="v">{{ f.n_kijun }} 種類</div></div>
+  <div class="fact"><div class="k">医療機関番号（{{ f.pref_name }}）</div><div class="v">{{ f.code }}</div></div>
+  <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
+</div>
+
+<div class="result-head">
+  {% if f.byosho_name %}
+  <a class="btn" href="{{ streamlit_url(f.byosho_name) }}" rel="noopener">病床機能報告・DPCで詳しく見る →</a>
+  {% else %}<span></span>{% endif %}
+  <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>
+</div>
+
+<h2>施設基準の届出一覧</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>施設基準（受理届出名称）</th><th>区分・内訳</th><th>病棟・病床</th><th>算定開始日</th><th>受理番号</th></tr></thead>
+  <tbody>
+  {% for x in filings %}
+    <tr>
+      <td><a href="{{ kijun_url(x.kijun, f.pref_name) }}">{{ x.kijun }}</a></td>
+      <td>{{ x.kubun }}{% if x.kubun and x.other %}<br>{% endif %}<span class="muted small">{{ x.other }}</span></td>
+      <td class="small">{{ x.byoto }}{% if x.byosho_kubun %} {{ x.byosho_kubun }}{% endif %}{% if x.n_byoto %} {{ x.n_byoto }}病棟{% endif %}{% if x.n_byosho %} {{ x.n_byosho }}床{% endif %}</td>
+      <td class="nowrap">{{ x.start_date|jdate or x.start_raw }}</td>
+      <td class="nowrap">{{ x.symbol }}{{ x.juri_no }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="source">出典：{{ f.pref_name }}を管轄する地方厚生局「施設基準の届出受理状況」を加工して作成（{{ pref.as_of_label }}時点）</p>
+<p class="note small">区分・病棟の内訳は、厚生局によって公表されていない場合があります（関東信越・近畿・北海道・中国などでは空欄になることがあります）。最新の届出状況は各地方厚生局の公表資料でご確認ください。</p>
+{% endblock %}

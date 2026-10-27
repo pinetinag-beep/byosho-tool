@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{% if params.kx %}{{ params.kx }}{% elif params.k %}「{{ params.k }}」{% endif %}{% if params.q %} {{ params.q }}{% endif %}{% if pref_name %} {{ pref_name }}{% endif %} の検索結果{% endblock %}
+{% block robots %}<meta name="robots" content="noindex,follow">{% endblock %}
+{% block canonical %}/search{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › 検索結果</p>
+<h1>検索結果</h1>
+
+{% include "_search_form.html" %}
+
+{% if matched_kijun %}
+<div class="callout small">
+  「{{ params.k }}」を含む施設基準 {{ matched_kijun|length }}{% if matched_kijun|length == 30 %}件以上{% else %}件{% endif %}のいずれかを届け出ている医療機関を表示しています。
+  特定の施設基準だけに絞るには、名称をクリックしてください。
+  <ul class="chips" style="margin-top:8px">
+    {% for m in matched_kijun %}<li><a href="{{ narrow_url(m.name) }}">{{ m.name }}<span class="n">{{ "{:,}".format(m.n_facilities) }}</span></a></li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="result-head">
+  <div class="count">{{ "{:,}".format(total) }} 件{% if total > 0 %}（{{ page }} / {{ pages }} ページ）{% endif %}</div>
+  {% if total > 0 %}<a class="btn secondary" href="{{ csv_url }}">CSVダウンロード（無料）</a>{% endif %}
+</div>
+
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>医療機関名</th><th>種類</th><th>都道府県</th><th>住所</th><th class="num">届出数</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a>
+        {% if hits.get(r.id) %}<ul class="hitlist">{% for h in hits[r.id][:5] %}<li>{{ h }}</li>{% endfor %}{% if hits[r.id]|length > 5 %}<li>ほか{{ hits[r.id]|length - 5 }}件</li>{% endif %}</ul>{% endif %}
+      </td>
+      <td><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></td>
+      <td class="nowrap">{{ r.pref_name }}</td>
+      <td>{{ r.address }}</td>
+      <td class="num">{{ r.n_kijun }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}<a href="{{ page_url(page - 1) }}">← 前へ</a>{% endif %}
+  {% for p in range([1, page - 3]|max, [pages, page + 3]|min + 1) %}
+    {% if p == page %}<span class="cur">{{ p }}</span>{% else %}<a href="{{ page_url(p) }}">{{ p }}</a>{% endif %}
+  {% endfor %}
+  {% if page < pages %}<a href="{{ page_url(page + 1) }}">次へ →</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<p class="note">条件に合う医療機関は見つかりませんでした。施設基準名は短いキーワード（例：「地域包括ケア」「在宅療養支援」）にすると見つかりやすくなります。</p>
+{% endif %}
+<p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成</p>
+{% endblock %}

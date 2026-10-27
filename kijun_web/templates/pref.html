@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ pref.name }}の施設基準届出（病院{{ types.get('病院', 0) }}件・診療所の届出状況）{% endblock %}
+{% block description %}{{ pref.name }}の医療機関{{ "{:,}".format(pref.n_facilities) }}件の施設基準届出状況。よく届け出られている施設基準と、病院ごとの届出一覧を無料で確認できます。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › {{ pref.name }}</p>
+<h1>{{ pref.name }}の施設基準届出</h1>
+<div class="facts">
+  <div class="fact"><div class="k">医療機関（届出あり）</div><div class="v">{{ "{:,}".format(pref.n_facilities) }} 件</div></div>
+  {% for t in ftypes %}<div class="fact"><div class="k">うち{{ t }}</div><div class="v">{{ "{:,}".format(types.get(t, 0)) }} 件</div></div>{% endfor %}
+  <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
+</div>
+<p><a class="btn" href="/search?pref={{ pref.code }}">{{ pref.name }}の医療機関を検索する</a></p>
+
+<h2>{{ pref.name }}でよく届け出られている施設基準</h2>
+<ul class="chips">
+  {% for r in top %}<li><a href="{{ kijun_url(r.name, pref.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n) }}</span></a></li>{% endfor %}
+</ul>
+
+<h2>{{ pref.name }}の病院（{{ hospitals|length }}件）</h2>
+<p class="small muted">診療所は<a href="/search?pref={{ pref.code }}">検索</a>から探せます。</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>病院名</th><th class="num">届出数</th></tr></thead>
+  <tbody>{% for h in hospitals %}<tr><td><a href="{{ facility_url(h.id) }}">{{ h.name }}</a></td><td class="num">{{ h.n_kijun }}</td></tr>{% endfor %}</tbody>
+</table>
+</div>
+<p class="source">出典：{{ pref.name }}を管轄する地方厚生局「施設基準の届出受理状況」を加工して作成（{{ pref.as_of_label }}時点）</p>
+{% endblock %}

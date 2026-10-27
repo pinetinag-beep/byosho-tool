@@ -1,0 +1,128 @@
+/* MedilenZ 施設基準届出 検索 — Streamlit版（app.py）と同じブランドトークン */
+:root {
+  --brand: #12886D;
+  --brand-dark: #0B5E4B;
+  --brand-soft: #EAF4F0;
+  --brand-line: #BFDFD4;
+  --ink: #26251F;
+  --ink-muted: #6E6A5E;
+  --ink-faint: #9C9890;
+  --line: #E8E4DB;
+  --bg: #FAF8F4;
+  --card: #FFFFFF;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+  font-size: 15px;
+  line-height: 1.75;
+}
+a { color: var(--brand-dark); }
+a:hover { color: var(--brand); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+/* ── ヘッダー／フッター ── */
+.site-header { background: var(--card); border-bottom: 1px solid var(--line); }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; flex-wrap: wrap; }
+.logo { font-weight: 900; font-size: 1.45rem; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
+.logo span { color: var(--brand); }
+.logo small { font-size: 0.75rem; font-weight: 700; color: var(--ink-muted); margin-left: 10px; letter-spacing: 0; }
+.nav { display: flex; gap: 18px; font-size: 0.9rem; }
+.nav a { color: var(--ink-muted); text-decoration: none; }
+.nav a:hover { color: var(--brand); }
+.site-footer { margin-top: 64px; padding: 28px 0 40px; border-top: 1px solid var(--line); background: var(--card); }
+.credit { font-size: 0.78rem; color: var(--ink-muted); margin: 0 0 8px; }
+.copy { font-size: 0.75rem; color: var(--ink-faint); margin: 16px 0 0; }
+
+/* ── 見出し・パンくず ── */
+h1 { font-size: 1.6rem; font-weight: 900; line-height: 1.45; margin: 28px 0 8px; }
+h2 { font-size: 1.15rem; font-weight: 700; margin: 36px 0 12px; padding-left: 10px; border-left: 4px solid var(--brand); }
+.crumbs { font-size: 0.8rem; color: var(--ink-faint); margin-top: 20px; }
+.crumbs a { color: var(--ink-muted); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+.lead { color: var(--ink-muted); margin: 0 0 12px; }
+.muted { color: var(--ink-muted); }
+.small { font-size: 0.82rem; }
+
+/* ── トップ ── */
+.hero { text-align: center; padding: 48px 0 20px; }
+.hero h1 { font-size: 2rem; margin: 0 0 12px; }
+.hero p { color: var(--ink-muted); max-width: 640px; margin: 0 auto; }
+.badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+.badges li { font-size: 0.8rem; font-weight: 700; color: var(--brand-dark); background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: 999px; padding: 2px 12px; }
+.stats { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 26px; font-size: 0.82rem; color: var(--ink-faint); margin: 16px 0 0; }
+.stats b { color: var(--ink-muted); }
+
+/* ── 検索フォーム ── */
+.search-box { background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: 14px; padding: 18px; margin: 24px 0; }
+.search-grid { display: grid; grid-template-columns: 1.4fr 1.4fr 1fr 1fr; gap: 12px; align-items: end; }
+.search-grid label { display: block; font-size: 0.78rem; font-weight: 700; color: var(--ink-muted); margin-bottom: 4px; }
+.search-grid input, .search-grid select {
+  width: 100%; font: inherit; font-size: 0.95rem; padding: 9px 11px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
+}
+.search-grid input:focus, .search-grid select:focus { outline: 2px solid var(--brand); outline-offset: -1px; border-color: var(--brand); }
+.search-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.btn {
+  display: inline-block; font: inherit; font-weight: 700; font-size: 0.95rem; cursor: pointer;
+  padding: 9px 22px; border-radius: 8px; border: 1px solid var(--brand); background: var(--brand); color: #fff; text-decoration: none;
+}
+.btn:hover { background: var(--brand-dark); border-color: var(--brand-dark); color: #fff; }
+.btn.secondary { background: var(--card); color: var(--brand-dark); }
+.btn.secondary:hover { background: var(--brand-soft); color: var(--brand-dark); }
+.hint { font-size: 0.78rem; color: var(--ink-muted); margin: 8px 0 0; }
+
+/* ── 一覧 ── */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.chips a {
+  display: inline-block; font-size: 0.85rem; text-decoration: none; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+}
+.chips a:hover { border-color: var(--brand); color: var(--brand-dark); }
+.chips .n { color: var(--ink-faint); font-size: 0.75rem; margin-left: 4px; }
+.pref-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 0; margin: 0; list-style: none; }
+.pref-grid a { display: block; text-align: center; padding: 6px 4px; font-size: 0.88rem; background: var(--card); border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--ink); }
+.pref-grid a:hover { border-color: var(--brand); color: var(--brand-dark); }
+
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: #F4F1EA; font-weight: 700; color: var(--ink-muted); font-size: 0.8rem; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.nowrap { white-space: nowrap; }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-muted); white-space: nowrap; }
+.tag.hosp { border-color: var(--brand-line); background: var(--brand-soft); color: var(--brand-dark); }
+.hitlist { margin: 4px 0 0; padding: 0; list-style: none; font-size: 0.8rem; color: var(--ink-muted); }
+.hitlist li::before { content: "✓ "; color: var(--brand); }
+
+.result-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0 12px; }
+.count { font-weight: 700; }
+.pager { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 20px 0; }
+.pager a, .pager span { padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); text-decoration: none; font-size: 0.88rem; }
+.pager span.cur { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 16px 0; }
+.fact { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.fact .k { font-size: 0.75rem; color: var(--ink-muted); }
+.fact .v { font-size: 1.05rem; font-weight: 700; }
+.note { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; font-size: 0.88rem; color: var(--ink-muted); }
+.callout { background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: var(--radius); padding: 12px 16px; font-size: 0.9rem; }
+.filter { width: 100%; max-width: 420px; font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; margin: 0 0 12px; }
+.source { font-size: 0.75rem; color: var(--ink-faint); text-align: right; margin: 6px 0 0; }
+
+@media (max-width: 760px) {
+  body { font-size: 14px; }
+  .hero { padding-top: 32px; }
+  .hero h1 { font-size: 1.5rem; }
+  h1 { font-size: 1.35rem; }
+  .search-grid { grid-template-columns: 1fr 1fr; }
+  .search-grid .wide { grid-column: 1 / -1; }
+  .logo small { display: none; }
+}

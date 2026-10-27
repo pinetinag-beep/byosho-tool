@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google" content="notranslate">
+<title>{% block title %}施設基準届出 検索{% endblock %}｜MedilenZ</title>
+<meta name="description" content="{% block description %}全国の病院・診療所の施設基準（診療報酬の届出）を無料で検索。地方厚生局の公表データを全国47都道府県分まとめ、CSVも伏せ字なしで無料ダウンロードできます。{% endblock %}">
+{% block robots %}{% endblock %}
+<link rel="canonical" href="{{ site_url }}{% block canonical %}{{ request.url.path }}{% endblock %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="notranslate">
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="logo" href="/">Medilen<span>Z</span><small>施設基準届出 検索</small></a>
+    <nav class="nav">
+      <a href="/kijun">施設基準の一覧</a>
+      <a href="/about">データについて</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p class="credit">
+      出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」（<a href="{{ kouseikyoku_url }}" rel="noopener">{{ kouseikyoku_url }}</a>）を加工して作成。
+      {% if meta %}データ時点：{{ meta.as_of_max_label }}までの公表分（都道府県により異なります）。{% endif %}
+    </p>
+    <p class="credit">
+      本サイトの検索結果・一覧は、公表データをMedilenZが編集・加工したものであり、厚生労働省・地方厚生局が作成したものではありません。
+      <a href="/about">データの出典と利用条件</a>
+    </p>
+    <p class="credit">病床機能報告・DPCなどの詳しい分析は <a href="{{ streamlit_home }}" rel="noopener">MedilenZ 分析版</a> へ。</p>
+    <p class="copy">© MedilenZ</p>
+  </div>
+</footer>
+</body>
+</html>

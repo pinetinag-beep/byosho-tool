@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ kj.name }}を届け出ている{{ pref.name }}の医療機関一覧（{{ "{:,}".format(total) }}件）{% endblock %}
+{% block description %}{{ pref.name }}で施設基準「{{ kj.name }}」を届け出ている病院・診療所{{ "{:,}".format(total) }}件の一覧。算定開始日・区分つきで、CSVも無料でダウンロードできます。{% endblock %}
+{% block canonical %}{{ request.url.path }}{% if page > 1 %}?page={{ page }}{% endif %}{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › <a href="/kijun">施設基準の一覧</a> › <a href="{{ kijun_url(kj.name) }}">{{ kj.name }}</a> › {{ pref.name }}</p>
+<h1>{{ kj.name }}<br><span style="font-size:0.75em">{{ pref.name }}の届出医療機関</span></h1>
+<p class="lead">{{ pref.name }}で「{{ kj.name }}」を届け出ている医療機関は <b>{{ "{:,}".format(total) }} 件</b> です（{{ pref.as_of_label }}時点）。</p>
+
+<div class="result-head">
+  <div class="count">{{ "{:,}".format(total) }} 件{% if pages > 1 %}（{{ page }} / {{ pages }} ページ）{% endif %}</div>
+  <a class="btn secondary" href="{{ csv_url }}">CSVダウンロード（無料）</a>
+</div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>医療機関名</th><th>種類</th><th>住所</th><th>算定開始日</th><th>区分</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
+      <td><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></td>
+      <td>{{ r.address }}</td>
+      <td class="nowrap">{{ r.start_date|jdate }}</td>
+      <td class="small">{{ r.kubun or "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}<a href="{{ page_url(page - 1) }}">← 前へ</a>{% endif %}
+  {% for p in range(1, pages + 1) %}
+    {% if p == page %}<span class="cur">{{ p }}</span>{% else %}<a href="{{ page_url(p) }}">{{ p }}</a>{% endif %}
+  {% endfor %}
+  {% if page < pages %}<a href="{{ page_url(page + 1) }}">次へ →</a>{% endif %}
+</nav>
+{% endif %}
+<p class="source">出典：{{ pref.name }}を管轄する地方厚生局「施設基準の届出受理状況」を加工して作成（{{ pref.as_of_label }}時点）</p>
+<p class="small"><a href="{{ kijun_url(kj.name) }}">← 他の都道府県の届出数を見る</a></p>
+{% endblock %}

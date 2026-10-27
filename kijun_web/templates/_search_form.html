@@ -1,0 +1,33 @@
+<form class="search-box" action="/search" method="get">
+  <div class="search-grid">
+    <div class="wide">
+      <label for="k">施設基準（届出名称の一部）</label>
+      <input id="k" name="k" list="kijun-list" value="{{ params.k if params else '' }}" placeholder="例：地域包括ケア病棟入院料、在宅療養支援診療所" autocomplete="off">
+    </div>
+    <div class="wide">
+      <label for="q">医療機関名・住所（一部）</label>
+      <input id="q" name="q" value="{{ params.q if params else '' }}" placeholder="例：近森病院、高知市" autocomplete="off">
+    </div>
+    <div>
+      <label for="pref">都道府県</label>
+      <select id="pref" name="pref">
+        <option value="">全国</option>
+        {% for p in prefs %}<option value="{{ p.code }}" {% if params and params.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="ftype">施設の種類</label>
+      <select id="ftype" name="ftype">
+        <option value="">すべて</option>
+        {% for t in ftypes %}<option value="{{ t }}" {% if params and params.ftype == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="search-actions">
+    <span class="hint">どれか1つだけでも検索できます。施設基準は名称の一部（「地域包括ケア」など）で該当するものをまとめて探し、候補から選ぶとその1つだけを探します。</span>
+    <button class="btn" type="submit">検索する</button>
+  </div>
+  <datalist id="kijun-list">
+    {% for n in kijun_names %}<option value="{{ n }}">{% endfor %}
+  </datalist>
+</form>

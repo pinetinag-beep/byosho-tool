@@ -66,3 +66,6 @@ data/auth_config.yaml.lock
 # VPS解約時に手元へ退避したデータ（会員データはパスワードハッシュを含むため必ず除外）
 vps_raw_data_archive/
 vps_data_backup/
+
+# 施設基準検索サイトのDB（build_db.pyで毎月作り直す。150MB前後あるのでコミットしない）
+kijun_web/data/

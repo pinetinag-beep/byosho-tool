@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}施設基準の一覧（全{{ rows|length }}種類）と届出医療機関数{% endblock %}
+{% block description %}地方厚生局に届け出られている施設基準（受理届出名称）全{{ rows|length }}種類の一覧と、全国の届出医療機関数。名称をクリックすると都道府県別の届出状況を見られます。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › 施設基準の一覧</p>
+<h1>施設基準の一覧</h1>
+<p class="lead">全国で届け出られている施設基準 {{ rows|length }} 種類を、届出医療機関数の多い順に並べています。</p>
+<input class="filter" type="search" id="kfilter" placeholder="名称で絞り込む（例：入院料、在宅、がん）" aria-label="名称で絞り込む">
+<div class="table-wrap">
+<table id="ktable">
+  <thead><tr><th>施設基準（受理届出名称）</th><th>受理記号</th><th class="num">届出医療機関数（全国）</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr><td><a href="{{ kijun_url(r.name) }}">{{ r.name }}</a></td><td class="nowrap muted">{{ r.symbol }}</td><td class="num">{{ "{:,}".format(r.n_facilities) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<script>
+(function () {
+  var input = document.getElementById("kfilter");
+  var rows = document.querySelectorAll("#ktable tbody tr");
+  var norm = function (s) { return s.normalize("NFKC").replace(/\s/g, "").toLowerCase(); };
+  var keys = Array.prototype.map.call(rows, function (r) { return norm(r.textContent); });
+  input.addEventListener("input", function () {
+    var q = norm(input.value);
+    rows.forEach(function (r, i) { r.style.display = keys[i].indexOf(q) >= 0 ? "" : "none"; });
+  });
+})();
+</script>
+{% endblock %}
