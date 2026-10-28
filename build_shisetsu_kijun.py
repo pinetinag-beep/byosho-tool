@@ -51,6 +51,38 @@ def _wareki_to_seireki(text: str) -> str:
     return ""
 
 
+def _wareki_date(text: str) -> str:
+    """'令和X年Y月Z日' → 'XXXX-YY-ZZ'。日が無ければ月までで返す（同じ県の新旧比較用）。"""
+    m = re.search(r"令和\s*(\d+)\s*年\s*(\d+)\s*月\s*(?:(\d+)\s*日)?", str(text))
+    if not m:
+        return ""
+    s = f"{2018 + int(m.group(1))}-{int(m.group(2)):02d}"
+    return s + (f"-{int(m.group(3)):02d}" if m.group(3) else "")
+
+
+def _keep_latest_per_pref(parsed: list[tuple[str, pd.DataFrame, str]]) -> list[pd.DataFrame]:
+    """
+    同じ都道府県のデータを持つファイルが複数あれば、データ時点が最も新しいファイルだけを使う。
+    ダウンロードしたファイルを名前を変えずにフォルダへ入れても、古いファイルと二重に
+    数えないため。parsed は (ファイル名, df, 時点) のリスト。時点が同じならファイル名順で後のもの。
+    1ファイルに複数県が入っている場合（東北6県）も県ごとに判定する。
+    """
+    best: dict[str, tuple[str, str]] = {}  # 都道府県コード → (時点, ファイル名)
+    for name, df, snap in parsed:
+        for code in df["都道府県コード"].unique():
+            if code not in best or (snap, name) > best[code]:
+                best[code] = (snap, name)
+    out = []
+    for name, df, snap in parsed:
+        win = df["都道府県コード"].map(lambda c: best[c][1] == name)
+        lost = df.loc[~win, "都道府県名"].unique()
+        if len(lost):
+            print(f"  不使用（同じ県のより新しいファイルを優先）: {name}（{'・'.join(lost)}、時点{snap or '不明'}）")
+        if win.any():
+            out.append(df[win])
+    return out
+
+
 def _normalize(name: str) -> str:
     """法人格プレフィックスを除去し、NFKC・小文字・スペース除去を行う。"""
     if not isinstance(name, str):
@@ -223,11 +255,11 @@ def _classify_facility_types(df: pd.DataFrame) -> "pd.Series":
     return key.map(_classify)
 
 
-def parse_file(path: str) -> tuple[pd.DataFrame, str]:
+def parse_file(path: str) -> tuple[pd.DataFrame, str, str]:
     """
-    Excel 1ファイルをパースして (df, 年月文字列) を返す。
+    Excel 1ファイルをパースして (df, 年月文字列, 時点の日付) を返す。
     複数シートがある場合はすべて結合する（東北局形式など）。
-    失敗時は (空DataFrame, "") を返す。
+    失敗時は (空DataFrame, "", "") を返す。
 
     期待するシート構造:
       行0: 空
@@ -240,10 +272,11 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str]:
         xl = pd.ExcelFile(path)
     except Exception as e:
         print(f"  読み込みエラー: {e}")
-        return pd.DataFrame(), ""
+        return pd.DataFrame(), "", ""
 
     sheet_dfs: list[pd.DataFrame] = []
     year_month = ""
+    snap = ""
     for sname in xl.sheet_names:
         try:
             raw = pd.read_excel(path, sheet_name=sname, header=None, dtype=str)
@@ -254,10 +287,11 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str]:
             sheet_dfs.append(df_s)
             if not year_month:
                 year_month = ym
+                snap = _wareki_date(raw.iloc[1, 0])
 
     if not sheet_dfs:
-        return pd.DataFrame(), year_month
-    return pd.concat(sheet_dfs, ignore_index=True), year_month
+        return pd.DataFrame(), year_month, snap
+    return pd.concat(sheet_dfs, ignore_index=True), year_month, snap
 
 
 def main() -> None:
@@ -275,15 +309,16 @@ def main() -> None:
         print("        py build_shisetsu_kijun.py --dir フォルダ名/")
         sys.exit(1)
 
-    dfs: list[pd.DataFrame] = []
+    parsed: list[tuple[str, pd.DataFrame, str]] = []
     for f in files:
         print(f"読み込み: {Path(f).name} ... ", end="", flush=True)
-        df, ym = parse_file(f)
+        df, ym, snap = parse_file(f)
         if df.empty:
             print("スキップ（データなし）")
             continue
-        print(f"{len(df):,}行 ({ym})")
-        dfs.append(df)
+        print(f"{len(df):,}行 ({snap or ym})")
+        parsed.append((Path(f).name, df, snap))
+    dfs = _keep_latest_per_pref(parsed)
 
     if not dfs:
         print("エラー: 有効なデータがありませんでした")
