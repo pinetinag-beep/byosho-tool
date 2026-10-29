@@ -27,7 +27,7 @@
   {% for x in filings %}
     <tr>
       <td><a href="{{ kijun_url(x.kijun, f.pref_name) }}">{{ x.kijun }}</a></td>
-      <td>{{ x.kubun }}{% if x.kubun and x.other %}<br>{% endif %}<span class="muted small">{{ x.other }}</span></td>
+      <td>{% if x.kubun %}{{ x.kubun }}{% elif x.kubun_ref %}<span class="kubun-ref"><span class="tag ref">参考</span>{{ x.kubun_ref }}</span><br><span class="muted small">病床機能報告（{{ meta.kubun_ref_label }}）より{% set note = kubun_ref_note(x.kubun_ref, x.start_date, meta.kubun_ref_date) %}{% if note == "likely_changed" %}。この届出はその後に出し直されており、令和8年度改定で区分の体系が変わったため、現在は別の区分（急性期病院Ａ/Ｂ一般入院料など）の可能性が高い{% elif note == "changed" %}。この届出はその後に出し直されているため、区分が変わっている場合があります{% endif %}</span>{% endif %}{% if (x.kubun or x.kubun_ref) and x.other %}<br>{% endif %}<span class="muted small">{{ x.other }}</span></td>
       <td class="small">{{ x.byoto }}{% if x.byosho_kubun %} {{ x.byosho_kubun }}{% endif %}{% if x.n_byoto %} {{ x.n_byoto }}病棟{% endif %}{% if x.n_byosho %} {{ x.n_byosho }}床{% endif %}</td>
       <td class="nowrap">{{ x.start_date|jdate or x.start_raw }}</td>
       <td class="nowrap">{{ x.symbol }}{{ x.juri_no }}</td>
@@ -37,5 +37,5 @@
 </table>
 </div>
 <p class="source">出典：{{ f.pref_name }}を管轄する地方厚生局「施設基準の届出受理状況」を加工して作成（{{ pref.as_of_label }}時点）</p>
-<p class="note small">区分・病棟の内訳は、厚生局によって公表されていない場合があります（関東信越・近畿・北海道・中国などでは空欄になることがあります）。最新の届出状況は各地方厚生局の公表資料でご確認ください。</p>
+<p class="note small">区分・病棟の内訳は、厚生局によって公表されていない場合があります（北海道・関東信越・近畿など）。その場合、一般病棟・療養病棟・障害者施設等などの入院基本料に限り、厚生労働省「病床機能報告」（{{ meta.kubun_ref_label }}の病棟の入院基本料）を加工して<span class="tag ref">参考</span>として補っています。算定開始日がそれより前の届出（出し直されていないもの）はほぼ一致しますが、その後に出し直された届出は区分が変わっている場合があります。最新の届出状況は各地方厚生局の公表資料でご確認ください。</p>
 {% endblock %}

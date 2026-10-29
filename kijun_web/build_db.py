@@ -29,7 +29,19 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 SRC = ROOT / "shisetsu_kijun_cache.parquet"
 BYOSHO = ROOT / "data_cache.parquet"
+WARDS = ROOT / "ward_cache.parquet"
 OUT = HERE / "data" / "kijun.sqlite"
+
+# 北海道・関東信越・近畿の厚生局は入院基本料の区分（急性期一般入院料１など）を公表していない。
+# 病床機能報告の病棟ごとの入院基本料から、届出名称ごとに参考値として補う（Streamlit版の病院ページと同じ対応）。
+# 精神病棟・結核病棟・有床診療所は病床機能報告に無いため補えない。
+KUBUN_REF_KEYWORDS = {
+    "一般病棟入院基本料": ["急性期一般入院料", "地域一般入院料", "一般病棟特別入院基本料"],
+    "療養病棟入院基本料": ["療養病棟入院料", "療養病棟特別入院基本料"],
+    "障害者施設等入院基本料": ["障害者施設等"],
+    "特定機能病院入院基本料": ["特定機能病院"],
+    "専門病院入院基本料": ["専門病院"],
+}
 
 _ERAS = {"明治": 1867, "大正": 1911, "昭和": 1925, "平成": 1988, "令和": 2018}
 _WAREKI = re.compile(r"(明治|大正|昭和|平成|令和)\s*(元|\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日")
@@ -56,7 +68,8 @@ CREATE TABLE facilities (
     name TEXT NOT NULL, name_search TEXT NOT NULL,
     address TEXT, address_search TEXT,
     ftype TEXT, n_kijun INTEGER,
-    byosho_name TEXT              -- 病床機能報告側の医療機関名（Streamlit版へのリンク用、突合できた場合のみ）
+    byosho_name TEXT,             -- 病床機能報告側の医療機関名（Streamlit版へのリンク用、突合できた場合のみ）
+    byosho_code TEXT              -- 病床機能報告の医療機関コード（同上）
 );
 CREATE TABLE kijun (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, name_search TEXT NOT NULL,
@@ -65,7 +78,8 @@ CREATE TABLE kijun (
 CREATE TABLE filings (
     facility_id TEXT NOT NULL, kijun_id INTEGER NOT NULL,
     symbol TEXT, juri_no TEXT, start_date TEXT, start_raw TEXT,
-    byoto TEXT, byosho_kubun TEXT, n_byoto TEXT, n_byosho TEXT, kubun TEXT, other TEXT
+    byoto TEXT, byosho_kubun TEXT, n_byoto TEXT, n_byosho TEXT, kubun TEXT, other TEXT,
+    kubun_ref TEXT                -- kubun が空のときだけ入る、病床機能報告からの参考値
 );
 CREATE TABLE kijun_pref (kijun_id INTEGER NOT NULL, pref_code TEXT NOT NULL, n INTEGER NOT NULL);
 """
@@ -126,15 +140,18 @@ def _normalize_hospital(name) -> str:
     return re.sub(r"[\s　]", "", name).lower()
 
 
-def _byosho_names(fac: pd.DataFrame) -> pd.Series:
-    """病院・有床診療所を病床機能報告の医療機関名に突合する（Streamlit版の病院ページへのリンク用）。
+def _byosho_link(fac: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """病院・有床診療所を病床機能報告に突合し、(医療機関コード, 最新年度の医療機関名) を返す
+    （Streamlit版の病院ページへのリンクと、区分の参考値に使う）。
 
     完全一致 → 同一都道府県内のサフィックス一致（4文字以上同士）の順。
     学会認定施設の突合（build_gakkai_nintei.py）と同じ方式。
     """
     if not BYOSHO.exists():
-        return pd.Series([None] * len(fac), index=fac.index)
+        none = pd.Series([None] * len(fac), index=fac.index)
+        return none, none
     bd = pd.read_parquet(BYOSHO, columns=["都道府県名", "医療機関名", "医療機関コード", "報告年度"])
+    bd["医療機関コード"] = bd["医療機関コード"].astype(str)
     bd = bd.sort_values("報告年度")
     latest_name = bd.groupby("医療機関コード")["医療機関名"].last()
     exact, by_pref = {}, {}
@@ -153,12 +170,32 @@ def _byosho_names(fac: pd.DataFrame) -> pd.Series:
                 if len(cand) >= 4 and (cand.endswith(norm) or norm.endswith(cand)):
                     code = c
                     break
-        return latest_name.get(code) if code is not None else None
+        return code
 
-    return pd.Series(
+    codes = pd.Series(
         [match(p, n, t) for p, n, t in fac[["pref_name", "name", "ftype"]].itertuples(index=False)],
-        index=fac.index,
+        index=fac.index, dtype=object,
     )
+    return codes, codes.map(latest_name)
+
+
+def _kubun_ref() -> tuple[dict[tuple[str, str], str], int | None]:
+    """病床機能報告（最新年度）の病棟ごとの入院基本料から、(医療機関コード, 受理届出名称) → 区分 の参考値を作る。
+    病棟によって区分が違う病院は「・」で連結する。2つ目の戻り値は報告年度。"""
+    if not WARDS.exists():
+        return {}, None
+    w = pd.read_parquet(WARDS, columns=["医療機関コード", "入院基本料", "報告年度"])
+    year = int(w["報告年度"].max())
+    w = w[w["報告年度"] == year]
+    ref: dict[tuple[str, str], str] = {}
+    for code, g in w.groupby(w["医療機関コード"].astype(str)):
+        vals = {str(v) for v in g["入院基本料"].dropna().unique()}
+        for kijun, kws in KUBUN_REF_KEYWORDS.items():
+            hit = sorted(v for v in vals if any(k in v for k in kws))
+            if hit:
+                ref[(code, kijun)] = "・".join(hit)
+    # 病床機能報告は各年度7月1日時点の病棟の状況を報告するもの
+    return ref, year
 
 
 def build(src: Path = SRC, out: Path = OUT) -> dict:
@@ -199,7 +236,9 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
             fac[c] = fac[c].astype(str)
     fac["name_search"] = fac["name"].map(search_key)
     fac["address_search"] = fac["address"].map(search_key)
-    fac["byosho_name"] = _byosho_names(fac)
+    fac["byosho_code"], fac["byosho_name"] = _byosho_link(fac)
+    code_of = fac.set_index("facility_id")["byosho_code"].dropna().to_dict()
+    kubun_ref, kubun_ref_year = _kubun_ref()
 
     # ── 施設基準 ──
     kj = (
@@ -241,9 +280,9 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         .astype(object).itertuples(index=False, name=None),
     )
     con.executemany(
-        "INSERT INTO facilities VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO facilities VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         fac[["facility_id", "pref_code", "pref_name", "code", "name", "name_search",
-             "address", "address_search", "ftype", "n_kijun", "byosho_name"]]
+             "address", "address_search", "ftype", "n_kijun", "byosho_name", "byosho_code"]]
         .astype(object).where(fac.notna(), None).itertuples(index=False, name=None),
     )
     con.executemany(
@@ -260,10 +299,14 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         b["facility_id"] = b["都道府県コード"].str.zfill(2) + b["医療機関番号"]
         b["kijun_id"] = b["受理届出名称"].map(kid)
         b["start_date"] = b["算定開始年月日"].map(wareki_to_iso)
+        b["kubun_ref"] = [
+            kubun_ref.get((code_of.get(fid), kj), "") if not kb and kj in KUBUN_REF_KEYWORDS else ""
+            for fid, kj, kb in b[["facility_id", "受理届出名称", "区分"]].itertuples(index=False)
+        ]
         con.executemany(
-            "INSERT INTO filings_raw VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO filings_raw VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             b[["facility_id", "kijun_id", "受理記号", "受理番号", "start_date", "算定開始年月日",
-               "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他"]]
+               "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "kubun_ref"]]
             .astype(object).itertuples(index=False, name=None),
         )
     # 元データには完全に同一の行が数百件あるので、ここで重複を除く
@@ -280,6 +323,9 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_filings": str(n_filings),
         "n_kijun": str(len(kj)),
         "n_byosho_linked": str(int(fac["byosho_name"].notna().sum())),
+        "n_kubun_ref": str(con.execute("SELECT COUNT(*) FROM filings WHERE kubun_ref != ''").fetchone()[0]),
+        "kubun_ref_date": f"{kubun_ref_year}-07-01" if kubun_ref_year else "",
+        "kubun_ref_label": f"{kubun_ref_year}年7月1日時点" if kubun_ref_year else "",
         "as_of_min": prefs["as_of"].min(),
         "as_of_max": prefs["as_of"].max(),
         "as_of_max_label": label_of.get(prefs["as_of"].max(), ""),

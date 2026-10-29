@@ -14,15 +14,15 @@
 
 <div class="table-wrap">
 <table>
-  <thead><tr><th>医療機関名</th><th>種類</th><th>住所</th><th>算定開始日</th><th>区分</th></tr></thead>
+  <thead><tr><th>医療機関名</th><th>種類</th><th class="hide-sp">住所</th><th>算定開始日</th><th>区分</th></tr></thead>
   <tbody>
   {% for r in rows %}
     <tr>
       <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
       <td><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></td>
-      <td>{{ r.address }}</td>
+      <td class="hide-sp">{{ r.address }}</td>
       <td class="nowrap">{{ r.start_date|jdate }}</td>
-      <td class="small">{{ r.kubun or "" }}</td>
+      <td class="small">{% if r.kubun %}{{ r.kubun }}{% elif r.kubun_ref %}<span class="kubun-ref"><span class="tag ref">参考</span>{{ r.kubun_ref }}{% set note = kubun_ref_note(r.kubun_ref, r.start_date, meta.kubun_ref_date) %}{% if note == "likely_changed" %} ※※{% elif note == "changed" %} ※{% endif %}</span>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
@@ -38,5 +38,8 @@
 </nav>
 {% endif %}
 <p class="source">出典：{{ pref.name }}を管轄する地方厚生局「施設基準の届出受理状況」を加工して作成（{{ pref.as_of_label }}時点）</p>
+{% if rows|selectattr("kubun_ref")|list %}
+<p class="note small"><span class="tag ref">参考</span>の区分は、厚生局が区分を公表していないため、厚生労働省「病床機能報告」（{{ meta.kubun_ref_label }}の病棟の入院基本料）を加工して補ったものです。算定開始日がそれより前の届出（出し直されていないもの）はほぼ一致します。※はその後に出し直された届出で、区分が変わっている場合があります。※※はその後に出し直されており、令和8年度改定で区分の体系が変わったため、現在は別の区分（急性期病院Ａ/Ｂ一般入院料など）の可能性が高いものです。</p>
+{% endif %}
 <p class="small"><a href="{{ kijun_url(kj.name) }}">← 他の都道府県の届出数を見る</a></p>
 {% endblock %}

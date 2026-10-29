@@ -89,11 +89,28 @@ def jdate(iso: str | None) -> str:
         return ""
 
 
+# 病床機能報告の区分（参考値）のうち、令和8年度改定で区分の体系が変わったもの。
+KUBUN_REF_REVISED = ("急性期一般入院料１", "特定機能病院")
+
+
+def kubun_ref_note(ref: str | None, start_date: str | None, ref_date: str | None) -> str:
+    """区分の参考値にどの程度の注意書きを付けるか（"" / "changed" / "likely_changed"）。
+
+    区分を公表している厚生局の届出（2026年10月時点）と照合した結果:
+    算定開始日が病床機能報告の時点（7月1日）以前の届出は、参考値が99%一致した（出し直されていない）。
+    それより後に出し直された届出は76%、うち急性期一般入院料１・特定機能病院は8%しか一致しなかった
+    （令和8年度改定で急性期病院Ａ/Ｂ一般入院料・特定機能病院Ａ等に移ったため）。
+    """
+    if not ref or not start_date or not ref_date or start_date <= ref_date:
+        return ""
+    return "likely_changed" if any(k in ref for k in KUBUN_REF_REVISED) else "changed"
+
+
 templates.env.filters["jdate"] = jdate
 templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
-    mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES,
+    mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
 )
 
 
@@ -202,7 +219,7 @@ def search(
 
 FACILITY_COLS = ["都道府県", "医療機関番号", "医療機関名称", "施設種別", "住所"]
 FILING_COLS = ["受理届出名称", "受理記号", "受理番号", "算定開始年月日", "病棟種別", "病床区分",
-               "病棟数", "病床数", "区分", "内訳その他"]
+               "病棟数", "病床数", "区分", "内訳その他", "区分（参考：病床機能報告）"]
 
 
 def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
@@ -218,6 +235,10 @@ def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
                 buf.seek(0)
                 buf.truncate()
         w.writerow([])
+        if "区分（参考：病床機能報告）" in header:
+            w.writerow(["区分（参考：病床機能報告）：厚生局が区分を公表していない届出について、"
+                        "厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
+                        "届出の時点とは異なり、診療報酬改定等で変わっている場合があります"])
         w.writerow(["出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（MedilenZ）"])
         yield buf.getvalue()
 
@@ -238,7 +259,7 @@ def search_csv(pref: str = "", q: str = "", k: str = "", kx: str = "", ftype: st
         header = FACILITY_COLS + FILING_COLS
         sql = f"""SELECT f.pref_name, f.code, f.name, f.ftype, f.address,
                          kj.name, x.symbol, x.juri_no, COALESCE(NULLIF(x.start_date, ''), x.start_raw),
-                         x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other
+                         x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other, x.kubun_ref
                   FROM facilities f JOIN filings x ON x.facility_id = f.id JOIN kijun kj ON kj.id = x.kijun_id
                   WHERE {where} AND {kwhere}
                   ORDER BY f.pref_code, f.name, kj.name"""
@@ -267,7 +288,7 @@ def facility_csv(fid: str):
     rows = con.execute(
         """SELECT f.pref_name, f.code, f.name, f.ftype, f.address,
                   kj.name, x.symbol, x.juri_no, COALESCE(NULLIF(x.start_date, ''), x.start_raw),
-                  x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other
+                  x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other, x.kubun_ref
            FROM filings x JOIN facilities f ON f.id = x.facility_id JOIN kijun kj ON kj.id = x.kijun_id
            WHERE x.facility_id = ? ORDER BY kj.name""",
         (fid,),
@@ -344,7 +365,8 @@ def kijun_pref(request: Request, name: str, pref_name: str, page: int = Query(1,
         rows = con.execute(
             """SELECT f.id, f.name, f.ftype, f.address,
                       MIN(NULLIF(x.start_date, '')) AS start_date,
-                      GROUP_CONCAT(DISTINCT NULLIF(x.kubun, '')) AS kubun
+                      GROUP_CONCAT(DISTINCT NULLIF(x.kubun, '')) AS kubun,
+                      GROUP_CONCAT(DISTINCT NULLIF(x.kubun_ref, '')) AS kubun_ref
                FROM filings x JOIN facilities f ON f.id = x.facility_id
                WHERE x.kijun_id = ? AND f.pref_code = ?
                GROUP BY f.id

@@ -99,6 +99,9 @@ td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: t
 td.nowrap { white-space: nowrap; }
 .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-muted); white-space: nowrap; }
 .tag.hosp { border-color: var(--brand-line); background: var(--brand-soft); color: var(--brand-dark); }
+/* 厚生局の届出ではなく病床機能報告から補った区分（参考値）。公式の区分と見分けがつくよう薄く、点線で囲む */
+.kubun-ref { color: var(--ink-muted); }
+.tag.ref { border-style: dashed; color: var(--ink-faint); margin-right: 4px; }
 .hitlist { margin: 4px 0 0; padding: 0; list-style: none; font-size: 0.8rem; color: var(--ink-muted); }
 .hitlist li::before { content: "✓ "; color: var(--brand); }
 
@@ -125,4 +128,6 @@ td.nowrap { white-space: nowrap; }
   .search-grid { grid-template-columns: 1fr 1fr; }
   .search-grid .wide { grid-column: 1 / -1; }
   .logo small { display: none; }
+  /* 一覧表の住所は医療機関ページで見られるので、スマホでは区分の列を優先して隠す */
+  .hide-sp { display: none; }
 }

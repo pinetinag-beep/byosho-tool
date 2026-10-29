@@ -67,6 +67,21 @@ def test_search_csv_with_kijun_has_filing_columns():
     assert "受理届出名称" in header and "算定開始年月日" in header
 
 
+def test_kubun_ref_fills_only_blank_kubun():
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    # 参考値は公式の区分が空の届出にだけ入る
+    assert con.execute("SELECT COUNT(*) FROM filings WHERE kubun != '' AND kubun_ref != ''").fetchone()[0] == 0
+    fid = con.execute(
+        """SELECT x.facility_id FROM filings x JOIN facilities f ON f.id = x.facility_id
+           WHERE f.pref_code = '13' AND x.kubun_ref != '' LIMIT 1"""
+    ).fetchone()[0]
+    r = client.get(f"/facility/{fid}")
+    assert "参考" in r.text and "病床機能報告" in r.text
+    header = client.get(f"/facility/{fid}.csv").content.decode("utf-8-sig").splitlines()[0]
+    assert header.endswith("区分（参考：病床機能報告）")
+
+
 def test_sitemaps_within_limit():
     idx = client.get("/sitemap.xml").text
     parts = re.findall(r"/sitemap-([\w-]+)\.xml", idx)
