@@ -111,6 +111,8 @@ def kubun_ref_note(ref: str | None, start_date: str | None, ref_date: str | None
 
 
 templates.env.filters["jdate"] = jdate
+# CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
+templates.env.globals["css_version"] = int((HERE / "static" / "style.css").stat().st_mtime)
 templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
