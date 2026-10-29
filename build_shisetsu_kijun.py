@@ -83,6 +83,30 @@ def _keep_latest_per_pref(parsed: list[tuple[str, pd.DataFrame, str]]) -> list[p
     return out
 
 
+_DETAIL_COLS = ["病棟種別", "病床区分", "病棟数", "病床数", "区分"]
+
+
+def _carry_over_details(out: pd.DataFrame, prev_path: Path) -> pd.DataFrame:
+    """
+    関東信越・近畿などは全件Excelの備考（区分・病棟数等）が空だが、差分PDF（apply_shisetsu_diff.py）
+    からは区分が取れている。全件で作り直すとそれが消えるため、受理番号まで同じ届出に限り、
+    新データで空の内訳を前回のparquetから引き継ぐ（受理番号が変われば別の届出なので引き継がない）。
+    """
+    key = ["都道府県名", "医療機関番号", "受理記号", "受理番号"]
+    cols = [c for c in _DETAIL_COLS if c in out.columns]
+    prev = pd.read_parquet(prev_path, columns=key + cols).astype(str)
+    prev = prev.replace({"nan": "", "None": ""}).drop_duplicates(key)
+    m = out[key].astype(str).merge(prev, on=key, how="left")
+    total = 0
+    for c in cols:
+        cur = out[c].astype(str).replace({"nan": "", "None": ""})
+        fill = cur.eq("") & m[c].fillna("").ne("")
+        total += int(fill.sum())
+        out[c] = cur.where(~fill, m[c])
+    print(f"前回データから内訳を引き継ぎ: {total:,}項目（受理番号が同じ届出のみ）")
+    return out
+
+
 def _normalize(name: str) -> str:
     """法人格プレフィックスを除去し、NFKC・小文字・スペース除去を行う。"""
     if not isinstance(name, str):
@@ -325,6 +349,9 @@ def main() -> None:
         sys.exit(1)
 
     out = pd.concat(dfs, ignore_index=True)
+    out_path = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
+    if out_path.exists():
+        out = _carry_over_details(out, out_path)
     out["施設種別"] = _classify_facility_types(out)
     # 繰り返し文字列をcategory化してメモリを削減（91万行・約356MB→220MB）。
     # Streamlit Cloudのメモリ制限対策。
@@ -332,7 +359,6 @@ def main() -> None:
                "施設種別", "病棟種別", "病床区分", "区分", "年月"]:
         if _c in out.columns:
             out[_c] = out[_c].astype("category")
-    out_path = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
     out.to_parquet(out_path, index=False)
 
     print(f"\n完了: {len(out):,}行 → {out_path}")
