@@ -14,11 +14,13 @@ import math
 import os
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -36,6 +38,8 @@ PDL_URL = "https://www.digital.go.jp/resources/open_data/public_data_license_v1.
 MHLW_TERMS_URL = "https://www.mhlw.go.jp/chosakuken/index.html"
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+# トップと検索結果は届出項目のチェックボックス（約1,300個）を含み350KB程度になるので圧縮して返す
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -122,27 +126,87 @@ def render(request: Request, template: str, status_code: int = 200, **ctx) -> HT
 
 # ── 検索 ────────────────────────────────────────────────────
 
-def _search_sql(con, pref: str, q: str, k: str, kx: str, ftype: str) -> tuple[str, list, str, list]:
+@dataclass
+class Cond:
+    """検索条件。フォームの複数選択（二次医療圏・市区町村・施設の種類・届出項目）は同じ名前の
+    パラメータを繰り返す（?area=中央&area=安芸）。"""
+    pref: str = ""
+    areas: list[str] = field(default_factory=list)
+    cities: list[str] = field(default_factory=list)
+    ftypes: list[str] = field(default_factory=list)
+    q: str = ""
+    items: list[int] = field(default_factory=list)
+    mode: str = "and"          # 届出項目を「すべて」届け出ている(and) / 「いずれか」(or)
+    k: str = ""                # 施設基準名称の一部（施設基準ページの「条件を足して検索」など、従来のリンク用）
+    kx: str = ""               # 施設基準名称の完全一致（施設基準ページのCSVリンク用）
+
+    @classmethod
+    def from_request(cls, request: Request) -> "Cond":
+        qp = request.query_params
+        items = [int(v) for v in qp.getlist("item") if v.isdigit()]
+        return cls(
+            pref=qp.get("pref", "").strip(),
+            areas=[v for v in qp.getlist("area") if v],
+            cities=[v for v in qp.getlist("city") if v],
+            ftypes=[v for v in qp.getlist("ftype") if v in FTYPES],
+            q=qp.get("q", "").strip(),
+            items=list(dict.fromkeys(items)),
+            mode="or" if qp.get("mode") == "or" else "and",
+            k=qp.get("k", "").strip(),
+            kx=qp.get("kx", "").strip(),
+        )
+
+    def query(self, **extra) -> str:
+        pairs = [("pref", self.pref)] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
+        pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
+        if self.items and self.mode == "or":
+            pairs.append(("mode", "or"))
+        pairs += [("k", self.k), ("kx", self.kx)] + list(extra.items())
+        return urlencode([(k, v) for k, v in pairs if v not in ("", None)])
+
+    @property
+    def empty(self) -> bool:
+        return not (self.pref or self.ftypes or self.q or self.items or self.k or self.kx)
+
+
+def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
     """(施設のWHERE句, パラメータ, 該当届出のWHERE句, パラメータ) を返す。
 
     q  … 医療機関名または住所の一部
     k  … 施設基準名称。既存の名称と完全に一致すれば（候補リストから選んだ場合）その1つだけ、
           そうでなければ名称の一部として、一致する施設基準のどれかを届け出ている施設を探す
     kx … 施設基準名称の完全一致（施設基準ページからのCSVリンク用）
+    items … 届出項目（届出名称×受理記号）。mode が and ならすべて、or ならいずれかを届け出ている施設
     """
+    k, kx = c.k, c.kx
     if k and not kx and con.execute("SELECT 1 FROM kijun WHERE name = ?", (k,)).fetchone():
         kx = k
     where, params = [], []
-    if pref:
+    if c.pref:
         where.append("f.pref_code = ?")
-        params.append(pref)
-    if ftype in FTYPES:
-        where.append("f.ftype = ?")
-        params.append(ftype)
-    if q:
-        key = f"%{search_key(q)}%"
+        params.append(c.pref)
+        if c.areas:
+            where.append(f"f.area IN ({','.join('?' * len(c.areas))})")
+            params += c.areas
+        if c.cities:
+            where.append(f"f.city IN ({','.join('?' * len(c.cities))})")
+            params += c.cities
+    if c.ftypes:
+        where.append(f"f.ftype IN ({','.join('?' * len(c.ftypes))})")
+        params += c.ftypes
+    if c.q:
+        key = f"%{search_key(c.q)}%"
         where.append("(f.name_search LIKE ? OR f.address_search LIKE ?)")
         params += [key, key]
+    if c.items:
+        marks = ",".join("?" * len(c.items))
+        if c.mode == "or" or len(c.items) == 1:
+            where.append(f"f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks}))")
+            params += c.items
+        else:
+            where.append(f"""f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks})
+                                      GROUP BY facility_id HAVING COUNT(DISTINCT item_id) = ?)""")
+            params += c.items + [len(c.items)]
     kwhere, kparams = "", []
     if kx:
         kwhere, kparams = "x.kijun_id IN (SELECT id FROM kijun WHERE name = ?)", [kx]
@@ -157,26 +221,82 @@ def _search_sql(con, pref: str, q: str, k: str, kx: str, ftype: str) -> tuple[st
     return (" AND ".join(where) or "1"), params, kwhere, kparams
 
 
+def _form_ctx(con) -> dict:
+    """検索フォームに要るもの（都道府県と、区分ごとの届出項目）。"""
+    items = con.execute(
+        """SELECT i.id, i.symbol, i.section, kj.name AS kijun, i.n_facilities
+           FROM items i JOIN kijun kj ON kj.id = i.kijun_id ORDER BY i.id"""
+    ).fetchall()
+    sections: dict[str, list[dict]] = {}
+    for r in items:
+        sections.setdefault(r["section"], []).append(
+            {"id": r["id"], "symbol": r["symbol"] or r["kijun"], "kijun": r["kijun"], "n": r["n_facilities"],
+             "key": search_key(f'{r["symbol"]} {r["kijun"]}')}
+        )
+    return {"prefs": _prefs(con), "item_sections": list(sections.items())}
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     with db() as con:
         popular = con.execute("SELECT name, n_facilities FROM kijun ORDER BY n_facilities DESC LIMIT 24").fetchall()
-        prefs = _prefs(con)
-        kijun_names = [r["name"] for r in con.execute("SELECT name FROM kijun ORDER BY n_facilities DESC")]
-    return render(request, "index.html", popular=popular, prefs=prefs, kijun_names=kijun_names)
+        ctx = _form_ctx(con)
+    return render(request, "index.html", popular=popular, cond=Cond(), **ctx)
+
+
+@app.get("/areas/{pref}.json")
+def areas_json(pref: str):
+    """検索フォームで都道府県を選んだ時に出す二次医療圏と市区町村。"""
+    with db() as con:
+        rows = con.execute(
+            "SELECT area, city, n FROM areas WHERE pref_code = ? ORDER BY area_order, area, city_order",
+            (pref,),
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for r in rows:
+        a = out.setdefault(r["area"], {"name": r["area"], "n": 0, "cities": []})
+        a["n"] += r["n"]
+        a["cities"].append({"name": r["city"], "n": r["n"]})
+    return JSONResponse(list(out.values()), headers={"Cache-Control": "public, max-age=3600"})
+
+
+def _selected_items(con, ids: list[int]) -> list[sqlite3.Row]:
+    if not ids:
+        return []
+    rows = con.execute(
+        f"""SELECT i.id, i.symbol, i.section, kj.name AS kijun FROM items i JOIN kijun kj ON kj.id = i.kijun_id
+            WHERE i.id IN ({','.join('?' * len(ids))})""",
+        ids,
+    ).fetchall()
+    order = {i: n for n, i in enumerate(ids)}
+    return sorted(rows, key=lambda r: order[r["id"]])
+
+
+def _item_hits(con, item_ids: list[int], where: str, params: list, fac_ids: list[str] | None = None) -> dict[str, set]:
+    """施設ごとに、選んだ届出項目のうち届け出ているもの。"""
+    if not item_ids:
+        return {}
+    sql = f"SELECT facility_id, item_id FROM filings WHERE item_id IN ({','.join('?' * len(item_ids))})"
+    args: list = list(item_ids)
+    if fac_ids is not None:
+        sql += f" AND facility_id IN ({','.join('?' * len(fac_ids))})"
+        args += fac_ids
+    else:
+        sql += f" AND facility_id IN (SELECT f.id FROM facilities f WHERE {where})"
+        args += params
+    hits: dict[str, set] = {}
+    for fid, iid in con.execute(sql, args):
+        hits.setdefault(fid, set()).add(iid)
+    return hits
 
 
 @app.get("/search", response_class=HTMLResponse)
-def search(
-    request: Request,
-    pref: str = "", q: str = "", k: str = "", kx: str = "", ftype: str = "",
-    page: int = Query(1, ge=1),
-):
-    q, k, kx = q.strip(), k.strip(), kx.strip()
-    if kx and not k:
-        k, kx = kx, ""
+def search(request: Request, page: int = Query(1, ge=1)):
+    c = Cond.from_request(request)
+    if c.kx and not c.k:
+        c.k, c.kx = c.kx, ""
     with db() as con:
-        where, params, kwhere, kparams = _search_sql(con, pref, q, k, kx, ftype)
+        where, params, kwhere, kparams = _search_sql(con, c)
         total = con.execute(f"SELECT COUNT(*) FROM facilities f WHERE {where}", params).fetchone()[0]
         pages = max(1, math.ceil(total / PAGE_SIZE))
         page = min(page, pages)
@@ -186,9 +306,11 @@ def search(
                 LIMIT ? OFFSET ?""",
             params + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
         ).fetchall()
+        ids = [r["id"] for r in rows]
+        sel_items = _selected_items(con, c.items)
+        item_hits = _item_hits(con, c.items, where, params, ids) if ids else {}
         hits: dict[str, list[str]] = {}
-        if kwhere and rows:
-            ids = [r["id"] for r in rows]
+        if kwhere and ids:
             for h in con.execute(
                 f"""SELECT DISTINCT x.facility_id, kj.name FROM filings x JOIN kijun kj ON kj.id = x.kijun_id
                     WHERE x.facility_id IN ({','.join('?' * len(ids))}) AND {kwhere}
@@ -197,27 +319,27 @@ def search(
             ):
                 hits.setdefault(h["facility_id"], []).append(h["name"])
         matched_kijun = []
-        exact_k = bool(k) and con.execute("SELECT 1 FROM kijun WHERE name = ?", (k,)).fetchone() is not None
-        if k and not kx and not exact_k:
+        exact_k = bool(c.k) and con.execute("SELECT 1 FROM kijun WHERE name = ?", (c.k,)).fetchone() is not None
+        if c.k and not c.kx and not exact_k:
             matched_kijun = con.execute(
                 "SELECT name, n_facilities FROM kijun WHERE name_search LIKE ? ORDER BY n_facilities DESC LIMIT 30",
-                [f"%{search_key(k)}%"],
+                [f"%{search_key(c.k)}%"],
             ).fetchall()
-        prefs = _prefs(con)
-        kijun_names = [r["name"] for r in con.execute("SELECT name FROM kijun ORDER BY n_facilities DESC")]
-    pref_name = next((p["name"] for p in prefs if p["code"] == pref), "")
-    params_dict = dict(pref=pref, q=q, k=k, kx=kx, ftype=ftype)
+        ctx = _form_ctx(con)
+    pref_name = next((p["name"] for p in ctx["prefs"] if p["code"] == c.pref), "")
     return render(
         request, "search.html",
-        rows=rows, hits=hits, total=total, page=page, pages=pages, prefs=prefs, pref_name=pref_name,
-        params=params_dict, matched_kijun=matched_kijun, kijun_names=kijun_names,
-        csv_url=_url("/search.csv", **params_dict),
-        page_url=lambda p: _url("/search", **params_dict, page=p),
-        narrow_url=lambda name: _url("/search", k=name, pref=pref, q=q, ftype=ftype),
+        rows=rows, hits=hits, item_hits=item_hits, sel_items=sel_items, total=total, page=page, pages=pages,
+        pref_name=pref_name, cond=c, matched_kijun=matched_kijun,
+        csv_url="/search.csv?" + c.query(),
+        page_url=lambda p: "/search?" + c.query(page=p),
+        narrow_url=lambda name: "/search?" + Cond(pref=c.pref, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
+                                                  q=c.q, k=name).query(),
+        **ctx,
     )
 
 
-FACILITY_COLS = ["都道府県", "医療機関番号", "医療機関名称", "施設種別", "住所"]
+FACILITY_COLS = ["都道府県", "医療機関番号", "医療機関名称", "施設種別", "住所", "市区町村", "二次医療圏"]
 FILING_COLS = ["受理届出名称", "受理記号", "受理番号", "算定開始年月日", "病棟種別", "病床区分",
                "病棟数", "病床数", "区分", "内訳その他", "区分（参考：病床機能報告）"]
 
@@ -249,30 +371,40 @@ def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
 
 
 @app.get("/search.csv")
-def search_csv(pref: str = "", q: str = "", k: str = "", kx: str = "", ftype: str = ""):
-    """検索結果のCSV。施設基準を指定した場合は該当する届出を1行ずつ、
-    指定しない場合は医療機関を1行ずつ出す（全届出96万行を一度に出さないため）。"""
-    q, k, kx = q.strip(), k.strip(), kx.strip()
+def search_csv(request: Request):
+    """検索結果のCSV。
+    - 届出項目を選んだ場合: 医療機関を1行ずつ、選んだ項目ごとに届け出ていれば「○」の列を付ける
+    - 施設基準名称（k/kx）で探した場合: 該当する届出を1行ずつ（区分・受理番号なども出す）
+    - それ以外: 医療機関を1行ずつ（全届出100万行を一度に出さないため）"""
+    c = Cond.from_request(request)
     con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False)
-    where, params, kwhere, kparams = _search_sql(con, pref, q, k, kx, ftype)
-    if kwhere:
+    con.row_factory = sqlite3.Row
+    where, params, kwhere, kparams = _search_sql(con, c)
+    fac_sql = f"""SELECT f.id, f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area, f.n_kijun
+                  FROM facilities f WHERE {where} ORDER BY f.pref_code, f.name"""
+    if c.items:
+        sel = _selected_items(con, c.items)
+        hits = _item_hits(con, c.items, where, params)
+        header = FACILITY_COLS + [f"{r['symbol']}（{r['kijun']}）" for r in sel]
+        rows = ([*r][1:8] + ["○" if i["id"] in hits.get(r["id"], ()) else "" for i in sel]
+                for r in con.execute(fac_sql, params))
+        name = "届出項目" + "・".join(r["symbol"] for r in sel[:3]) + ("ほか" if len(sel) > 3 else "")
+    elif kwhere:
         header = FACILITY_COLS + FILING_COLS
-        sql = f"""SELECT f.pref_name, f.code, f.name, f.ftype, f.address,
-                         kj.name, x.symbol, x.juri_no, COALESCE(NULLIF(x.start_date, ''), x.start_raw),
-                         x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other, x.kubun_ref
-                  FROM facilities f JOIN filings x ON x.facility_id = f.id JOIN kijun kj ON kj.id = x.kijun_id
-                  WHERE {where} AND {kwhere}
-                  ORDER BY f.pref_code, f.name, kj.name"""
-        rows = con.execute(sql, params + kparams)
-        name = kx or k
+        rows = con.execute(
+            f"""SELECT f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area,
+                       kj.name, x.symbol, x.juri_no, COALESCE(NULLIF(x.start_date, ''), x.start_raw),
+                       x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other, x.kubun_ref
+                FROM facilities f JOIN filings x ON x.facility_id = f.id JOIN kijun kj ON kj.id = x.kijun_id
+                WHERE {where} AND {kwhere}
+                ORDER BY f.pref_code, f.name, kj.name""",
+            params + kparams,
+        )
+        name = c.kx or c.k
     else:
         header = FACILITY_COLS + ["届出している施設基準の数"]
-        rows = con.execute(
-            f"""SELECT f.pref_name, f.code, f.name, f.ftype, f.address, f.n_kijun
-                FROM facilities f WHERE {where} ORDER BY f.pref_code, f.name""",
-            params,
-        )
-        name = q or "医療機関一覧"
+        rows = ([*r][1:] for r in con.execute(fac_sql, params))
+        name = c.q or "医療機関一覧"
     return _csv_response(header, rows, f"施設基準届出_{name}.csv")
 
 
@@ -286,7 +418,7 @@ def facility_csv(fid: str):
     if not f:
         raise HTTPException(404)
     rows = con.execute(
-        """SELECT f.pref_name, f.code, f.name, f.ftype, f.address,
+        """SELECT f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area,
                   kj.name, x.symbol, x.juri_no, COALESCE(NULLIF(x.start_date, ''), x.start_raw),
                   x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other, x.kubun_ref
            FROM filings x JOIN facilities f ON f.id = x.facility_id JOIN kijun kj ON kj.id = x.kijun_id
@@ -302,9 +434,11 @@ def facility(request: Request, fid: str):
         f = con.execute("SELECT * FROM facilities WHERE id = ?", (fid,)).fetchone()
         if not f:
             raise HTTPException(404)
+        # 厚生局の名簿と同じ順（基本診療料→特掲診療料…、各区分の中は略称一覧の順）に並べる
         filings = con.execute(
-            """SELECT kj.name AS kijun, x.* FROM filings x JOIN kijun kj ON kj.id = x.kijun_id
-               WHERE x.facility_id = ? ORDER BY kj.name, x.start_date""",
+            """SELECT kj.name AS kijun, COALESCE(i.section, 'その他の届出') AS section, x.*
+               FROM filings x JOIN kijun kj ON kj.id = x.kijun_id LEFT JOIN items i ON i.id = x.item_id
+               WHERE x.facility_id = ? ORDER BY COALESCE(i.id, 1e9), x.start_date""",
             (fid,),
         ).fetchall()
         pref = con.execute("SELECT * FROM prefs WHERE code = ?", (f["pref_code"],)).fetchone()

@@ -1,16 +1,30 @@
 {% extends "base.html" %}
-{% block title %}{% if params.kx %}{{ params.kx }}{% elif params.k %}「{{ params.k }}」{% endif %}{% if params.q %} {{ params.q }}{% endif %}{% if pref_name %} {{ pref_name }}{% endif %} の検索結果{% endblock %}
+{% block title %}{% if sel_items %}{{ sel_items|map(attribute='symbol')|join('・') }}{% elif cond.kx %}{{ cond.kx }}{% elif cond.k %}「{{ cond.k }}」{% endif %}{% if cond.q %} {{ cond.q }}{% endif %}{% if pref_name %} {{ pref_name }}{% endif %} の検索結果{% endblock %}
 {% block robots %}<meta name="robots" content="noindex,follow">{% endblock %}
 {% block canonical %}/search{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › 検索結果</p>
 <h1>検索結果</h1>
 
-{% include "_search_form.html" %}
+<div class="cond-summary">
+  <span class="k">条件</span>
+  {% if cond.empty %}<span class="v">指定なし（全国のすべての医療機関）</span>{% endif %}
+  {% if pref_name %}<span class="v">{{ pref_name }}{% if cond.areas %}／{{ cond.areas|join('・') }}{% endif %}{% if cond.cities %}／{{ cond.cities|join('・') }}{% endif %}</span>{% endif %}
+  {% if cond.ftypes %}<span class="v">{{ cond.ftypes|join('・') }}</span>{% endif %}
+  {% if cond.q %}<span class="v">「{{ cond.q }}」</span>{% endif %}
+  {% if cond.k %}<span class="v">施設基準「{{ cond.k }}」</span>{% endif %}
+  {% if sel_items %}<span class="v">届出項目 {{ sel_items|length }}件を{% if cond.mode == 'or' %}いずれか{% else %}すべて{% endif %}届け出ている：
+    {% for s in sel_items %}<abbr title="{{ s.kijun }}">{{ s.symbol }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+</div>
+
+<details class="cm-edit" {% if total == 0 %}open{% endif %}>
+  <summary>検索条件を変更する</summary>
+  {% include "_search_form.html" %}
+</details>
 
 {% if matched_kijun %}
 <div class="callout small">
-  「{{ params.k }}」を含む施設基準 {{ matched_kijun|length }}{% if matched_kijun|length == 30 %}件以上{% else %}件{% endif %}のいずれかを届け出ている医療機関を表示しています。
+  「{{ cond.k }}」を含む施設基準 {{ matched_kijun|length }}{% if matched_kijun|length == 30 %}件以上{% else %}件{% endif %}のいずれかを届け出ている医療機関を表示しています。
   特定の施設基準だけに絞るには、名称をクリックしてください。
   <ul class="chips" style="margin-top:8px">
     {% for m in matched_kijun %}<li><a href="{{ narrow_url(m.name) }}">{{ m.name }}<span class="n">{{ "{:,}".format(m.n_facilities) }}</span></a></li>{% endfor %}
@@ -24,19 +38,28 @@
 </div>
 
 {% if rows %}
+{% set item_cols = sel_items|length <= 12 %}
 <div class="table-wrap">
-<table>
-  <thead><tr><th>医療機関名</th><th>種類</th><th>都道府県</th><th>住所</th><th class="num">届出数</th></tr></thead>
+<table class="results">
+  <thead><tr>
+    <th>医療機関名</th><th class="pc-only">種類</th><th>所在地</th>
+    {% if sel_items and item_cols %}{% for s in sel_items %}<th class="ic" title="{{ s.kijun }}">{{ s.symbol }}</th>{% endfor %}
+    {% elif sel_items %}<th>届け出ている項目</th>
+    {% else %}<th class="num">届出数</th>{% endif %}
+  </tr></thead>
   <tbody>
   {% for r in rows %}
+    {% set got = item_hits.get(r.id, []) %}
     <tr>
       <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a>
+        <span class="sp-only"><br><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></span>
         {% if hits.get(r.id) %}<ul class="hitlist">{% for h in hits[r.id][:5] %}<li>{{ h }}</li>{% endfor %}{% if hits[r.id]|length > 5 %}<li>ほか{{ hits[r.id]|length - 5 }}件</li>{% endif %}</ul>{% endif %}
       </td>
-      <td><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></td>
-      <td class="nowrap">{{ r.pref_name }}</td>
-      <td>{{ r.address }}</td>
-      <td class="num">{{ r.n_kijun }}</td>
+      <td class="pc-only"><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></td>
+      <td class="addr"><span class="pc-only">{{ r.pref_name }} </span>{{ r.city or '' }}{% if r.area and r.area != '（二次医療圏不明）' %}<br><span class="muted small">{{ r.area }}医療圏</span>{% endif %}</td>
+      {% if sel_items and item_cols %}{% for s in sel_items %}<td class="ic">{% if s.id in got %}<span class="ok" title="{{ s.kijun }}">○</span>{% endif %}</td>{% endfor %}
+      {% elif sel_items %}<td class="small">{% for s in sel_items if s.id in got %}<abbr title="{{ s.kijun }}">{{ s.symbol }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</td>
+      {% else %}<td class="num">{{ r.n_kijun }}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>
@@ -52,7 +75,7 @@
 </nav>
 {% endif %}
 {% else %}
-<p class="note">条件に合う医療機関は見つかりませんでした。施設基準名は短いキーワード（例：「地域包括ケア」「在宅療養支援」）にすると見つかりやすくなります。</p>
+<p class="note">条件に合う医療機関は見つかりませんでした。届出項目を「いずれか」にする、地域を広げるなどして探してみてください。</p>
 {% endif %}
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成</p>
 {% endblock %}

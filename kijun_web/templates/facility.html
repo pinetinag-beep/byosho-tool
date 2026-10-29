@@ -4,7 +4,7 @@
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ f.pref_name }}">{{ f.pref_name }}</a> › {{ f.name }}</p>
 <h1>{{ f.name }}</h1>
-<p class="lead"><span class="tag {% if f.ftype == '病院' %}hosp{% endif %}">{{ f.ftype }}</span>　{{ f.pref_name }}{{ f.address }}</p>
+<p class="lead"><span class="tag {% if f.ftype == '病院' %}hosp{% endif %}">{{ f.ftype }}</span>　{{ f.pref_name }}{{ f.address }}{% if f.area and f.area != '（二次医療圏不明）' %}<span class="muted small">（二次医療圏：{{ f.area }}）</span>{% endif %}</p>
 
 <div class="facts">
   <div class="fact"><div class="k">届け出ている施設基準</div><div class="v">{{ f.n_kijun }} 種類</div></div>
@@ -25,8 +25,9 @@
   <thead><tr><th>施設基準（受理届出名称）</th><th>区分・内訳</th><th>病棟・病床</th><th>算定開始日</th><th>受理番号</th></tr></thead>
   <tbody>
   {% for x in filings %}
+    {% if loop.first or x.section != loop.previtem.section %}<tr class="sec-row"><th colspan="5">{{ x.section }}</th></tr>{% endif %}
     <tr>
-      <td><a href="{{ kijun_url(x.kijun, f.pref_name) }}">{{ x.kijun }}</a></td>
+      <td><a href="{{ kijun_url(x.kijun, f.pref_name) }}">{{ x.kijun }}</a> <span class="sym">{{ x.symbol }}</span></td>
       <td>{% if x.kubun %}{{ x.kubun }}{% elif x.kubun_ref %}<span class="kubun-ref"><span class="tag ref">参考</span>{{ x.kubun_ref }}</span><br><span class="muted small">病床機能報告（{{ meta.kubun_ref_label }}）より{% set note = kubun_ref_note(x.kubun_ref, x.start_date, meta.kubun_ref_date) %}{% if note == "likely_changed" %}。この届出はその後に出し直されており、令和8年度改定で区分の体系が変わったため、現在は別の区分（急性期病院Ａ/Ｂ一般入院料など）の可能性が高い{% elif note == "changed" %}。この届出はその後に出し直されているため、区分が変わっている場合があります{% endif %}</span>{% endif %}{% if (x.kubun or x.kubun_ref) and x.other %}<br>{% endif %}<span class="muted small">{{ x.other }}</span></td>
       <td class="small">{{ x.byoto }}{% if x.byosho_kubun %} {{ x.byosho_kubun }}{% endif %}{% if x.n_byoto %} {{ x.n_byoto }}病棟{% endif %}{% if x.n_byosho %} {{ x.n_byosho }}床{% endif %}</td>
       <td class="nowrap">{{ x.start_date|jdate or x.start_raw }}</td>

@@ -59,16 +59,77 @@ h2 { font-size: 1.15rem; font-weight: 700; margin: 36px 0 12px; padding-left: 10
 .stats { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 26px; font-size: 0.82rem; color: var(--ink-faint); margin: 16px 0 0; }
 .stats b { color: var(--ink-muted); }
 
-/* ── 検索フォーム ── */
-.search-box { background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: 14px; padding: 18px; margin: 24px 0; }
-.search-grid { display: grid; grid-template-columns: 1.4fr 1.4fr 1fr 1fr; gap: 12px; align-items: end; }
-.search-grid label { display: block; font-size: 0.78rem; font-weight: 700; color: var(--ink-muted); margin-bottom: 4px; }
-.search-grid input, .search-grid select {
-  width: 100%; font: inherit; font-size: 0.95rem; padding: 9px 11px;
+/* ── 検索フォーム（caremap.jp と同じ、左に見出し・右に選択肢の表形式） ── */
+.cm { margin: 20px 0 8px; }
+.cm-h { margin: 28px 0 10px; }
+.cm-table { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; font-size: 0.9rem; }
+.cm-table > tbody > tr > th, .cm-table > tr > th {
+  width: 150px; background: var(--brand-dark); color: #fff; font-size: 0.85rem; font-weight: 700;
+  vertical-align: middle; text-align: center; white-space: normal; border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+.cm-table td { padding: 12px 14px; vertical-align: middle; }
+.cm-table select, .cm-table input[type=text] {
+  font: inherit; font-size: 0.95rem; padding: 8px 10px; min-width: 220px; max-width: 100%;
   border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
 }
-.search-grid input:focus, .search-grid select:focus { outline: 2px solid var(--brand); outline-offset: -1px; border-color: var(--brand); }
-.search-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.cm-table input[type=text] { width: 100%; max-width: 480px; }
+.cm select:focus, .cm input:focus { outline: 2px solid var(--brand); outline-offset: -1px; border-color: var(--brand); }
+.cm-note { font-size: 0.8rem; color: var(--ink-faint); margin: 0; }
+.cm-checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.cm-checks label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.cm-checks small { color: var(--ink-faint); font-size: 0.72rem; }
+.cm input[type=checkbox], .cm input[type=radio] { accent-color: var(--brand); width: 15px; height: 15px; margin: 0; }
+.cm-notes { margin: 0 0 12px; padding-left: 1.2em; font-size: 0.85rem; color: var(--ink-muted); }
+.cm-notes a { margin-left: 6px; }
+.cm-tools { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; margin: 0 0 10px; }
+.cm-tools input[type=search] {
+  flex: 1 1 320px; font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+}
+.cm-mode { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.88rem; }
+.cm-mode label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.cm-items td { padding: 10px 12px; }
+/* 区分の見出しは行が縦に長いので、中央ではなく上に置く（スクロールしても見える位置） */
+.cm-items > tbody > tr > th { vertical-align: top; padding-top: 16px; }
+.sp-only { display: none; }
+.cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 3px 8px; }
+.cm-grid label {
+  display: flex; align-items: center; gap: 5px; min-width: 0; padding: 2px 4px; border-radius: 4px;
+  font-size: 0.8rem; cursor: pointer; line-height: 1.5;
+}
+.cm-grid label:hover { background: var(--brand-soft); }
+.cm-grid label:has(input:checked) { background: var(--brand-soft); color: var(--brand-dark); font-weight: 700; }
+.cm-grid label .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-grid label[hidden] { display: none; }
+/* 名称で絞り込み中は、記号の横に正式名称も出す */
+.cm-items.filtering .cm-grid { grid-template-columns: 1fr; }
+.cm-grid .nm { display: none; color: var(--ink-muted); font-weight: 400; white-space: normal; }
+.cm-items.filtering .cm-grid .nm { display: inline; margin-left: 6px; }
+.cm-more summary { cursor: pointer; font-size: 0.85rem; color: var(--brand-dark); margin-bottom: 6px; }
+.cm-submit {
+  position: sticky; bottom: 0; z-index: 5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  margin: 14px 0 0; padding: 12px 14px; background: rgba(255,255,255,0.97); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 -4px 14px rgba(38,37,31,0.08);
+}
+.cm-selected { flex: 1 1 260px; font-size: 0.85rem; color: var(--ink-muted); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.cm-selected b { color: var(--brand-dark); font-size: 1rem; }
+.cm-selected .chip {
+  font: inherit; font-size: 0.78rem; padding: 1px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--brand-line); background: var(--brand-soft); color: var(--brand-dark);
+}
+.cm-selected .more { font-size: 0.78rem; }
+.cm-edit { margin: 12px 0 20px; }
+.cm-edit > summary { cursor: pointer; font-weight: 700; color: var(--brand-dark); padding: 8px 0; }
+.cond-summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88rem; margin: 4px 0 8px; }
+.cond-summary .k { font-size: 0.75rem; font-weight: 700; color: #fff; background: var(--brand-dark); border-radius: 4px; padding: 1px 8px; }
+.cond-summary .v { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; }
+.cond-summary abbr { text-decoration: none; border-bottom: 1px dotted var(--ink-faint); cursor: help; }
+/* 検索結果: 選んだ届出項目ごとの○の列 */
+.results th.ic, .results td.ic { text-align: center; width: 1%; white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+.results th.ic { cursor: help; }
+.results .ok { color: var(--brand); font-weight: 900; }
+.results td.addr { white-space: nowrap; }
+.sec-row th { background: var(--brand-soft); color: var(--brand-dark); font-size: 0.82rem; }
+.sym { color: var(--ink-faint); font-size: 0.75rem; margin-left: 4px; white-space: nowrap; }
 .btn {
   display: inline-block; font: inherit; font-weight: 700; font-size: 0.95rem; cursor: pointer;
   padding: 9px 22px; border-radius: 8px; border: 1px solid var(--brand); background: var(--brand); color: #fff; text-decoration: none;
@@ -125,9 +186,21 @@ td.nowrap { white-space: nowrap; }
   .hero { padding-top: 32px; }
   .hero h1 { font-size: 1.5rem; }
   h1 { font-size: 1.35rem; }
-  .search-grid { grid-template-columns: 1fr 1fr; }
-  .search-grid .wide { grid-column: 1 / -1; }
   .logo small { display: none; }
+  /* スマホでは表形式のフォームの見出しを上に積む */
+  .cm-table > tbody > tr > th, .cm-table > tr > th, .cm-table td { display: block; width: auto; }
+  .cm-table > tbody > tr > th, .cm-table > tr > th { text-align: left; padding: 6px 12px; }
+  .cm-table select, .cm-table input[type=text] { width: 100%; min-width: 0; }
+  .cm-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+  .cm-items > tbody > tr > th { padding-top: 6px; }
+  /* 送信バーは1行に収める（選択中の記号の一覧と「クリア」は畳む） */
+  .cm-submit { flex-wrap: nowrap; padding: 8px 10px; gap: 8px; }
+  .cm-selected { flex: 1 1 auto; }
+  .cm-selected #sel-list, #item-clear { display: none; }
+  .cm-submit .btn { padding: 9px 14px; white-space: nowrap; }
+  .pc-only { display: none; }
+  .sp-only { display: inline; }
+  .results td.addr { white-space: normal; min-width: 6.5em; font-size: 0.8rem; }
   /* 一覧表の住所は医療機関ページで見られるので、スマホでは区分の列を優先して隠す */
   .hide-sp { display: none; }
 }

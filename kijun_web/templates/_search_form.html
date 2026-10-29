@@ -1,33 +1,158 @@
-<form class="search-box" action="/search" method="get">
-  <div class="search-grid">
-    <div class="wide">
-      <label for="k">施設基準（届出名称の一部）</label>
-      <input id="k" name="k" list="kijun-list" value="{{ params.k if params else '' }}" placeholder="例：地域包括ケア病棟入院料、在宅療養支援診療所" autocomplete="off">
-    </div>
-    <div class="wide">
-      <label for="q">医療機関名・住所（一部）</label>
-      <input id="q" name="q" value="{{ params.q if params else '' }}" placeholder="例：近森病院、高知市" autocomplete="off">
-    </div>
-    <div>
-      <label for="pref">都道府県</label>
-      <select id="pref" name="pref">
-        <option value="">全国</option>
-        {% for p in prefs %}<option value="{{ p.code }}" {% if params and params.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="ftype">施設の種類</label>
-      <select id="ftype" name="ftype">
-        <option value="">すべて</option>
-        {% for t in ftypes %}<option value="{{ t }}" {% if params and params.ftype == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
-      </select>
+{# 検索フォーム（トップと検索結果ページで共通）。caremap.jp と同じく、左に見出し・右に選択肢の表形式で、
+   届出項目は受理記号のチェックボックスを略称一覧の区分・順番で並べる。 #}
+<form class="cm" action="/search" method="get" id="sform"
+      data-areas='{{ cond.areas|tojson }}' data-cities='{{ cond.cities|tojson }}'>
+  <h2 class="cm-h">医療機関の条件</h2>
+  <table class="cm-table">
+    <tr>
+      <th><label for="f-pref">都道府県</label></th>
+      <td>
+        <select name="pref" id="f-pref">
+          <option value="">全国</option>
+          {% for p in prefs %}<option value="{{ p.code }}" {% if cond.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <th>二次医療圏</th>
+      <td id="f-area"><p class="cm-note">※都道府県を選ぶと選択肢が表示されます。</p></td>
+    </tr>
+    <tr>
+      <th>市区町村</th>
+      <td id="f-city"><p class="cm-note">※二次医療圏を1つだけ選ぶと選択肢が表示されます。</p></td>
+    </tr>
+    <tr>
+      <th>施設の種類</th>
+      <td><div class="cm-checks">
+        {% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t in cond.ftypes %}checked{% endif %}>{{ t }}</label>{% endfor %}
+      </div></td>
+    </tr>
+    <tr>
+      <th><label for="f-q">医療機関名・住所</label></th>
+      <td><input type="text" name="q" id="f-q" value="{{ cond.q }}" placeholder="一部でOK（例：近森病院、高知市）" autocomplete="off"></td>
+    </tr>
+  </table>
+
+  <h2 class="cm-h">届出項目</h2>
+  <ul class="cm-notes">
+    <li>地方厚生局への届出項目（受理記号）を指定して絞り込めます（複数選択可）。記号にマウスを乗せると正式名称が出ます。<a href="/kijun">正式名称一覧はこちら</a></li>
+    <li>何も指定しない場合は、すべての医療機関が対象です。</li>
+  </ul>
+  <div class="cm-tools">
+    <input type="search" id="item-filter" placeholder="名称・記号で項目を探す（例：地域包括ケア、在宅療養支援）" autocomplete="off">
+    <div class="cm-mode">
+      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>選んだ項目を<b>すべて</b>届け出ている</label>
+      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}><b>いずれか</b>を届け出ている</label>
     </div>
   </div>
-  <div class="search-actions">
-    <span class="hint">どれか1つだけでも検索できます。施設基準は名称の一部（「地域包括ケア」など）で該当するものをまとめて探し、候補から選ぶとその1つだけを探します。</span>
-    <button class="btn" type="submit">検索する</button>
+  <table class="cm-table cm-items" id="item-table">
+    {% for sec, items in item_sections %}
+    <tr>
+      <th>{{ sec }}</th>
+      <td>
+        {% if sec == '先進医療' %}<details class="cm-more" {% if items|selectattr('id', 'in', cond.items)|list %}open{% endif %}><summary>先進医療の項目を表示（{{ items|length }}）</summary>{% endif %}
+        <div class="cm-grid">
+          {% for it in items %}<label title="{{ it.kijun }}（{{ '{:,}'.format(it.n) }}施設）" data-key="{{ it.key }}"><input type="checkbox" name="item" value="{{ it.id }}" {% if it.id in cond.items %}checked{% endif %}><span class="s">{{ it.symbol }}</span></label>{% endfor %}
+        </div>
+        {% if sec == '先進医療' %}</details>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="cm-note" id="item-empty" hidden>その名称・記号の届出項目は見つかりませんでした。</p>
+
+  <div class="cm-submit">
+    <div class="cm-selected"><b id="sel-n">0</b> 項目を選択中<span id="sel-list"></span></div>
+    <button type="button" class="btn secondary" id="item-clear">選択をクリア</button>
+    <button type="submit" class="btn">この条件で検索する</button>
   </div>
-  <datalist id="kijun-list">
-    {% for n in kijun_names %}<option value="{{ n }}">{% endfor %}
-  </datalist>
 </form>
+
+<script>
+(() => {
+  const form = document.getElementById("sform");
+  const pref = document.getElementById("f-pref");
+  const areaBox = document.getElementById("f-area");
+  const cityBox = document.getElementById("f-city");
+  let initAreas = JSON.parse(form.dataset.areas || "[]");
+  let initCities = JSON.parse(form.dataset.cities || "[]");
+  let areaData = [];
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const note = (box, text) => { box.innerHTML = `<p class="cm-note">${text}</p>`; };
+  const checks = (name, list, selected) => '<div class="cm-checks">' + list.map((x) =>
+    `<label><input type="checkbox" name="${name}" value="${esc(x.name)}" ${selected.includes(x.name) ? "checked" : ""}>${esc(x.name)}<small>${x.n.toLocaleString()}</small></label>`
+  ).join("") + "</div>";
+
+  function renderCities() {
+    const picked = [...areaBox.querySelectorAll("input:checked")].map((i) => i.value);
+    if (picked.length !== 1) { note(cityBox, "※二次医療圏を1つだけ選ぶと選択肢が表示されます。"); return; }
+    const a = areaData.find((x) => x.name === picked[0]);
+    cityBox.innerHTML = a ? checks("city", a.cities, initCities) : "";
+  }
+  async function loadAreas() {
+    if (!pref.value) {
+      areaData = [];
+      note(areaBox, "※都道府県を選ぶと選択肢が表示されます。");
+      note(cityBox, "※二次医療圏を1つだけ選ぶと選択肢が表示されます。");
+      return;
+    }
+    const res = await fetch(`/areas/${encodeURIComponent(pref.value)}.json`);
+    areaData = res.ok ? await res.json() : [];
+    areaBox.innerHTML = checks("area", areaData, initAreas);
+    renderCities();
+  }
+  pref.addEventListener("change", () => { initAreas = []; initCities = []; loadAreas(); });
+  areaBox.addEventListener("change", () => { initCities = []; renderCities(); });
+  loadAreas();
+
+  // 届出項目: 名称・記号で絞り込み、選択中の数と記号を下のバーに出す
+  const table = document.getElementById("item-table");
+  const labels = [...table.querySelectorAll("label[data-key]")];
+  const filter = document.getElementById("item-filter");
+  const empty = document.getElementById("item-empty");
+  const norm = (s) => s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+  filter.addEventListener("input", () => {
+    const q = norm(filter.value);
+    table.classList.toggle("filtering", q !== "");
+    let shown = 0;
+    labels.forEach((l) => {
+      const hit = !q || l.dataset.key.includes(q);
+      l.hidden = !hit;
+      if (hit) shown++;
+      if (q && hit && !l.querySelector(".nm")) {   // 絞り込み中は正式名称も並べて見せる
+        const nm = document.createElement("small");
+        nm.className = "nm";
+        nm.textContent = l.title.replace(/（[\d,]+施設）$/, "");
+        l.appendChild(nm);
+      }
+    });
+    table.querySelectorAll("tr").forEach((tr) => {
+      tr.hidden = !!q && !tr.querySelector("label[data-key]:not([hidden])");
+      const d = tr.querySelector("details");
+      if (d && q) d.open = true;
+    });
+    empty.hidden = shown > 0;
+  });
+  const selN = document.getElementById("sel-n");
+  const selList = document.getElementById("sel-list");
+  function updateSelected() {
+    const on = labels.filter((l) => l.querySelector("input").checked);
+    selN.textContent = on.length;
+    selList.innerHTML = on.slice(0, 12).map((l) =>
+      `<button type="button" class="chip" data-id="${l.querySelector("input").value}" title="${esc(l.title)}">${esc(l.querySelector(".s").textContent)} ×</button>`
+    ).join("") + (on.length > 12 ? `<span class="more">ほか${on.length - 12}項目</span>` : "");
+  }
+  table.addEventListener("change", updateSelected);
+  selList.addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b) return;
+    table.querySelector(`input[value="${b.dataset.id}"]`).checked = false;
+    updateSelected();
+  });
+  document.getElementById("item-clear").addEventListener("click", () => {
+    labels.forEach((l) => { l.querySelector("input").checked = false; });
+    updateSelected();
+  });
+  updateSelected();
+})();
+</script>

@@ -82,6 +82,45 @@ def test_kubun_ref_fills_only_blank_kubun():
     assert header.endswith("区分（参考：病床機能報告）")
 
 
+def _item_id(symbol: str) -> int:
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    return con.execute("SELECT id FROM items WHERE symbol = ? ORDER BY n_facilities DESC", (symbol,)).fetchone()[0]
+
+
+def test_item_search_and_or():
+    a, b = _item_id("一般入院"), _item_id("地包ケア１")
+    n = lambda url: int(re.search(r'<div class="count">([\d,]+) 件', client.get(url).text)[1].replace(",", ""))
+    both = n(f"/search?pref=39&item={a}&item={b}")
+    either = n(f"/search?pref=39&item={a}&item={b}&mode=or")
+    only_a = n(f"/search?pref=39&item={a}")
+    assert 0 < both <= only_a <= either
+
+
+def test_areas_json_and_area_filter():
+    areas = client.get("/areas/39.json").json()
+    names = [a["name"] for a in areas]
+    assert "中央" in names and all(a["cities"] for a in areas)
+    kochi = next(a for a in areas if a["name"] == "中央")
+    r = client.get("/search?pref=39&area=" + quote("中央"))
+    total = int(re.search(r'<div class="count">([\d,]+) 件', r.text)[1].replace(",", ""))
+    assert total == kochi["n"]
+
+
+def test_search_csv_item_columns():
+    a = _item_id("一般入院")
+    lines = client.get(f"/search.csv?pref=39&item={a}").content.decode("utf-8-sig").splitlines()
+    assert lines[0].endswith("一般入院（一般病棟入院基本料）") and "二次医療圏" in lines[0]
+    assert lines[1].endswith(",○")
+
+
+def test_items_follow_official_order():
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    first = [r[0] for r in con.execute("SELECT symbol FROM items ORDER BY id LIMIT 3")]
+    assert first == ["情報通信", "機能強化", "外来感染"]   # 略称一覧（基本診療料）の先頭と同じ並び
+
+
 def test_sitemaps_within_limit():
     idx = client.get("/sitemap.xml").text
     parts = re.findall(r"/sitemap-([\w-]+)\.xml", idx)

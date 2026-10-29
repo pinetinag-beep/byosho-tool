@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import argparse
+import bisect
+import json
 import os
 import re
 import sqlite3
@@ -22,6 +24,7 @@ import time
 import unicodedata
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
@@ -30,7 +33,17 @@ ROOT = HERE.parent
 SRC = ROOT / "shisetsu_kijun_cache.parquet"
 BYOSHO = ROOT / "data_cache.parquet"
 WARDS = ROOT / "ward_cache.parquet"
+GAIRAI = ROOT / "gairai_form1_annual.parquet"   # 市区町村→二次医療圏の対応に使う（外来機能報告）
+ABBR = HERE / "abbr_order.json"                 # 受理記号の分類と並び順（make_abbr_order.py が作る）
 OUT = HERE / "data" / "kijun.sqlite"
+
+# 検索フォームで届出項目を並べる区分（略称一覧の見出しと同じ順）
+SECTION_ORDER = ["基本診療料", "特掲診療料", "入院時食事療養", "その他の届出", "先進医療"]
+AREA_UNKNOWN = "（二次医療圏不明）"
+
+# 政令指定都市は区まで含めて市区町村とする（外来機能報告の市区町村名称と同じ単位）
+_SEIREI = ("札幌市 仙台市 さいたま市 千葉市 横浜市 川崎市 相模原市 新潟市 静岡市 浜松市 名古屋市 "
+           "京都市 大阪市 堺市 神戸市 岡山市 広島市 北九州市 福岡市 熊本市").split()
 
 # 北海道・関東信越・近畿の厚生局は入院基本料の区分（急性期一般入院料１など）を公表していない。
 # 病床機能報告の病棟ごとの入院基本料から、届出名称ごとに参考値として補う（Streamlit版の病院ページと同じ対応）。
@@ -69,7 +82,17 @@ CREATE TABLE facilities (
     address TEXT, address_search TEXT,
     ftype TEXT, n_kijun INTEGER,
     byosho_name TEXT,             -- 病床機能報告側の医療機関名（Streamlit版へのリンク用、突合できた場合のみ）
-    byosho_code TEXT              -- 病床機能報告の医療機関コード（同上）
+    byosho_code TEXT,             -- 病床機能報告の医療機関コード（同上）
+    city TEXT,                    -- 住所から取った市区町村（政令市は区まで）
+    area TEXT                     -- 二次医療圏（外来機能報告の市区町村との対応から）
+);
+CREATE TABLE areas (              -- 検索フォームの 都道府県→二次医療圏→市区町村
+    pref_code TEXT NOT NULL, area TEXT NOT NULL, area_order INTEGER, city TEXT NOT NULL,
+    city_order TEXT, n INTEGER
+);
+CREATE TABLE items (              -- 検索フォームの届出項目（届出名称×受理記号。同じ名称で記号が違う＝外来/入院など）
+    id INTEGER PRIMARY KEY, kijun_id INTEGER NOT NULL, symbol TEXT NOT NULL,
+    section TEXT NOT NULL, sort_key REAL NOT NULL, n_facilities INTEGER
 );
 CREATE TABLE kijun (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, name_search TEXT NOT NULL,
@@ -79,7 +102,8 @@ CREATE TABLE filings (
     facility_id TEXT NOT NULL, kijun_id INTEGER NOT NULL,
     symbol TEXT, juri_no TEXT, start_date TEXT, start_raw TEXT,
     byoto TEXT, byosho_kubun TEXT, n_byoto TEXT, n_byosho TEXT, kubun TEXT, other TEXT,
-    kubun_ref TEXT                -- kubun が空のときだけ入る、病床機能報告からの参考値
+    kubun_ref TEXT,               -- kubun が空のときだけ入る、病床機能報告からの参考値
+    item_id INTEGER
 );
 CREATE TABLE kijun_pref (kijun_id INTEGER NOT NULL, pref_code TEXT NOT NULL, n INTEGER NOT NULL);
 """
@@ -88,6 +112,9 @@ INDEXES = """
 CREATE INDEX ix_fac_pref ON facilities(pref_code, ftype);
 CREATE INDEX ix_fil_fac ON filings(facility_id);
 CREATE INDEX ix_fil_kijun ON filings(kijun_id, facility_id);
+CREATE INDEX ix_fil_item ON filings(item_id, facility_id);
+CREATE INDEX ix_fac_area ON facilities(pref_code, area, city);
+CREATE INDEX ix_areas ON areas(pref_code);
 CREATE INDEX ix_kp ON kijun_pref(kijun_id, pref_code);
 """
 
@@ -198,6 +225,148 @@ def _kubun_ref() -> tuple[dict[tuple[str, str], str], int | None]:
     return ref, year
 
 
+def _place_key(s) -> str:
+    """住所・市区町村名の照合用（全角半角・空白・「ヶ/ケ」の表記ゆれを吸収）。"""
+    return re.sub(r"\s", "", unicodedata.normalize("NFKC", str(s))).replace("ヶ", "ケ")
+
+
+def _city_from_address(addr: str) -> str | None:
+    """外来機能報告に無い（＝報告対象の施設が無い）町村などは、住所の先頭から市区町村名を取り出す。"""
+    for c in _SEIREI:
+        if addr.startswith(c):
+            m = re.match(re.escape(c) + r".+?区", addr)
+            return m.group(0) if m else c
+    m = re.match(r"(.+?郡)(.+?[町村])", addr)
+    if m and not re.search(r"[市区]", m.group(2)):   # 「大和郡山市…」を郡と取り違えない
+        return m.group(0)
+    for c in ("四日市市", "廿日市市", "野々市市"):     # 名前の途中に「市」がある市
+        if addr.startswith(c):
+            return c
+    m = re.match(r".+?[市区町村]", addr)
+    return m.group(0) if m else None
+
+
+def _city_area(fac: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.DataFrame]:
+    """医療機関の住所から市区町村と二次医療圏を決める。
+
+    二次医療圏は外来機能報告（最新年度）の「市区町村名称→二次医療圏名」の対応を使う（2026年10月で
+    医療機関の98.8%が一致）。そこに無い町村は住所から市区町村名を取り出し、同じ郡の町村がすべて
+    同じ二次医療圏なら郡から決める。決まらないものは「二次医療圏不明」にする。
+    3つ目の戻り値は検索フォーム用の 都道府県×二次医療圏×市区町村 の一覧（並び順つき）。"""
+    if GAIRAI.exists():
+        g = pd.read_parquet(GAIRAI, columns=["都道府県コード", "二次医療圏コード", "二次医療圏名",
+                                             "市区町村コード", "市区町村名称", "報告年度"])
+        g = g[g["報告年度"] == g["報告年度"].max()].astype(str)
+        g["pref"] = g["都道府県コード"].str.zfill(2)
+        mode = lambda s: s.value_counts().index[0]
+        tbl = (g.groupby(["pref", "市区町村名称"])
+                .agg(area=("二次医療圏名", mode), area_code=("二次医療圏コード", mode), city_code=("市区町村コード", "min"))
+                .reset_index())
+    else:
+        tbl = pd.DataFrame(columns=["pref", "市区町村名称", "area", "area_code", "city_code"])
+    info = {(r.pref, r.市区町村名称): (r.area, r.area_code, r.city_code) for r in tbl.itertuples(index=False)}
+    names: dict[str, list[tuple[str, str]]] = {}
+    for p, c in zip(tbl["pref"], tbl["市区町村名称"]):
+        names.setdefault(p, []).append((_place_key(c), c))
+    for p in names:
+        names[p].sort(key=lambda x: len(x[0]), reverse=True)
+    area_code_of = {(p, a): ac for (p, _), (a, ac, _) in info.items()}
+
+    def find(pref: str, addr: str) -> str | None:
+        cands = names.get(pref, [])
+        for key, name in cands:
+            if addr.startswith(key) or ("郡" in key and addr.startswith(key.split("郡", 1)[1])):
+                return name
+        if "郡" in addr[:10]:   # 住所には郡があり、市区町村名称には郡が無い
+            rest = addr.split("郡", 1)[1]
+            for key, name in cands:
+                if "郡" not in key and rest.startswith(key):
+                    return name
+        return None
+
+    # 1巡目: 外来機能報告の市区町村名称と照合。外来機能報告の名称には郡が付かないので、
+    # 照合できた施設の住所から「郡→二次医療圏」の対応も集めておく
+    cities, areas, gun_areas = [], [], {}
+    for pref, pname, address in fac[["pref_code", "pref_name", "address"]].itertuples(index=False):
+        addr = _place_key(address or "")
+        if addr.startswith(pname):        # 住所に都道府県名から書いてある施設がある
+            addr = addr[len(pname):]
+        city = find(pref, addr)
+        if city:
+            area = info[(pref, city)][0]
+            if "郡" in addr[:10]:
+                gun_areas.setdefault((pref, addr.split("郡", 1)[0] + "郡"), set()).add(area)
+        else:
+            city = _city_from_address(addr) or "（市区町村不明）"
+            area = None
+        cities.append(city)
+        areas.append(area)
+    # 2巡目: 照合できなかった町村は、同じ郡の町村がすべて同じ二次医療圏ならそれを使う
+    for i, (pref, city) in enumerate(zip(fac["pref_code"], cities)):
+        if areas[i] is None:
+            same = gun_areas.get((pref, city.split("郡", 1)[0] + "郡"), set()) if "郡" in city else set()
+            areas[i] = next(iter(same)) if len(same) == 1 else AREA_UNKNOWN
+            if "郡" in city:   # 外来機能報告の書き方（郡を付けない）にそろえる
+                cities[i] = city.split("郡", 1)[1]
+    city_s = pd.Series(cities, index=fac.index)
+    area_s = pd.Series(areas, index=fac.index)
+
+    a = pd.DataFrame({"pref_code": fac["pref_code"], "area": area_s, "city": city_s})
+    a = a.groupby(["pref_code", "area", "city"]).size().reset_index(name="n")
+    a["area_order"] = [int(area_code_of.get((p, ar), 999999)) if str(area_code_of.get((p, ar), "")).isdigit()
+                       else 999999 for p, ar in zip(a["pref_code"], a["area"])]
+    a["city_order"] = [str(info.get((p, c), (None, None, "99999"))[2]) + c for p, c in zip(a["pref_code"], a["city"])]
+    return city_s, area_s, a
+
+
+def _items(head: pd.DataFrame) -> pd.DataFrame:
+    """検索フォームの届出項目（届出名称×受理記号）を、略称一覧の分類・並び順で返す。
+
+    略称一覧（abbr_order.json）に無い記号は、各医療機関の届出の並び順から位置を推定する。
+    地方厚生局の名簿は1医療機関の届出を略称一覧と同じ順（基本診療料→特掲診療料…）で載せているので、
+    直前に載っている「一覧にある記号」の位置＋0.5（無ければ直後の記号の位置−0.5）の中央値を使う。"""
+    abbr = json.loads(ABBR.read_text(encoding="utf-8")) if ABBR.exists() else []
+    known: dict[str, tuple[int, str]] = {}
+    for i, a in enumerate(abbr):
+        known.setdefault(_place_key(a["symbol"]), (i, a["section"]))
+    sym = head["受理記号"]
+    sym_cats = list(sym.cat.categories)
+    cat_order = np.array([known.get(_place_key(s), (np.nan, None))[0] for s in sym_cats] + [np.nan], dtype=float)
+    codes = sym.cat.codes.to_numpy()
+    order = pd.Series(cat_order[codes])            # code -1（記号なし）は末尾の NaN を指す
+    fid = head["facility_id"].cat.codes.to_numpy()
+    prev = order.groupby(fid).ffill().groupby(fid).shift(1)
+    nxt = order.groupby(fid).bfill().groupby(fid).shift(-1)
+    est = order.fillna(prev + 0.5).fillna(nxt - 0.5)
+
+    df = pd.DataFrame({"k": head["受理届出名称"].cat.codes.to_numpy(), "s": codes, "fid": fid, "est": est})
+    it = df.groupby(["k", "s"]).agg(sort_key=("est", "median"), n_facilities=("fid", "nunique")).reset_index()
+    k_cats = list(head["受理届出名称"].cat.categories)
+    it["kijun"] = [k_cats[k] for k in it["k"]]
+    it["symbol"] = [sym_cats[s] if s >= 0 else "" for s in it["s"]]
+
+    anchors = sorted((o, sec) for o, sec in known.values())
+    anchor_pos = [o for o, _ in anchors]
+
+    def section_of(symbol: str, key: float) -> str:
+        if _place_key(symbol) in known:
+            return known[_place_key(symbol)][1]
+        if pd.isna(key) or not anchors:
+            return "その他の届出"
+        i = bisect.bisect_right(anchor_pos, key) - 1
+        return anchors[max(i, 0)][1]
+
+    it["section"] = [section_of(s, k) for s, k in zip(it["symbol"], it["sort_key"])]
+    it["sort_key"] = it["sort_key"].fillna(1e9)
+    it["sec_order"] = it["section"].map({s: i for i, s in enumerate(SECTION_ORDER)}).fillna(len(SECTION_ORDER))
+    it = it.sort_values(["sec_order", "sort_key", "symbol"]).reset_index(drop=True)
+    it["id"] = it.index + 1
+    # 品質確認用: 一覧にある記号同士で、名簿の並びが一覧の順と合っている割合
+    known_rows = order.notna()
+    it.attrs["order_agreement"] = float(((order >= prev) | prev.isna())[known_rows].mean()) if known_rows.any() else 0.0
+    return it[["id", "kijun", "symbol", "section", "sort_key", "n_facilities"]]
+
+
 def build(src: Path = SRC, out: Path = OUT) -> dict:
     """メモリを抑えるため、集計用の列だけを辞書エンコード（category）のまま読み、
     届出行はparquetから10万行ずつ読んでDBに流し込む（全列を一度に文字列で
@@ -239,6 +408,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     fac["byosho_code"], fac["byosho_name"] = _byosho_link(fac)
     code_of = fac.set_index("facility_id")["byosho_code"].dropna().to_dict()
     kubun_ref, kubun_ref_year = _kubun_ref()
+    fac["city"], fac["area"], areas = _city_area(fac)
 
     # ── 施設基準 ──
     kj = (
@@ -264,6 +434,9 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         .reset_index(name="n")
     )
     kp["都道府県コード"] = kp["都道府県コード"].astype(str)
+    items = _items(head)
+    items["kijun_id"] = items["kijun"].map(kid)
+    item_of = {(k, s): i for i, k, s in items[["id", "kijun", "symbol"]].itertuples(index=False)}
     del head
 
     # ── 書き出し ──
@@ -280,10 +453,18 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         .astype(object).itertuples(index=False, name=None),
     )
     con.executemany(
-        "INSERT INTO facilities VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO facilities VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         fac[["facility_id", "pref_code", "pref_name", "code", "name", "name_search",
-             "address", "address_search", "ftype", "n_kijun", "byosho_name", "byosho_code"]]
+             "address", "address_search", "ftype", "n_kijun", "byosho_name", "byosho_code", "city", "area"]]
         .astype(object).where(fac.notna(), None).itertuples(index=False, name=None),
+    )
+    con.executemany(
+        "INSERT INTO areas VALUES (?,?,?,?,?,?)",
+        areas[["pref_code", "area", "area_order", "city", "city_order", "n"]].astype(object).itertuples(index=False, name=None),
+    )
+    con.executemany(
+        "INSERT INTO items VALUES (?,?,?,?,?,?)",
+        items[["id", "kijun_id", "symbol", "section", "sort_key", "n_facilities"]].astype(object).itertuples(index=False, name=None),
     )
     con.executemany(
         "INSERT INTO kijun VALUES (?,?,?,?,?)",
@@ -303,10 +484,11 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
             kubun_ref.get((code_of.get(fid), kj), "") if not kb and kj in KUBUN_REF_KEYWORDS else ""
             for fid, kj, kb in b[["facility_id", "受理届出名称", "区分"]].itertuples(index=False)
         ]
+        b["item_id"] = [item_of.get(key) for key in zip(b["受理届出名称"], b["受理記号"])]
         con.executemany(
-            "INSERT INTO filings_raw VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO filings_raw VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             b[["facility_id", "kijun_id", "受理記号", "受理番号", "start_date", "算定開始年月日",
-               "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "kubun_ref"]]
+               "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "kubun_ref", "item_id"]]
             .astype(object).itertuples(index=False, name=None),
         )
     # 元データには完全に同一の行が数百件あるので、ここで重複を除く
@@ -324,6 +506,10 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_kijun": str(len(kj)),
         "n_byosho_linked": str(int(fac["byosho_name"].notna().sum())),
         "n_kubun_ref": str(con.execute("SELECT COUNT(*) FROM filings WHERE kubun_ref != ''").fetchone()[0]),
+        "n_items": str(len(items)),
+        "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
+        "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
+        "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),
         "kubun_ref_date": f"{kubun_ref_year}-07-01" if kubun_ref_year else "",
         "kubun_ref_label": f"{kubun_ref_year}年7月1日時点" if kubun_ref_year else "",
         "as_of_min": prefs["as_of"].min(),

@@ -3,24 +3,16 @@
 {% block canonical %}/{% endblock %}
 {% block content %}
 <section class="hero">
-  <h1>全国の施設基準届出を、無料で検索。</h1>
-  <p>どの病院・診療所が、どの施設基準（診療報酬の届出）を出しているか。
-     地方厚生局がバラバラに公表しているデータを全国47都道府県分まとめて、すぐに探せるようにしました。</p>
-  <ul class="badges">
-    <li>完全無料・登録不要</li>
-    <li>CSVも伏せ字なしで無料</li>
-    <li>全国47都道府県</li>
-    <li>毎月更新</li>
-  </ul>
+  <h1>施設基準届出 検索</h1>
+  <p>全国の病院・診療所が地方厚生局に届け出ている施設基準を、地域・施設の種類・届出項目で検索できます。<b>無料・登録不要</b>、CSVも伏せ字なしで無料です。</p>
   <p class="stats">
     <span>医療機関 <b>{{ "{:,}".format(meta.n_facilities|int) }}</b> 件</span>
     <span>届出 <b>{{ "{:,}".format(meta.n_filings|int) }}</b> 件</span>
-    <span>施設基準 <b>{{ "{:,}".format(meta.n_kijun|int) }}</b> 種類</span>
+    <span>全国47都道府県</span>
     <span>データ時点 <b>{{ meta.as_of_max_label }}</b> までの公表分</span>
   </p>
 </section>
 
-{% set params = None %}
 {% include "_search_form.html" %}
 
 <h2>よく調べられる施設基準</h2>
@@ -33,12 +25,4 @@
 <ul class="pref-grid">
   {% for p in prefs %}<li><a href="/pref/{{ p.name }}">{{ p.name }}</a></li>{% endfor %}
 </ul>
-
-<h2>こんな使い方ができます</h2>
-<div class="facts">
-  <div class="fact"><div class="k">医事課・病院経営</div><div class="v">自院・近隣病院の届出状況を確認</div></div>
-  <div class="fact"><div class="k">MR・医療機器の営業</div><div class="v">特定の加算を届け出ている病院をリスト化</div></div>
-  <div class="fact"><div class="k">調剤薬局・在宅医療</div><div class="v">地域の在宅支援診療所や連携先を把握</div></div>
-  <div class="fact"><div class="k">コンサル・研究</div><div class="v">都道府県別の届出数をCSVで集計</div></div>
-</div>
 {% endblock %}
