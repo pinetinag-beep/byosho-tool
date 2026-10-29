@@ -1,158 +1,211 @@
-{# 検索フォーム（トップと検索結果ページで共通）。caremap.jp と同じく、左に見出し・右に選択肢の表形式で、
-   届出項目は受理記号のチェックボックスを略称一覧の区分・順番で並べる。 #}
-<form class="cm" action="/search" method="get" id="sform"
-      data-areas='{{ cond.areas|tojson }}' data-cities='{{ cond.cities|tojson }}'>
-  <h2 class="cm-h">医療機関の条件</h2>
-  <table class="cm-table">
-    <tr>
-      <th><label for="f-pref">都道府県</label></th>
-      <td>
-        <select name="pref" id="f-pref">
-          <option value="">全国</option>
-          {% for p in prefs %}<option value="{{ p.code }}" {% if cond.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
-        </select>
-      </td>
-    </tr>
-    <tr>
-      <th>二次医療圏</th>
-      <td id="f-area"><p class="cm-note">※都道府県を選ぶと選択肢が表示されます。</p></td>
-    </tr>
-    <tr>
-      <th>市区町村</th>
-      <td id="f-city"><p class="cm-note">※二次医療圏を1つだけ選ぶと選択肢が表示されます。</p></td>
-    </tr>
-    <tr>
-      <th>施設の種類</th>
-      <td><div class="cm-checks">
-        {% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t in cond.ftypes %}checked{% endif %}>{{ t }}</label>{% endfor %}
-      </div></td>
-    </tr>
-    <tr>
-      <th><label for="f-q">医療機関名・住所</label></th>
-      <td><input type="text" name="q" id="f-q" value="{{ cond.q }}" placeholder="一部でOK（例：近森病院、高知市）" autocomplete="off"></td>
-    </tr>
-  </table>
-
-  <h2 class="cm-h">届出項目</h2>
-  <ul class="cm-notes">
-    <li>地方厚生局への届出項目（受理記号）を指定して絞り込めます（複数選択可）。記号にマウスを乗せると正式名称が出ます。<a href="/kijun">正式名称一覧はこちら</a></li>
-    <li>何も指定しない場合は、すべての医療機関が対象です。</li>
-  </ul>
-  <div class="cm-tools">
-    <input type="search" id="item-filter" placeholder="名称・記号で項目を探す（例：地域包括ケア、在宅療養支援）" autocomplete="off">
-    <div class="cm-mode">
-      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>選んだ項目を<b>すべて</b>届け出ている</label>
-      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}><b>いずれか</b>を届け出ている</label>
+{# 検索フォーム（トップと検索結果ページで共通）。届出名を打つと候補が出て、選んだものをチップとして足していく
+   検索窓が中心。地域・施設の種類はその下に横並び。届出項目の全体は「一覧から選ぶ」で区分ごとに見られる。 #}
+<form class="sx" action="/search" method="get" id="sform"
+      data-areas='{{ cond.areas|tojson }}' data-cities='{{ cond.cities|tojson }}' data-items='{{ cond.items|tojson }}'>
+  <div class="sx-main">
+    <label class="sx-label" for="item-q">届け出ている施設基準で探す</label>
+    <div class="sx-box" id="sx-box">
+      <span class="sx-icon" aria-hidden="true"></span>
+      <div class="sx-chips" id="sel-chips"></div>
+      <input type="search" id="item-q" placeholder="施設基準の名前や記号を入力（例：地域包括ケア、在宅療養支援）"
+             autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggest">
+    </div>
+    <ul class="sx-suggest" id="suggest" role="listbox" hidden></ul>
+    <div id="item-inputs"></div>
+    <div class="sx-mode" id="sx-mode" hidden>
+      <span>選んだ施設基準を</span>
+      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべて届け出ている</label>
+      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
     </div>
   </div>
-  <table class="cm-table cm-items" id="item-table">
-    {% for sec, items in item_sections %}
-    <tr>
-      <th>{{ sec }}</th>
-      <td>
-        {% if sec == '先進医療' %}<details class="cm-more" {% if items|selectattr('id', 'in', cond.items)|list %}open{% endif %}><summary>先進医療の項目を表示（{{ items|length }}）</summary>{% endif %}
-        <div class="cm-grid">
-          {% for it in items %}<label title="{{ it.kijun }}（{{ '{:,}'.format(it.n) }}施設）" data-key="{{ it.key }}"><input type="checkbox" name="item" value="{{ it.id }}" {% if it.id in cond.items %}checked{% endif %}><span class="s">{{ it.symbol }}</span></label>{% endfor %}
-        </div>
-        {% if sec == '先進医療' %}</details>{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  <p class="cm-note" id="item-empty" hidden>その名称・記号の届出項目は見つかりませんでした。</p>
 
-  <div class="cm-submit">
-    <div class="cm-selected"><b id="sel-n">0</b> 項目を選択中<span id="sel-list"></span></div>
-    <button type="button" class="btn secondary" id="item-clear">選択をクリア</button>
-    <button type="submit" class="btn">この条件で検索する</button>
+  <div class="sx-filters">
+    <div class="sx-field">
+      <span class="sx-flabel">都道府県</span>
+      <select name="pref" id="f-pref">
+        <option value="">全国</option>
+        {% for p in prefs %}<option value="{{ p.code }}" {% if cond.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="sx-field">
+      <span class="sx-flabel">二次医療圏</span>
+      <details class="sx-pop" id="pop-area"><summary>すべて</summary><div class="sx-pop-body" id="f-area"></div></details>
+    </div>
+    <div class="sx-field">
+      <span class="sx-flabel">市区町村</span>
+      <details class="sx-pop" id="pop-city"><summary>すべて</summary><div class="sx-pop-body" id="f-city"></div></details>
+    </div>
+    <div class="sx-field">
+      <span class="sx-flabel">施設の種類</span>
+      <div class="sx-seg">
+        {% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t in cond.ftypes %}checked{% endif %}><span>{{ t }}</span></label>{% endfor %}
+      </div>
+    </div>
+    <div class="sx-field sx-grow">
+      <label class="sx-flabel" for="f-q">医療機関名・住所</label>
+      <input type="text" name="q" id="f-q" value="{{ cond.q }}" placeholder="一部でOK（例：近森、高知市）" autocomplete="off">
+    </div>
+    <button type="submit" class="btn sx-submit">検索する</button>
   </div>
+
+  <details class="sx-list" id="sx-list">
+    <summary>施設基準を一覧から選ぶ（{{ item_sections|join('・') }}）</summary>
+    <div class="sx-list-body">
+      <div class="sx-tabs" role="tablist" id="sx-tabs">
+        {% for s in item_sections %}<button type="button" role="tab" data-sec="{{ s }}" {% if loop.first %}aria-selected="true"{% endif %}>{{ s }}</button>{% endfor %}
+      </div>
+      <input type="search" class="sx-list-filter" id="list-filter" placeholder="この区分の中を名前・記号で絞り込む" autocomplete="off">
+      <ul class="sx-rows" id="sx-rows"></ul>
+      <p class="sx-note">件数は全国で届け出ている医療機関の数です。<a href="/kijun">施設基準の一覧ページ</a>では都道府県別の数も見られます。</p>
+    </div>
+  </details>
+  <noscript><p class="sx-note">施設基準での絞り込みには JavaScript が必要です。</p></noscript>
 </form>
+<script id="item-data" type="application/json">{{ item_data|tojson }}</script>
 
 <script>
 (() => {
   const form = document.getElementById("sform");
+  const ITEMS = JSON.parse(document.getElementById("item-data").textContent);
+  const byId = new Map(ITEMS.map((it) => [it.id, it]));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const norm = (s) => s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+  const fmt = (n) => n.toLocaleString();
+
+  // ── 選んだ施設基準（チップ＋送信用の hidden input）──
+  const selected = new Set(JSON.parse(form.dataset.items || "[]").filter((id) => byId.has(id)));
+  const chips = document.getElementById("sel-chips");
+  const inputs = document.getElementById("item-inputs");
+  const modeBox = document.getElementById("sx-mode");
+  function renderSelected() {
+    chips.innerHTML = [...selected].map((id) => {
+      const it = byId.get(id);
+      return `<span class="chip" title="${esc(it.n)}（${esc(it.s)}）"><span class="t">${esc(it.n)}</span><button type="button" data-id="${id}" aria-label="外す">×</button></span>`;
+    }).join("");
+    inputs.innerHTML = [...selected].map((id) => `<input type="hidden" name="item" value="${id}">`).join("");
+    modeBox.hidden = selected.size < 2;
+    document.querySelectorAll("#sx-rows input").forEach((cb) => { cb.checked = selected.has(+cb.value); });
+  }
+  const toggle = (id, on) => { on ? selected.add(id) : selected.delete(id); renderSelected(); };
+  chips.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-id]");
+    if (b) toggle(+b.dataset.id, false);
+  });
+
+  // ── 入力候補 ──
+  const q = document.getElementById("item-q");
+  const sug = document.getElementById("suggest");
+  let cand = [], active = -1;
+  function search(text) {
+    const t = norm(text);
+    if (!t) return [];
+    const hits = ITEMS.filter((it) => !selected.has(it.id) && it.k.includes(t));
+    const rank = (it) => (norm(it.n).startsWith(t) || norm(it.s).startsWith(t) ? 0 : 1);
+    return hits.sort((a, b) => rank(a) - rank(b) || b.c - a.c).slice(0, 12);
+  }
+  function renderSuggest() {
+    cand = search(q.value);
+    active = cand.length ? 0 : -1;
+    sug.hidden = !q.value.trim();
+    q.setAttribute("aria-expanded", String(!sug.hidden));
+    sug.innerHTML = cand.length
+      ? cand.map((it, i) => `<li role="option" data-id="${it.id}" class="${i === active ? "on" : ""}">
+          <span class="nm">${esc(it.n)}</span><span class="sy">${esc(it.s)}</span><span class="ct">${fmt(it.c)}施設</span></li>`).join("")
+      : `<li class="none">「${esc(q.value)}」に当てはまる施設基準はありません</li>`;
+  }
+  function pick(id) { toggle(id, true); q.value = ""; renderSuggest(); q.focus(); }
+  q.addEventListener("input", renderSuggest);
+  q.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!cand.length) return;
+      active = (active + (e.key === "ArrowDown" ? 1 : cand.length - 1)) % cand.length;
+      sug.querySelectorAll("li").forEach((li, i) => li.classList.toggle("on", i === active));
+    } else if (e.key === "Enter") {
+      if (q.value.trim()) { e.preventDefault(); if (active >= 0) pick(cand[active].id); }
+    } else if (e.key === "Escape") {
+      q.value = ""; renderSuggest();
+    } else if (e.key === "Backspace" && !q.value && selected.size) {
+      toggle([...selected].pop(), false);
+    }
+  });
+  sug.addEventListener("mousedown", (e) => {
+    const li = e.target.closest("li[data-id]");
+    if (li) { e.preventDefault(); pick(+li.dataset.id); }
+  });
+  q.addEventListener("blur", () => setTimeout(() => { sug.hidden = true; q.setAttribute("aria-expanded", "false"); }, 120));
+  q.addEventListener("focus", () => { if (q.value.trim()) renderSuggest(); });
+  document.getElementById("sx-box").addEventListener("click", (e) => { if (e.target.id === "sx-box" || e.target.id === "sel-chips") q.focus(); });
+
+  // ── 一覧から選ぶ（区分タブ）──
+  const rows = document.getElementById("sx-rows");
+  const listFilter = document.getElementById("list-filter");
+  let sec = document.querySelector("#sx-tabs [aria-selected=true]")?.dataset.sec;
+  function renderRows() {
+    const t = norm(listFilter.value);
+    const list = ITEMS.filter((it) => it.g === sec && (!t || it.k.includes(t)));
+    rows.innerHTML = list.map((it) => `<li><label><input type="checkbox" value="${it.id}" ${selected.has(it.id) ? "checked" : ""}>
+        <span class="nm">${esc(it.n)}</span><span class="sy">${esc(it.s)}</span><span class="ct">${fmt(it.c)}</span></label></li>`).join("")
+      || `<li class="none">当てはまる施設基準はありません</li>`;
+  }
+  document.getElementById("sx-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-sec]");
+    if (!b) return;
+    document.querySelectorAll("#sx-tabs button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    sec = b.dataset.sec;
+    renderRows();
+  });
+  listFilter.addEventListener("input", renderRows);
+  rows.addEventListener("change", (e) => { if (e.target.matches("input")) toggle(+e.target.value, e.target.checked); });
+  document.getElementById("sx-list").addEventListener("toggle", (e) => { if (e.target.open) renderRows(); });
+
+  // ── 地域（都道府県 → 二次医療圏 → 市区町村）──
   const pref = document.getElementById("f-pref");
-  const areaBox = document.getElementById("f-area");
-  const cityBox = document.getElementById("f-city");
+  const areaPop = document.getElementById("pop-area"), cityPop = document.getElementById("pop-city");
+  const areaBox = document.getElementById("f-area"), cityBox = document.getElementById("f-city");
   let initAreas = JSON.parse(form.dataset.areas || "[]");
   let initCities = JSON.parse(form.dataset.cities || "[]");
   let areaData = [];
-  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-  const note = (box, text) => { box.innerHTML = `<p class="cm-note">${text}</p>`; };
-  const checks = (name, list, selected) => '<div class="cm-checks">' + list.map((x) =>
-    `<label><input type="checkbox" name="${name}" value="${esc(x.name)}" ${selected.includes(x.name) ? "checked" : ""}>${esc(x.name)}<small>${x.n.toLocaleString()}</small></label>`
-  ).join("") + "</div>";
-
+  const checks = (name, list, sel) => list.map((x) =>
+    `<label><input type="checkbox" name="${name}" value="${esc(x.name)}" ${sel.includes(x.name) ? "checked" : ""}>${esc(x.name)}<small>${fmt(x.n)}</small></label>`
+  ).join("");
+  const picked = (box) => [...box.querySelectorAll("input:checked")].map((i) => i.value);
+  const summarize = (pop, box, emptyText) => {
+    const p = picked(box);
+    pop.querySelector("summary").textContent = p.length ? (p.length <= 2 ? p.join("・") : `${p[0]} ほか${p.length - 1}`) : emptyText;
+    pop.classList.toggle("set", p.length > 0);
+  };
+  function setDisabled(pop, off, text) {
+    pop.classList.toggle("off", off);
+    if (off) { pop.open = false; pop.querySelector("summary").textContent = text; }
+  }
   function renderCities() {
-    const picked = [...areaBox.querySelectorAll("input:checked")].map((i) => i.value);
-    if (picked.length !== 1) { note(cityBox, "※二次医療圏を1つだけ選ぶと選択肢が表示されます。"); return; }
-    const a = areaData.find((x) => x.name === picked[0]);
-    cityBox.innerHTML = a ? checks("city", a.cities, initCities) : "";
+    const a = picked(areaBox);
+    const one = a.length === 1 ? areaData.find((x) => x.name === a[0]) : null;
+    cityBox.innerHTML = one ? checks("city", one.cities, initCities) : "";
+    if (one) { setDisabled(cityPop, false); summarize(cityPop, cityBox, "すべて"); }
+    else setDisabled(cityPop, true, pref.value ? "医療圏を1つ選ぶと選択可" : "都道府県を先に選択");
   }
   async function loadAreas() {
-    if (!pref.value) {
-      areaData = [];
-      note(areaBox, "※都道府県を選ぶと選択肢が表示されます。");
-      note(cityBox, "※二次医療圏を1つだけ選ぶと選択肢が表示されます。");
-      return;
+    areaData = [];
+    if (pref.value) {
+      const res = await fetch(`/areas/${encodeURIComponent(pref.value)}.json`);
+      areaData = res.ok ? await res.json() : [];
     }
-    const res = await fetch(`/areas/${encodeURIComponent(pref.value)}.json`);
-    areaData = res.ok ? await res.json() : [];
     areaBox.innerHTML = checks("area", areaData, initAreas);
+    if (pref.value) { setDisabled(areaPop, false); summarize(areaPop, areaBox, "すべて"); }
+    else setDisabled(areaPop, true, "都道府県を先に選択");
     renderCities();
   }
+  for (const p of [areaPop, cityPop]) p.querySelector("summary").addEventListener("click", (e) => { if (p.classList.contains("off")) e.preventDefault(); });
   pref.addEventListener("change", () => { initAreas = []; initCities = []; loadAreas(); });
-  areaBox.addEventListener("change", () => { initCities = []; renderCities(); });
-  loadAreas();
+  areaBox.addEventListener("change", () => { initCities = []; summarize(areaPop, areaBox, "すべて"); renderCities(); });
+  cityBox.addEventListener("change", () => summarize(cityPop, cityBox, "すべて"));
+  document.addEventListener("click", (e) => {   // ポップアップの外を押したら閉じる
+    for (const p of [areaPop, cityPop]) if (p.open && !p.contains(e.target)) p.open = false;
+  });
 
-  // 届出項目: 名称・記号で絞り込み、選択中の数と記号を下のバーに出す
-  const table = document.getElementById("item-table");
-  const labels = [...table.querySelectorAll("label[data-key]")];
-  const filter = document.getElementById("item-filter");
-  const empty = document.getElementById("item-empty");
-  const norm = (s) => s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
-  filter.addEventListener("input", () => {
-    const q = norm(filter.value);
-    table.classList.toggle("filtering", q !== "");
-    let shown = 0;
-    labels.forEach((l) => {
-      const hit = !q || l.dataset.key.includes(q);
-      l.hidden = !hit;
-      if (hit) shown++;
-      if (q && hit && !l.querySelector(".nm")) {   // 絞り込み中は正式名称も並べて見せる
-        const nm = document.createElement("small");
-        nm.className = "nm";
-        nm.textContent = l.title.replace(/（[\d,]+施設）$/, "");
-        l.appendChild(nm);
-      }
-    });
-    table.querySelectorAll("tr").forEach((tr) => {
-      tr.hidden = !!q && !tr.querySelector("label[data-key]:not([hidden])");
-      const d = tr.querySelector("details");
-      if (d && q) d.open = true;
-    });
-    empty.hidden = shown > 0;
-  });
-  const selN = document.getElementById("sel-n");
-  const selList = document.getElementById("sel-list");
-  function updateSelected() {
-    const on = labels.filter((l) => l.querySelector("input").checked);
-    selN.textContent = on.length;
-    selList.innerHTML = on.slice(0, 12).map((l) =>
-      `<button type="button" class="chip" data-id="${l.querySelector("input").value}" title="${esc(l.title)}">${esc(l.querySelector(".s").textContent)} ×</button>`
-    ).join("") + (on.length > 12 ? `<span class="more">ほか${on.length - 12}項目</span>` : "");
-  }
-  table.addEventListener("change", updateSelected);
-  selList.addEventListener("click", (e) => {
-    const b = e.target.closest(".chip");
-    if (!b) return;
-    table.querySelector(`input[value="${b.dataset.id}"]`).checked = false;
-    updateSelected();
-  });
-  document.getElementById("item-clear").addEventListener("click", () => {
-    labels.forEach((l) => { l.querySelector("input").checked = false; });
-    updateSelected();
-  });
-  updateSelected();
+  renderSelected();
+  loadAreas();
 })();
 </script>

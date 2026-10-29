@@ -224,18 +224,19 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
 
 
 def _form_ctx(con) -> dict:
-    """検索フォームに要るもの（都道府県と、区分ごとの届出項目）。"""
+    """検索フォームに要るもの。届出項目（約1,300件）はページにJSONで埋め込み、入力候補と
+    「一覧から選ぶ」をブラウザ側で組み立てる（gzipで20KB程度）。"""
     items = con.execute(
         """SELECT i.id, i.symbol, i.section, kj.name AS kijun, i.n_facilities
            FROM items i JOIN kijun kj ON kj.id = i.kijun_id ORDER BY i.id"""
     ).fetchall()
-    sections: dict[str, list[dict]] = {}
-    for r in items:
-        sections.setdefault(r["section"], []).append(
-            {"id": r["id"], "symbol": r["symbol"] or r["kijun"], "kijun": r["kijun"], "n": r["n_facilities"],
-             "key": search_key(f'{r["symbol"]} {r["kijun"]}')}
-        )
-    return {"prefs": _prefs(con), "item_sections": list(sections.items())}
+    item_data = [
+        {"id": r["id"], "s": r["symbol"] or "", "n": r["kijun"], "c": r["n_facilities"], "g": r["section"],
+         "k": search_key(f'{r["symbol"]} {r["kijun"]}')}
+        for r in items
+    ]
+    sections = list(dict.fromkeys(r["section"] for r in items))
+    return {"prefs": _prefs(con), "item_data": item_data, "item_sections": sections}
 
 
 @app.get("/", response_class=HTMLResponse)

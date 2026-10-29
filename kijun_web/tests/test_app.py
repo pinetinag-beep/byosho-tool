@@ -58,7 +58,8 @@ def test_exact_vs_partial_kijun():
     exact = client.get("/search?k=" + quote(KIJUN) + "&pref=39").text
     n = lambda html: int(re.search(r'<div class="count">([\d,]+) 件', html)[1].replace(",", ""))
     assert n(exact) <= n(partial)
-    assert "いずれかを届け出ている" in partial and "いずれかを届け出ている" not in exact
+    msg = "のいずれかを届け出ている医療機関を表示"   # 部分一致の時だけ出る案内（フォームの「いずれか」の選択肢と区別する）
+    assert msg in partial and msg not in exact
 
 
 def test_search_csv_with_kijun_has_filing_columns():
