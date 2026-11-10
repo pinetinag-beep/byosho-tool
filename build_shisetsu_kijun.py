@@ -7,6 +7,12 @@ shisetsu_kijun_cache.parquet を生成する。
 使い方:
   py build_shisetsu_kijun.py ファイル1.xlsx ファイル2.xlsx ...
   py build_shisetsu_kijun.py --dir shisetsu_ika_r0805/
+  py build_shisetsu_kijun.py --kubun-only     # 今のparquetに shisetsu_kubun_raw/ の区分だけを足す
+
+区分の補完（shisetsu_kubun_raw/）:
+  関東信越厚生局は、全件の名簿（24列）には区分を載せていないが、入院基本料等の届出だけを
+  集めた別の名簿（19列、区分・病棟数・病床数の備考あり）を公表している。このフォルダに置いた
+  名簿から、受理番号まで同じ届出に限って区分などの内訳を埋める（全件の作り直し時にも自動で行う）。
 
 出力: shisetsu_kijun_cache.parquet（実行フォルダに保存）
 """
@@ -105,6 +111,90 @@ def _carry_over_details(out: pd.DataFrame, prev_path: Path) -> pd.DataFrame:
         out[c] = cur.where(~fill, m[c])
     print(f"前回データから内訳を引き継ぎ: {total:,}項目（受理番号が同じ届出のみ）")
     return out
+
+
+KUBUN_DIR = Path(__file__).parent / "shisetsu_kubun_raw"
+
+
+def _parse_kubun_file(path: Path) -> tuple[pd.DataFrame, str]:
+    """区分補完用の名簿（入院基本料等の届出だけの19列形式）を読み、
+    (届出ごとの 都道府県名・医療機関番号・受理記号・受理番号＋内訳, 時点) を返す。
+    列は位置ではなく見出しの名前で探す（全件の24列形式とは並びが違うため）。"""
+    out = []
+    snap = ""
+    for sname in pd.ExcelFile(path).sheet_names:
+        raw = pd.read_excel(path, sheet_name=sname, header=None, dtype=str).fillna("")
+        hdr = next((i for i in range(min(10, len(raw)))
+                    if {"受理届出名称", "受理番号", "備考（見出し）"} <= set(raw.iloc[i].str.strip())), None)
+        if hdr is None:
+            continue
+        snap = snap or _wareki_date(" ".join(raw.iloc[:hdr].astype(str).values.ravel()))
+        d = raw.iloc[hdr + 1:].copy()
+        d.columns = [str(c).strip() for c in raw.iloc[hdr]]
+        d = d[d["医療機関番号"].str.strip().ne("")]
+        d["医療機関番号"] = d["医療機関番号"].str.strip().str.zfill(7)
+        is_head = d["備考（見出し）"].str.strip().eq("")
+        d["_g"] = is_head.cumsum()
+        heads = d[is_head].set_index("_g")
+        det: dict[int, dict[str, str]] = {}
+        for gid, label, value in d.loc[~is_head, ["_g", "備考（見出し）", "備考（データ）"]].itertuples(index=False):
+            key = _KNOWN_DETAIL_LABELS.get(_normalize_label(label).rstrip(":："))
+            if key and value.strip():
+                det.setdefault(gid, {}).setdefault(key, value.strip())
+        f = heads[["都道府県名", "医療機関番号", "受理記号", "受理番号"]].copy()
+        for c in _DETAIL_COLS:
+            f[c] = [det.get(g, {}).get(c, "") for g in f.index]
+        out.append(f.reset_index(drop=True))
+    return (pd.concat(out, ignore_index=True) if out else pd.DataFrame()), snap
+
+
+def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.DataFrame:
+    """shisetsu_kubun_raw/ の名簿から、受理番号まで同じ届出の内訳（区分・病棟数など）を埋める。
+    同じ県のファイルが複数あれば時点の新しい方だけを使う。名簿側に値がある項目は名簿の値にする
+    （差分PDFから引き継いだ値より新しい公表のため）。"""
+    files = sorted(folder.glob("*.xlsx")) if folder.exists() else []
+    if not files:
+        return out
+    parsed = []
+    for f in files:
+        df, snap = _parse_kubun_file(f)
+        if df.empty:
+            print(f"  区分補完: {f.name} … スキップ（入院基本料等の名簿の形式ではない）")
+            continue
+        df["都道府県コード"] = df["都道府県名"]   # _keep_latest_per_pref は都道府県コード列で判定する
+        parsed.append((f.name, df, snap))
+    key = ["都道府県名", "医療機関番号", "受理記号", "受理番号"]
+    for c in _DETAIL_COLS:
+        out[c] = out[c].astype(str).replace({"nan": "", "None": ""})
+    for sup in _keep_latest_per_pref(parsed):
+        sup = sup.drop(columns="都道府県コード").drop_duplicates(key)
+        m = out[key].astype(str).merge(sup, on=key, how="left", indicator=True)
+        hit = m["_merge"].eq("both")
+        filled = 0
+        for c in _DETAIL_COLS:
+            v = m[c].fillna("")
+            use = hit & v.ne("")
+            filled += int((use & out[c].eq("")).sum())
+            out[c] = out[c].where(~use, v)
+        for pref, g in sup.groupby("都道府県名"):
+            n_hit = int((hit & out["都道府県名"].astype(str).eq(pref)).sum())
+            n_kubun = int((hit & out["都道府県名"].astype(str).eq(pref) & out["区分"].ne("")).sum())
+            print(f"  区分補完: {pref} 名簿{len(g):,}件のうち全件データと一致{n_hit:,}件（区分あり{n_kubun:,}件）")
+        print(f"  区分補完: 空欄だった内訳を{filled:,}項目埋めた")
+    return out
+
+
+_CATEGORY_COLS = ["都道府県コード", "都道府県名", "受理届出名称", "受理記号",
+                  "施設種別", "病棟種別", "病床区分", "区分", "年月"]
+
+
+def _save(out: pd.DataFrame, out_path: Path) -> None:
+    # 繰り返し文字列をcategory化してメモリを削減（91万行・約356MB→220MB）。
+    # Streamlit Cloudのメモリ制限対策。
+    for _c in _CATEGORY_COLS:
+        if _c in out.columns:
+            out[_c] = out[_c].astype(str).astype("category")
+    out.to_parquet(out_path, index=False)
 
 
 def _normalize(name: str) -> str:
@@ -320,6 +410,16 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str, str]:
 
 def main() -> None:
     args = sys.argv[1:]
+    out_path = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
+
+    if "--kubun-only" in args:
+        out = pd.read_parquet(out_path)
+        n = len(out)
+        out = _apply_kubun_supplement(out)
+        assert len(out) == n
+        _save(out, out_path)
+        print(f"完了: {len(out):,}行 → {out_path}")
+        return
 
     if "--dir" in args:
         idx = args.index("--dir")
@@ -349,17 +449,11 @@ def main() -> None:
         sys.exit(1)
 
     out = pd.concat(dfs, ignore_index=True)
-    out_path = Path(__file__).parent / "shisetsu_kijun_cache.parquet"
     if out_path.exists():
         out = _carry_over_details(out, out_path)
+    out = _apply_kubun_supplement(out)
     out["施設種別"] = _classify_facility_types(out)
-    # 繰り返し文字列をcategory化してメモリを削減（91万行・約356MB→220MB）。
-    # Streamlit Cloudのメモリ制限対策。
-    for _c in ["都道府県コード", "都道府県名", "受理届出名称", "受理記号",
-               "施設種別", "病棟種別", "病床区分", "区分", "年月"]:
-        if _c in out.columns:
-            out[_c] = out[_c].astype("category")
-    out.to_parquet(out_path, index=False)
+    _save(out, out_path)
 
     print(f"\n完了: {len(out):,}行 → {out_path}")
 
