@@ -134,3 +134,65 @@ def test_sitemaps_within_limit():
 def test_robots_blocks_search_and_csv():
     t = client.get("/robots.txt").text
     assert "Disallow: /search" in t and "Sitemap:" in t
+
+
+def _kubun_id(kijun: str, name: str) -> int:
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    return con.execute(
+        "SELECT b.id FROM kubuns b JOIN kijun k ON k.id = b.kijun_id WHERE k.name = ? AND b.name = ?", (kijun, name)
+    ).fetchone()[0]
+
+
+def _count(html: str) -> int:
+    return int(re.search(r'class="count">\s*([\d,]+) 件', html).group(1).replace(",", ""))
+
+
+def test_kubun_reference_values_use_official_wording():
+    """病床機能報告の参考値（療養病棟入院料１、障害者施設等10対１入院基本料）が、
+    厚生局の区分欄と同じ書き方（入院料１、１０対１入院基本料）の項目にまとまっている。"""
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    names = {r[0] for r in con.execute("SELECT name FROM kubuns")}
+    assert "入院料１" in names and "１０対１入院基本料" in names
+    assert not any(n.startswith(("療養病棟", "障害者施設等")) or "10" in n for n in names)
+    # 区分は入院基本料の届出だけ
+    assert all(k.endswith("入院基本料") for (k,) in con.execute(
+        "SELECT DISTINCT k.name FROM kubuns b JOIN kijun k ON k.id = b.kijun_id"))
+
+
+def test_kubun_search_official_and_reference():
+    kb = _kubun_id("一般病棟入院基本料", "急性期一般入院料１")
+    # 高知県（四国厚生局：区分を公表）→ 公式の○
+    html = client.get("/search", params={"pref": "39", "kb": kb}).text
+    assert _count(html) > 0 and '<span class="ok" title' in html and "急性期一般入院料１" in html
+    # 東京都（関東信越：区分を公表していない）→ 参考値の○と注意書き
+    html = client.get("/search", params={"pref": "13", "kb": kb}).text
+    assert _count(html) > 0 and 'class="ok ref"' in html and "区分について" in html
+
+
+def test_kubun_free_text_falls_back_to_kubun():
+    """施設基準の名称に無い語（急性期一般入院料）は区分で探す（以前は0件だった）。"""
+    html = client.get("/search", params={"pref": "39", "k": "急性期一般入院料"}).text
+    assert _count(html) > 0 and "入院基本料の<strong>区分</strong>です" in html
+
+
+def test_kubun_and_item_and_or():
+    kb = _kubun_id("一般病棟入院基本料", "急性期一般入院料１")
+    import sqlite3
+    item = sqlite3.connect(appmod.DB_PATH).execute(
+        "SELECT i.id FROM items i JOIN kijun k ON k.id = i.kijun_id WHERE k.name = ? ORDER BY i.n_facilities DESC",
+        (KIJUN,)).fetchone()[0]
+    base = {"kb": kb, "item": item}
+    n_and = _count(client.get("/search", params=base).text)
+    n_or = _count(client.get("/search", params={**base, "mode": "or"}).text)
+    n_kb = _count(client.get("/search", params={"kb": kb}).text)
+    assert 0 < n_and <= n_kb <= n_or
+
+
+def test_search_csv_kubun_columns():
+    kb = _kubun_id("一般病棟入院基本料", "急性期一般入院料１")
+    text = client.get("/search.csv", params={"pref": "13", "kb": kb}).text
+    header = text.splitlines()[0]
+    assert "区分：急性期一般入院料１（一般病棟入院基本料）" in header
+    assert "○（参考" in text and "区分の列：" in text

@@ -138,7 +138,8 @@ class Cond:
     ftypes: list[str] = field(default_factory=list)
     q: str = ""
     items: list[int] = field(default_factory=list)
-    mode: str = "and"          # 届出項目を「すべて」届け出ている(and) / 「いずれか」(or)
+    kubuns: list[int] = field(default_factory=list)   # 入院基本料の区分（急性期一般入院料１など、kubuns.id）
+    mode: str = "and"          # 届出項目・区分を「すべて」届け出ている(and) / 「いずれか」(or)
     k: str = ""                # 施設基準名称の一部（施設基準ページの「条件を足して検索」など、従来のリンク用）
     kx: str = ""               # 施設基準名称の完全一致（施設基準ページのCSVリンク用）
 
@@ -146,6 +147,7 @@ class Cond:
     def from_request(cls, request: Request) -> "Cond":
         qp = request.query_params
         items = [int(v) for v in qp.getlist("item") if v.isdigit()]
+        kubuns = [int(v) for v in qp.getlist("kb") if v.isdigit()]
         return cls(
             pref=qp.get("pref", "").strip(),
             areas=[v for v in qp.getlist("area") if v],
@@ -153,6 +155,7 @@ class Cond:
             ftypes=[v for v in qp.getlist("ftype") if v in FTYPES],
             q=qp.get("q", "").strip(),
             items=list(dict.fromkeys(items)),
+            kubuns=list(dict.fromkeys(kubuns)),
             mode="or" if qp.get("mode") == "or" else "and",
             k=qp.get("k", "").strip(),
             kx=qp.get("kx", "").strip(),
@@ -161,14 +164,24 @@ class Cond:
     def query(self, **extra) -> str:
         pairs = [("pref", self.pref)] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
         pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
-        if self.items and self.mode == "or":
+        pairs += [("kb", i) for i in self.kubuns]
+        if self.n_selected > 1 and self.mode == "or":
             pairs.append(("mode", "or"))
         pairs += [("k", self.k), ("kx", self.kx)] + list(extra.items())
         return urlencode([(k, v) for k, v in pairs if v not in ("", None)])
 
     @property
+    def n_selected(self) -> int:
+        return len(self.items) + len(self.kubuns)
+
+    @property
+    def selected_keys(self) -> list[str]:
+        """検索フォームのチップ（届出項目は i+id、区分は b+id）。"""
+        return [f"i{i}" for i in self.items] + [f"b{i}" for i in self.kubuns]
+
+    @property
     def empty(self) -> bool:
-        return not (self.pref or self.ftypes or self.q or self.items or self.k or self.kx)
+        return not (self.pref or self.ftypes or self.q or self.items or self.kubuns or self.k or self.kx)
 
 
 def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
@@ -178,7 +191,9 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
     k  … 施設基準名称。既存の名称と完全に一致すれば（候補リストから選んだ場合）その1つだけ、
           そうでなければ名称の一部として、一致する施設基準のどれかを届け出ている施設を探す
     kx … 施設基準名称の完全一致（施設基準ページからのCSVリンク用）
-    items … 届出項目（届出名称×受理記号）。mode が and ならすべて、or ならいずれかを届け出ている施設
+    items … 届出項目（届出名称×受理記号）
+    kubuns … 入院基本料の区分（公式の区分欄、無い地域は病床機能報告からの参考値）
+             届出項目・区分は合わせて、mode が and ならすべて、or ならいずれかに当てはまる施設
     """
     k, kx = c.k, c.kx
     if k and not kx and con.execute("SELECT 1 FROM kijun WHERE name = ?", (k,)).fetchone():
@@ -200,20 +215,39 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
         key = f"%{search_key(c.q)}%"
         where.append("(f.name_search LIKE ? OR f.address_search LIKE ?)")
         params += [key, key]
+    sel, sel_params = [], []
     if c.items:
         marks = ",".join("?" * len(c.items))
         if c.mode == "or" or len(c.items) == 1:
-            where.append(f"f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks}))")
-            params += c.items
+            sel.append(f"f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks}))")
+            sel_params += c.items
         else:
-            where.append(f"""f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks})
-                                      GROUP BY facility_id HAVING COUNT(DISTINCT item_id) = ?)""")
-            params += c.items + [len(c.items)]
+            sel.append(f"""f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks})
+                                    GROUP BY facility_id HAVING COUNT(DISTINCT item_id) = ?)""")
+            sel_params += c.items + [len(c.items)]
+    if c.kubuns:
+        if c.mode == "or":
+            sel.append(f"f.id IN (SELECT facility_id FROM fac_kubun WHERE kubun_id IN ({','.join('?' * len(c.kubuns))}))")
+            sel_params += c.kubuns
+        else:
+            for kb in c.kubuns:
+                sel.append("f.id IN (SELECT facility_id FROM fac_kubun WHERE kubun_id = ?)")
+                sel_params.append(kb)
+    if sel:
+        where.append("(" + (" OR " if c.mode == "or" else " AND ").join(sel) + ")")
+        params += sel_params
     kwhere, kparams = "", []
     if kx:
         kwhere, kparams = "x.kijun_id IN (SELECT id FROM kijun WHERE name = ?)", [kx]
     elif k:
         kwhere, kparams = "x.kijun_id IN (SELECT id FROM kijun WHERE name_search LIKE ?)", [f"%{search_key(k)}%"]
+        if not con.execute("SELECT 1 FROM kijun WHERE name_search LIKE ?", kparams).fetchone():
+            # 施設基準の名称に無い語でも、区分（急性期一般入院料１など）に当てはまればそちらで探す
+            kb_ids = [r[0] for r in con.execute("SELECT id FROM kubuns WHERE search LIKE ?", kparams)]
+            if kb_ids:
+                where.append(f"f.id IN (SELECT facility_id FROM fac_kubun WHERE kubun_id IN ({','.join('?' * len(kb_ids))}))")
+                params += kb_ids
+                return " AND ".join(where), params, "", []
     if kwhere:
         # 「施設ごとに届出を確認する」(EXISTS)形だと、「加算」のように多くの施設基準に
         # 当てはまる語で全国9万施設を1件ずつ調べて1.6秒かかった。先に施設基準→施設の
@@ -236,7 +270,46 @@ def _form_ctx(con) -> dict:
         for r in items
     ]
     sections = list(dict.fromkeys(r["section"] for r in items))
+    for i in item_data:
+        i["id"] = f"i{i['id']}"
+    # 入院基本料の区分も候補に出す（「一覧から選ぶ」には出さない。g が空）
+    item_data += [
+        {"id": f"b{r['id']}", "s": "区分", "n": r["name"], "p": r["kijun"], "c": r["n_facilities"], "g": "",
+         "k": r["search"]}
+        for r in _kubun_rows(con)
+    ]
     return {"prefs": _prefs(con), "item_data": item_data, "item_sections": sections}
+
+
+def _kubun_rows(con, ids: list[int] | None = None) -> list[sqlite3.Row]:
+    sql = """SELECT b.id, b.name, b.search, b.n_facilities, b.n_ref, kj.name AS kijun
+             FROM kubuns b JOIN kijun kj ON kj.id = b.kijun_id"""
+    if ids is None:
+        return con.execute(sql + " ORDER BY b.id").fetchall()
+    if not ids:
+        return []
+    rows = con.execute(sql + f" WHERE b.id IN ({','.join('?' * len(ids))})", ids).fetchall()
+    order = {i: n for n, i in enumerate(ids)}
+    return sorted(rows, key=lambda r: order[r["id"]])
+
+
+def _kubun_hits(con, kb_ids: list[int], where: str, params: list,
+                fac_ids: list[str] | None = None) -> dict[str, dict[int, sqlite3.Row]]:
+    """施設ごとに、選んだ区分のうち当てはまるもの（ref=1 なら病床機能報告からの参考値）。"""
+    if not kb_ids:
+        return {}
+    sql = f"SELECT facility_id, kubun_id, ref, start_date FROM fac_kubun WHERE kubun_id IN ({','.join('?' * len(kb_ids))})"
+    args: list = list(kb_ids)
+    if fac_ids is not None:
+        sql += f" AND facility_id IN ({','.join('?' * len(fac_ids))})"
+        args += fac_ids
+    else:
+        sql += f" AND facility_id IN (SELECT f.id FROM facilities f WHERE {where})"
+        args += params
+    hits: dict[str, dict[int, sqlite3.Row]] = {}
+    for r in con.execute(sql, args):
+        hits.setdefault(r["facility_id"], {})[r["kubun_id"]] = r
+    return hits
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -293,6 +366,33 @@ def _item_hits(con, item_ids: list[int], where: str, params: list, fac_ids: list
     return hits
 
 
+def _sel_columns(con, c: Cond, where: str, params: list, fac_ids: list[str] | None = None):
+    """選んだ届出項目・区分を結果の列にする。戻り値は (列の一覧, 施設ごとの {列key: 印})。
+    印は "ok"（届け出ている／公式の区分）、"ref"（病床機能報告からの参考値）、
+    "ref_changed"・"ref_likely_changed"（参考値だが、その後に届出が出し直されている）。"""
+    cols = [{"key": f"i{r['id']}", "head": r["symbol"], "title": r["kijun"], "label": f"{r['symbol']}（{r['kijun']}）",
+             "kubun": False} for r in _selected_items(con, c.items)]
+    kbs = _kubun_rows(con, c.kubuns)
+    cols += [{"key": f"b{r['id']}", "head": r["name"], "title": f"{r['kijun']}の区分",
+              "label": f"区分：{r['name']}（{r['kijun']}）", "kubun": True} for r in kbs]
+    marks: dict[str, dict[str, str]] = {}
+    if fac_ids == []:
+        return cols, marks
+    for fid, got in _item_hits(con, c.items, where, params, fac_ids).items():
+        marks.setdefault(fid, {}).update({f"i{i}": "ok" for i in got})
+    ref_date = _meta(con).get("kubun_ref_date")
+    kb_of = {r["id"]: r for r in kbs}
+    for fid, got in _kubun_hits(con, c.kubuns, where, params, fac_ids).items():
+        m = marks.setdefault(fid, {})
+        for kid, h in got.items():
+            if not h["ref"]:
+                m[f"b{kid}"] = "ok"
+            else:
+                note = kubun_ref_note(kb_of[kid]["kijun"] + kb_of[kid]["name"], h["start_date"], ref_date)
+                m[f"b{kid}"] = f"ref_{note}" if note else "ref"
+    return cols, marks
+
+
 @app.get("/search", response_class=HTMLResponse)
 def search(request: Request, page: int = Query(1, ge=1)):
     c = Cond.from_request(request)
@@ -310,8 +410,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
             params + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
         ).fetchall()
         ids = [r["id"] for r in rows]
-        sel_items = _selected_items(con, c.items)
-        item_hits = _item_hits(con, c.items, where, params, ids) if ids else {}
+        sel_cols, marks = _sel_columns(con, c, where, params, ids)
         hits: dict[str, list[str]] = {}
         if kwhere and ids:
             for h in con.execute(
@@ -323,21 +422,31 @@ def search(request: Request, page: int = Query(1, ge=1)):
                 hits.setdefault(h["facility_id"], []).append(h["name"])
         matched_kijun = []
         exact_k = bool(c.k) and con.execute("SELECT 1 FROM kijun WHERE name = ?", (c.k,)).fetchone() is not None
+        matched_kubun = []
         if c.k and not c.kx and not exact_k:
             matched_kijun = con.execute(
                 "SELECT name, n_facilities FROM kijun WHERE name_search LIKE ? ORDER BY n_facilities DESC LIMIT 30",
                 [f"%{search_key(c.k)}%"],
             ).fetchall()
+            if not matched_kijun:
+                matched_kubun = con.execute(
+                    """SELECT b.id, b.name, kj.name AS kijun, b.n_facilities FROM kubuns b JOIN kijun kj ON kj.id = b.kijun_id
+                       WHERE b.search LIKE ? ORDER BY b.n_facilities DESC""",
+                    [f"%{search_key(c.k)}%"],
+                ).fetchall()
         ctx = _form_ctx(con)
     pref_name = next((p["name"] for p in ctx["prefs"] if p["code"] == c.pref), "")
     return render(
         request, "search.html",
-        rows=rows, hits=hits, item_hits=item_hits, sel_items=sel_items, total=total, page=page, pages=pages,
-        pref_name=pref_name, cond=c, matched_kijun=matched_kijun,
+        rows=rows, hits=hits, sel_cols=sel_cols, marks=marks, total=total, page=page, pages=pages,
+        pref_name=pref_name, cond=c, matched_kijun=matched_kijun, matched_kubun=matched_kubun,
+        has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
         page_url=lambda p: "/search?" + c.query(page=p),
         narrow_url=lambda name: "/search?" + Cond(pref=c.pref, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
                                                   q=c.q, k=name).query(),
+        kubun_url=lambda kid: "/search?" + Cond(pref=c.pref, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
+                                                q=c.q, kubuns=[kid]).query(),
         **ctx,
     )
 
@@ -364,6 +473,10 @@ def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
             w.writerow(["区分（参考：病床機能報告）：厚生局が区分を公表していない届出について、"
                         "厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
                         "届出の時点とは異なり、診療報酬改定等で変わっている場合があります"])
+        if any(h.startswith("区分：") for h in header):
+            w.writerow(["区分の列：○は厚生局が公表している区分。○（参考）は区分を公表していない地域（北海道・関東信越・近畿）"
+                        "について、厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
+                        "精神病棟・結核病棟・有床診療所の区分はこれらの地域では分からないため、結果に含まれません"])
         w.writerow(["出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（MedilenZ）"])
         yield buf.getvalue()
 
@@ -385,13 +498,14 @@ def search_csv(request: Request):
     where, params, kwhere, kparams = _search_sql(con, c)
     fac_sql = f"""SELECT f.id, f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area, f.n_kijun
                   FROM facilities f WHERE {where} ORDER BY f.pref_code, f.name"""
-    if c.items:
-        sel = _selected_items(con, c.items)
-        hits = _item_hits(con, c.items, where, params)
-        header = FACILITY_COLS + [f"{r['symbol']}（{r['kijun']}）" for r in sel]
-        rows = ([*r][1:8] + ["○" if i["id"] in hits.get(r["id"], ()) else "" for i in sel]
+    if c.items or c.kubuns:
+        cols, marks = _sel_columns(con, c, where, params)
+        header = FACILITY_COLS + [col["label"] for col in cols]
+        text = {"ok": "○", "ref": "○（参考）", "ref_changed": "○（参考・出し直しあり）",
+                "ref_likely_changed": "○（参考・改定で変更の可能性大）"}
+        rows = ([*r][1:8] + [text.get(marks.get(r["id"], {}).get(col["key"], ""), "") for col in cols]
                 for r in con.execute(fac_sql, params))
-        name = "届出項目" + "・".join(r["symbol"] for r in sel[:3]) + ("ほか" if len(sel) > 3 else "")
+        name = "届出項目" + "・".join(col["head"] for col in cols[:3]) + ("ほか" if len(cols) > 3 else "")
     elif kwhere:
         header = FACILITY_COLS + FILING_COLS
         rows = con.execute(

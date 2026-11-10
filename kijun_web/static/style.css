@@ -231,3 +231,11 @@ td.nowrap { white-space: nowrap; }
   /* 一覧表の住所は医療機関ページで見られるので、スマホでは区分の列を優先して隠す */
   .hide-sp { display: none; }
 }
+
+/* 入院基本料の区分（急性期一般入院料１など）を候補・チップ・結果で見分ける */
+.chip .kb { font-size: 0.7rem; font-weight: 700; background: rgba(255,255,255,0.22); border-radius: 999px; padding: 1px 6px; margin-right: 2px; }
+.sx-suggest .nm small { display: block; color: var(--ink-faint); font-size: 0.75rem; font-weight: 400; }
+.sx-suggest .sy.kb { color: var(--brand-dark); background: var(--brand-soft); border-radius: 999px; padding: 1px 8px; }
+.results th.ic.kb { white-space: normal; min-width: 7em; font-size: 0.78rem; }
+.results .ok.ref { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+.results .ok.ref .tag.ref { margin: 0 0 0 3px; font-size: 0.65rem; padding: 0 4px; }

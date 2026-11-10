@@ -106,6 +106,14 @@ CREATE TABLE filings (
     item_id INTEGER
 );
 CREATE TABLE kijun_pref (kijun_id INTEGER NOT NULL, pref_code TEXT NOT NULL, n INTEGER NOT NULL);
+CREATE TABLE kubuns (             -- 入院基本料の区分（急性期一般入院料１など）。検索フォームで届出項目と同じように選べる
+    id INTEGER PRIMARY KEY, kijun_id INTEGER NOT NULL, name TEXT NOT NULL, search TEXT NOT NULL,
+    n_facilities INTEGER, n_ref INTEGER
+);
+CREATE TABLE fac_kubun (          -- 医療機関×区分。ref=1 は病床機能報告からの参考値だけで分かったもの
+    facility_id TEXT NOT NULL, kubun_id INTEGER NOT NULL, ref INTEGER NOT NULL,
+    start_date TEXT               -- 参考値のもとになった届出の算定開始日（出し直されたかの注意書き用）
+);
 """
 
 INDEXES = """
@@ -116,6 +124,8 @@ CREATE INDEX ix_fil_item ON filings(item_id, facility_id);
 CREATE INDEX ix_fac_area ON facilities(pref_code, area, city);
 CREATE INDEX ix_areas ON areas(pref_code);
 CREATE INDEX ix_kp ON kijun_pref(kijun_id, pref_code);
+CREATE INDEX ix_fk ON fac_kubun(kubun_id, facility_id);
+CREATE INDEX ix_fk_fac ON fac_kubun(facility_id);
 """
 
 
@@ -223,6 +233,69 @@ def _kubun_ref() -> tuple[dict[tuple[str, str], str], int | None]:
                 ref[(code, kijun)] = "・".join(hit)
     # 病床機能報告は各年度7月1日時点の病棟の状況を報告するもの
     return ref, year
+
+
+def kubun_prefix(kijun: str) -> str:
+    """病床機能報告の入院基本料名に付いている、届出名称由来の頭の部分（「療養病棟」「障害者施設等」など）。"""
+    return kijun.removesuffix("入院基本料")
+
+
+_ZEN_DIGITS = str.maketrans("0123456789", "０１２３４５６７８９")
+
+
+def ref_to_kubun(kijun: str, ref: str) -> list[str]:
+    """病床機能報告の入院基本料名（参考値）を、厚生局の「区分」欄と同じ書き方にそろえる。
+    例: 療養病棟入院料１ → 入院料１、障害者施設等10対１入院基本料 → １０対１入院基本料、
+        一般病棟特別入院基本料 → 特別入院基本料。病棟ごとに違う病院は「・」で連結されているので分ける。"""
+    pre = kubun_prefix(kijun)
+    out = []
+    for v in ref.split("・"):
+        v = v.strip()
+        if pre and v.startswith(pre) and len(v) > len(pre):
+            v = v[len(pre):]
+        if v:
+            out.append(v.translate(_ZEN_DIGITS))
+    return out
+
+
+def _build_kubuns(con) -> int:
+    """届出の区分（公式の kubun と、参考値の kubun_ref）から、検索用の区分一覧と 医療機関×区分 を作る。
+    公式と参考の両方で分かる施設は公式（ref=0）を優先する。"""
+    names = dict(con.execute("SELECT id, name FROM kijun"))
+    # 区分欄は入院基本料の届出にだけ意味がある（ごく一部、加算の届出に入院基本料の区分が紛れ込んでいる）
+    names = {k: v for k, v in names.items() if v.endswith("入院基本料")}
+    fk: dict[tuple[str, int, str], list] = {}   # (facility, kijun, 区分) → [ref, start_date]
+    for fid, kid, kb, kref, sd in con.execute(
+        "SELECT facility_id, kijun_id, kubun, kubun_ref, start_date FROM filings WHERE kubun != '' OR kubun_ref != ''"
+    ):
+        if kid not in names:
+            continue
+        if kb:
+            fk[(fid, kid, kb.strip().translate(_ZEN_DIGITS))] = [0, None]
+        else:
+            for v in ref_to_kubun(names[kid], kref):
+                cur = fk.get((fid, kid, v))
+                if cur is None:
+                    fk[(fid, kid, v)] = [1, sd or ""]
+                elif cur[0] == 1 and (sd or "") > cur[1]:
+                    cur[1] = sd or ""
+    keys = sorted({(kid, v) for _, kid, v in fk}, key=lambda x: (x[0], x[1]))
+    kb_id = {k: i + 1 for i, k in enumerate(keys)}
+    n_fac: dict[int, int] = {}
+    n_ref: dict[int, int] = {}
+    rows = []
+    for (fid, kid, v), (ref, sd) in fk.items():
+        i = kb_id[(kid, v)]
+        n_fac[i] = n_fac.get(i, 0) + 1
+        n_ref[i] = n_ref.get(i, 0) + ref
+        rows.append((fid, i, ref, sd))
+    con.executemany(
+        "INSERT INTO kubuns VALUES (?,?,?,?,?,?)",
+        [(i, kid, v, search_key(f"{names[kid]} {v} {kubun_prefix(names[kid])}{v}"), n_fac[i], n_ref[i])
+         for (kid, v), i in kb_id.items()],
+    )
+    con.executemany("INSERT INTO fac_kubun VALUES (?,?,?,?)", rows)
+    return len(keys)
 
 
 def _place_key(s) -> str:
@@ -495,6 +568,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     con.execute("INSERT INTO filings SELECT DISTINCT * FROM filings_raw")
     con.execute("DROP TABLE filings_raw")
     n_filings = con.execute("SELECT COUNT(*) FROM filings").fetchone()[0]
+    n_kubuns = _build_kubuns(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -507,6 +581,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_byosho_linked": str(int(fac["byosho_name"].notna().sum())),
         "n_kubun_ref": str(con.execute("SELECT COUNT(*) FROM filings WHERE kubun_ref != ''").fetchone()[0]),
         "n_items": str(len(items)),
+        "n_kubuns": str(n_kubuns),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),
