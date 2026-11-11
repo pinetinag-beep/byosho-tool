@@ -133,23 +133,32 @@ def _parse_kubun_file(path: Path) -> tuple[pd.DataFrame, str]:
         d.columns = [str(c).strip() for c in raw.iloc[hdr]]
         d = d[d["医療機関番号"].str.strip().ne("")]
         d["医療機関番号"] = d["医療機関番号"].str.strip().str.zfill(7)
-        is_head = d["備考（見出し）"].str.strip().eq("")
+        # 届出の始まりは見出しもデータも空の行。データだけの行（「早期栄養介入管理加算」など
+        # 届け出ている加算の名前）もあるので、見出しが空なだけでは始まりとみなさない
+        is_head = d["備考（見出し）"].str.strip().eq("") & d["備考（データ）"].str.strip().eq("")
         d["_g"] = is_head.cumsum()
         heads = d[is_head].set_index("_g")
         det: dict[int, dict[str, str]] = {}
+        other: dict[int, list[str]] = {}
         for gid, label, value in d.loc[~is_head, ["_g", "備考（見出し）", "備考（データ）"]].itertuples(index=False):
-            key = _KNOWN_DETAIL_LABELS.get(_normalize_label(label).rstrip(":："))
-            if key and value.strip():
-                det.setdefault(gid, {}).setdefault(key, value.strip())
-        f = heads[["都道府県名", "医療機関番号", "受理記号", "受理番号"]].copy()
+            label = _normalize_label(label).rstrip(":：")
+            value = value.strip()
+            key = _KNOWN_DETAIL_LABELS.get(label)
+            if key and value and key not in det.get(gid, {}):
+                det.setdefault(gid, {})[key] = value
+            elif value:
+                other.setdefault(gid, []).append(f"{label}:{value}" if label else value)
+        f = heads[["都道府県名", "医療機関番号", "受理届出名称", "受理記号", "受理番号"]].copy()
         for c in _DETAIL_COLS:
             f[c] = [det.get(g, {}).get(c, "") for g in f.index]
+        f["内訳その他"] = ["；".join(other.get(g, [])) for g in f.index]
         out.append(f.reset_index(drop=True))
     return (pd.concat(out, ignore_index=True) if out else pd.DataFrame()), snap
 
 
 def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.DataFrame:
-    """shisetsu_kubun_raw/ の名簿から、受理番号まで同じ届出の内訳（区分・病棟数など）を埋める。
+    """shisetsu_kubun_raw/ の名簿から、受理番号まで同じ届出の内訳（区分・病棟数・加算など）を埋める。
+    名簿は入院基本料等（区分あり）と特定入院料（治療室の病床数・加算など）の2種類があり、どちらも同じ形式。
     同じ県のファイルが複数あれば時点の新しい方だけを使う。名簿側に値がある項目は名簿の値にする
     （差分PDFから引き継いだ値より新しい公表のため）。"""
     files = sorted(folder.glob("*.xlsx")) if folder.exists() else []
@@ -161,17 +170,22 @@ def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.D
         if df.empty:
             print(f"  区分補完: {f.name} … スキップ（入院基本料等の名簿の形式ではない）")
             continue
-        df["都道府県コード"] = df["都道府県名"]   # _keep_latest_per_pref は都道府県コード列で判定する
-        parsed.append((f.name, df, snap))
+        # 同じ県でも「入院基本料等」と「特定入院料」の名簿は別物なので、県×種類ごとに新しい方を使う
+        # （_keep_latest_per_pref は都道府県コード列で判定する）
+        kind = "入院基本料等" if df["受理届出名称"].str.endswith("入院基本料").any() else "特定入院料"
+        df["都道府県コード"] = df["都道府県名"] + "／" + kind
+        parsed.append((f.name, df.drop(columns="受理届出名称"), snap))
     key = ["都道府県名", "医療機関番号", "受理記号", "受理番号"]
-    for c in _DETAIL_COLS:
+    cols = _DETAIL_COLS + ["内訳その他"]
+    for c in cols:
         out[c] = out[c].astype(str).replace({"nan": "", "None": ""})
     for sup in _keep_latest_per_pref(parsed):
+        kind = sup["都道府県コード"].iloc[0].split("／")[1]
         sup = sup.drop(columns="都道府県コード").drop_duplicates(key)
         m = out[key].astype(str).merge(sup, on=key, how="left", indicator=True)
         hit = m["_merge"].eq("both")
         filled = 0
-        for c in _DETAIL_COLS:
+        for c in cols:
             v = m[c].fillna("")
             use = hit & v.ne("")
             filled += int((use & out[c].eq("")).sum())
@@ -179,7 +193,7 @@ def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.D
         for pref, g in sup.groupby("都道府県名"):
             n_hit = int((hit & out["都道府県名"].astype(str).eq(pref)).sum())
             n_kubun = int((hit & out["都道府県名"].astype(str).eq(pref) & out["区分"].ne("")).sum())
-            print(f"  区分補完: {pref} 名簿{len(g):,}件のうち全件データと一致{n_hit:,}件（区分あり{n_kubun:,}件）")
+            print(f"  区分補完: {pref}（{kind}）名簿{len(g):,}件のうち全件データと一致{n_hit:,}件（区分あり{n_kubun:,}件）")
         print(f"  区分補完: 空欄だった内訳を{filled:,}項目埋めた")
     return out
 
