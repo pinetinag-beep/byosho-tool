@@ -6,9 +6,9 @@ maxUploadSize = 200
 enableCORS = false
 
 [theme]
-# シビック・フレンドリー基調（詳細トークンは app.py のグローバルCSSで定義）
+# DESIGN.md の色（詳細トークンは app.py のグローバルCSS・theme.py）
 primaryColor = "#12886D"
-backgroundColor = "#FAF9F6"
+backgroundColor = "#FAF8F4"
 secondaryBackgroundColor = "#F1EFE8"
 textColor = "#26251F"
 font = "sans serif"

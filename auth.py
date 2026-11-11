@@ -279,10 +279,10 @@ def _render_landing_content() -> None:
         """
 <div style="max-width:680px;margin:0 auto;">
   <div style="text-align:center;margin:0 0 32px;">
-    <h2 style="font-size:1.7rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.5;">
+    <h2 style="font-size:1.7rem;font-weight:900;color:var(--ink);margin:0 0 14px;line-height:1.5;">
       感覚の提案から、データの提案へ。
     </h2>
-    <p style="font-size:0.95rem;color:#6E6A5E;max-width:520px;margin:0 auto;line-height:1.9;">
+    <p style="font-size:0.95rem;color:var(--ink-muted);max-width:520px;margin:0 auto;line-height:1.9;">
       病床機能報告・DPC・施設基準届出など、バラバラな公的データを横断検索。
       稼働率などの分析指標も自動計算済みで、そのままCSVに出力できます。
       データ収集・指標計算に時間をかける必要はありません。
@@ -291,10 +291,10 @@ def _render_landing_content() -> None:
 
   <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px 24px;
               margin:0 0 32px;font-size:0.78rem;color:#9c9890;">
-    <div>病床機能報告 <strong style="color:#6E6A5E;">4年分</strong></div>
-    <div>DPC <strong style="color:#6E6A5E;">3年分</strong></div>
-    <div>施設基準届出 <strong style="color:#6E6A5E;">全国47都道府県</strong></div>
-    <div>対応病院 <strong style="color:#6E6A5E;">7,000件以上</strong></div>
+    <div>病床機能報告 <strong style="color:var(--ink-muted);">4年分</strong></div>
+    <div>DPC <strong style="color:var(--ink-muted);">3年分</strong></div>
+    <div>施設基準届出 <strong style="color:var(--ink-muted);">全国47都道府県</strong></div>
+    <div>対応病院 <strong style="color:var(--ink-muted);">7,000件以上</strong></div>
   </div>
 </div>""",
         unsafe_allow_html=True,
@@ -311,7 +311,7 @@ def _render_landing_content() -> None:
     st.markdown("<div style='margin:0 0 28px;'></div>", unsafe_allow_html=True)
 
     st.markdown(
-        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
+        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:var(--brand-dark);"
         "margin:0 0 8px;'>📋 実際の病院詳細画面</p>",
         unsafe_allow_html=True,
     )
@@ -320,7 +320,7 @@ def _render_landing_content() -> None:
         with st.container(border=True):
             st.image("assets/lp_hospital_detail.png", use_container_width=True)
         st.markdown(
-            "<p style='text-align:center;font-size:0.78rem;color:#6E6A5E;margin:6px 0 0;'>"
+            "<p style='text-align:center;font-size:0.78rem;color:var(--ink-muted);margin:6px 0 0;'>"
             "許可病床数・稼働率・地域内順位・地域シェアなどを自動集計して表示します"
             "</p>",
             unsafe_allow_html=True,
@@ -332,47 +332,47 @@ def _render_landing_content() -> None:
         """
 <div style="max-width:820px;margin:0 auto;">
   <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:16px;margin:0 0 32px;">
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid var(--line);
                 border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">🔍</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">病院データを横断検索してCSVで出力</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+      <div style="font-weight:800;color:var(--ink);margin:8px 0 4px;">病院データを横断検索してCSVで出力</div>
+      <div style="font-size:0.85rem;color:var(--ink-muted);line-height:1.6;">
         エリア・設備・手術件数などの条件で全国の病院を一括検索。
         面倒な稼働率計算も済んだ状態でCSVに出力できます。
       </div>
     </div>
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid var(--line);
                 border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">🤝</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">候補者（医師・看護師）への提案材料に</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+      <div style="font-weight:800;color:var(--ink);margin:8px 0 4px;">候補者（医師・看護師）への提案材料に</div>
+      <div style="font-size:0.85rem;color:var(--ink-muted);line-height:1.6;">
         検索結果をそのまま、地域シェア・稼働率・経年の病床数推移といった数字で
         病院の実態や成長性を提示。転職提案に説得力を持たせられます。
       </div>
     </div>
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid var(--line);
                 border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">🏆</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">病院の立ち位置が分かる</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+      <div style="font-weight:800;color:var(--ink);margin:8px 0 4px;">病院の立ち位置が分かる</div>
+      <div style="font-size:0.85rem;color:var(--ink-muted);line-height:1.6;">
         稼働率・地域シェア・地域内順位を自動算出。その病院が地域でどんな役割を
         担っているか、数字で把握できます。
       </div>
     </div>
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid var(--line);
                 border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">📈</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">経年トレンドで推移を把握</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+      <div style="font-weight:800;color:var(--ink);margin:8px 0 4px;">経年トレンドで推移を把握</div>
+      <div style="font-size:0.85rem;color:var(--ink-muted);line-height:1.6;">
         病床数・稼働率・手術件数などの推移を年度ごとに確認可能。気になる病院の
         変化を追えます。
       </div>
     </div>
-    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid #E8E4DB;
+    <div style="flex:1;min-width:220px;background:#FFFFFF;border:1px solid var(--line);
                 border-radius:14px;padding:20px;display:flex;flex-direction:column;">
       <div style="font-size:1.4rem;">💬</div>
-      <div style="font-weight:800;color:#26251F;margin:8px 0 4px;">コミュニティで質問・要望を投稿</div>
-      <div style="font-size:0.85rem;color:#6E6A5E;line-height:1.6;">
+      <div style="font-weight:800;color:var(--ink);margin:8px 0 4px;">コミュニティで質問・要望を投稿</div>
+      <div style="font-size:0.85rem;color:var(--ink-muted);line-height:1.6;">
         データの見方や探し方を会員同士で質問し合えます。運営への要望や
         不具合報告もここから投稿できます。
       </div>
@@ -383,7 +383,7 @@ def _render_landing_content() -> None:
     )
 
     st.markdown(
-        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
+        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:var(--brand-dark);"
         "margin:0 0 8px;'>📋 実際の検索結果画面</p>",
         unsafe_allow_html=True,
     )
@@ -392,7 +392,7 @@ def _render_landing_content() -> None:
         with st.container(border=True):
             st.image("assets/lp_search_results.png", use_container_width=True)
         st.markdown(
-            "<p style='text-align:center;font-size:0.78rem;color:#6E6A5E;margin:6px 0 0;'>"
+            "<p style='text-align:center;font-size:0.78rem;color:var(--ink-muted);margin:6px 0 0;'>"
             "エリア・設備・手術件数などの条件で絞り込むと、該当する病院が一覧表示されます"
             "</p>",
             unsafe_allow_html=True,
@@ -401,7 +401,7 @@ def _render_landing_content() -> None:
     st.markdown("<div style='margin:36px 0 20px;'></div>", unsafe_allow_html=True)
 
     st.markdown(
-        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:#0B6653;"
+        "<p style='text-align:center;font-size:0.8rem;font-weight:700;color:var(--brand-dark);"
         "margin:0 0 8px;'>📋 病院ごとのPDF資料も出力できます</p>",
         unsafe_allow_html=True,
     )
@@ -410,7 +410,7 @@ def _render_landing_content() -> None:
         with st.container(border=True):
             st.image("assets/lp_report_sample.png", use_container_width=True)
         st.markdown(
-            "<p style='text-align:center;font-size:0.78rem;color:#6E6A5E;margin:6px 0 0;'>"
+            "<p style='text-align:center;font-size:0.78rem;color:var(--ink-muted);margin:6px 0 0;'>"
             "病床数・稼働率・医療専門職数・施設基準届出などをまとめた1病院ぶんの資料をPDFで出力できます"
             "</p>",
             unsafe_allow_html=True,
@@ -421,23 +421,23 @@ def _render_landing_content() -> None:
     st.markdown(
         """
 <div style="max-width:820px;margin:0 auto;">
-  <div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
+  <div style="background:#FFFFFF;border:2px solid var(--brand);border-radius:14px;
               padding:24px;text-align:center;margin:0 0 24px;">
-    <div style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.05em;">
+    <div style="font-size:0.8rem;font-weight:700;color:var(--brand-dark);letter-spacing:0.05em;">
       お試し価格
     </div>
     <div style="margin:6px 0 4px;">
-      <span style="font-size:2.2rem;font-weight:900;color:#26251F;">¥500</span>
-      <span style="font-size:0.95rem;color:#6E6A5E;"> / 月（税込）</span>
+      <span style="font-size:2.2rem;font-weight:900;color:var(--ink);">¥500</span>
+      <span style="font-size:0.95rem;color:var(--ink-muted);"> / 月（税込）</span>
     </div>
-    <div style="font-size:0.8rem;color:#6E6A5E;">
+    <div style="font-size:0.8rem;color:var(--ink-muted);">
       2026年12月末までの特別価格・クレジットカード決済ですぐにご利用いただけます
     </div>
   </div>
 
-  <div style="background:#EAF4F0;border:1px solid #BFDFD4;border-radius:14px;
+  <div style="background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:14px;
               padding:20px 24px;margin:0 0 28px;">
-    <div style="font-weight:800;color:#26251F;margin-bottom:10px;">使い方</div>
+    <div style="font-weight:800;color:var(--ink);margin-bottom:10px;">使い方</div>
     <ol style="margin:0;padding-left:20px;color:#4b5563;font-size:0.9rem;line-height:1.9;">
       <li>下の「新規利用申し込み」タブでメールアドレスを入力</li>
       <li>Stripeの決済ページでお支払い（月額500円）</li>
@@ -523,7 +523,7 @@ def _render_signup_panel(authenticator: stauth.Authenticate, form_key: str) -> N
         )
         return
     st.markdown(
-        "<p style='font-size:0.85rem;color:#6E6A5E;'>"
+        "<p style='font-size:0.85rem;color:var(--ink-muted);'>"
         "お試し価格 月額500円（2026年12月末まで）のお申し込みです。決済完了後、ログイン情報をメールでお送りします。"
         "</p>",
         unsafe_allow_html=True,
@@ -807,11 +807,11 @@ def require_login(authenticator: stauth.Authenticate) -> None:
         st.markdown(
             """
 <div style="text-align:center;padding:40px 0 20px;">
-  <h1 style="font-size:2.4rem;font-weight:900;color:#26251F;margin:0 0 6px;
+  <h1 style="font-size:2.4rem;font-weight:900;color:var(--ink);margin:0 0 6px;
              letter-spacing:-0.01em;font-family:'Helvetica Neue',Arial,sans-serif;">
-    Medilen<span style="color:#12886D;">Z</span>
+    Medilen<span style="color:var(--brand);">Z</span>
   </h1>
-  <p style="font-size:0.9rem;font-weight:500;color:#6E6A5E;margin:0;">
+  <p style="font-size:0.9rem;font-weight:500;color:var(--ink-muted);margin:0;">
     地域の医療をひらく、公的データのまど
   </p>
 </div>""",

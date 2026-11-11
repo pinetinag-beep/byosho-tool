@@ -4,14 +4,10 @@
 import io
 import pandas as pd
 import numpy as np
+import theme
 
 BED_TYPES = ["高度急性期", "急性期", "回復期", "慢性期"]
-BED_COLORS = {
-    "高度急性期": "#e74c3c",
-    "急性期":     "#e67e22",
-    "回復期":     "#2ecc71",
-    "慢性期":     "#3498db",
-}
+BED_COLORS = theme.BED_COLORS  # DESIGN.md「グラフの色」
 
 # 都道府県コード → 都道府県名
 PREF_CODE_MAP = {

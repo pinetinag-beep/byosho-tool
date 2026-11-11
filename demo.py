@@ -47,7 +47,7 @@ def _kpi_card(col, label, value, sub=""):
 
 def _source_note(text: str) -> None:
     st.markdown(
-        f"<div style='text-align:right;font-size:0.75rem;color:#6E6A5E;margin:4px 0 0;'>"
+        f"<div style='text-align:right;font-size:0.75rem;color:var(--ink-muted);margin:4px 0 0;'>"
         f"出典：{text}</div>",
         unsafe_allow_html=True,
     )
@@ -88,13 +88,13 @@ def render_demo(render_signup, on_view=None) -> None:
 
         st.markdown(
             f"""
-<div style="background:#EAF4F0;border:1px solid #BFDFD4;border-radius:12px;
-            padding:12px 16px;margin:8px 0 20px;font-size:0.88rem;color:#26251F;">
+<div style="background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:12px;
+            padding:12px 16px;margin:8px 0 20px;font-size:0.88rem;color:var(--ink);">
   🔍 <strong>ログイン不要のお試し版</strong>です。実際の画面と同じデータ・計算で、
   サンプルとして1病院だけ表示しています。会員になると全国7,000件以上の病院で
   同じ分析・検索・CSV出力ができます。
 </div>
-<div style="font-size:0.85rem;color:#6E6A5E;">{year}年度 › {pref} › {region}</div>
+<div style="font-size:0.85rem;color:var(--ink-muted);">{year}年度 › {pref} › {region}</div>
 <h2 style="margin:4px 0 16px;">{name}</h2>""",
             unsafe_allow_html=True,
         )
@@ -137,12 +137,12 @@ def render_demo(render_signup, on_view=None) -> None:
 
         st.markdown(
             """
-<div style="background:#FFFFFF;border:2px solid #12886D;border-radius:14px;
+<div style="background:#FFFFFF;border:2px solid var(--brand);border-radius:14px;
             padding:20px 24px;margin:32px 0 16px;text-align:center;">
-  <div style="font-weight:800;font-size:1.1rem;color:#26251F;margin-bottom:6px;">
+  <div style="font-weight:800;font-size:1.1rem;color:var(--ink);margin-bottom:6px;">
     全国7,000件以上の病院で、同じ分析を
   </div>
-  <div style="font-size:0.88rem;color:#6E6A5E;">
+  <div style="font-size:0.88rem;color:var(--ink-muted);">
     病院名・エリア・設備・手術件数での検索、DPC、施設基準届出、PDF資料出力、CSV出力が使えます。
     お試し価格 月額500円（税込）
   </div>

@@ -6,6 +6,7 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 from data_processor import BED_TYPES, BED_COLORS
+import theme
 
 
 def _fig_layout(fig, title="", height=420):
@@ -13,7 +14,8 @@ def _fig_layout(fig, title="", height=420):
         title=dict(text=title, font=dict(size=15)),
         height=height,
         margin=dict(l=10, r=10, t=50, b=10),
-        font=dict(family="Meiryo, sans-serif", size=14),
+        font=dict(family="Zen Kaku Gothic New, Hiragino Kaku Gothic ProN, Meiryo, sans-serif",
+                  size=14, color=theme.INK),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         # ドラッグ操作でのボックスズームを無効化。年度数点だけの折れ線/棒
@@ -41,6 +43,7 @@ def bed_donut(row: pd.Series, hospital_name: str) -> go.Figure:
         labels=labels, values=values,
         hole=0.55,
         marker_colors=colors,
+        marker_line=dict(color=theme.CARD, width=2),
         textinfo="label+percent",
         hovertemplate="%{label}: %{value}床 (%{percent})<extra></extra>",
     ))
@@ -58,10 +61,10 @@ def occupancy_gauge(rate: float, label: str) -> go.Figure:
         number={"suffix": "%", "font": {"size": 34}},
         gauge={
             "axis": {"range": [0, 100], "ticksuffix": "%"},
-            "bar": {"color": "#3498db"},
+            "bar": {"color": theme.BRAND},
             "steps": [
-                {"range": [0, 50],  "color": "rgba(52,152,219,0.08)"},
-                {"range": [50, 100], "color": "rgba(52,152,219,0.15)"},
+                {"range": [0, 50],  "color": theme.BG},
+                {"range": [50, 100], "color": theme.BRAND_SOFT},
             ],
         },
         title={"text": label, "font": {"size": 15}},
@@ -144,7 +147,7 @@ def occupancy_scatter(region_df: pd.DataFrame, highlight: str) -> go.Figure:
     fig = px.scatter(
         df, x="合計_許可病床数", y="稼働率(%)",
         color="is_target",
-        color_discrete_map={True: "#e74c3c", False: "#95a5a6"},
+        color_discrete_map={True: theme.BRAND, False: theme.MUTED_SERIES},
         size="合計_許可病床数",
         size_max=28,
         hover_name="医療機関名",
@@ -158,7 +161,7 @@ def occupancy_scatter(region_df: pd.DataFrame, highlight: str) -> go.Figure:
 def share_bar(region_df: pd.DataFrame, highlight: str) -> go.Figure:
     """地域内病床シェア棒グラフ"""
     df = region_df.sort_values("地域シェア(%)", ascending=True).tail(15)
-    colors = ["#e74c3c" if n == highlight else "#3498db" for n in df["医療機関名"]]
+    colors = [theme.BRAND if n == highlight else theme.MUTED_SERIES for n in df["医療機関名"]]
     fig = go.Figure(go.Bar(
         x=df["地域シェア(%)"], y=df["医療機関名"],
         orientation="h",
@@ -231,10 +234,10 @@ def ranking_table_fig(
     is_hl = [name == highlight for name in disp["医療機関名"]]
 
     fill_colors = [
-        ["#c0392b" if h else ("#f2f2f2" if i % 2 == 0 else "white") for i, h in enumerate(is_hl)]
+        [theme.BRAND_SOFT if h else (theme.BG if i % 2 == 0 else theme.CARD) for i, h in enumerate(is_hl)]
     ] * len(disp.columns)
     font_colors = [
-        ["white" if h else "#2c3e50" for h in is_hl]
+        [theme.BRAND_DARK if h else theme.INK for h in is_hl]
     ] * len(disp.columns)
 
     all_labels = ["順位", "医療機関名"] + col_labels
@@ -245,7 +248,7 @@ def ranking_table_fig(
         columnwidth=col_widths,
         header=dict(
             values=all_labels,
-            fill_color="#2c3e50",
+            fill_color=theme.BRAND_DARK,
             font=dict(color="white", size=14),
             align="center",
             height=34,
@@ -297,7 +300,7 @@ def trend_occupancy(trend_df: pd.DataFrame, hospital_name: str) -> go.Figure:
         y=occ_pct,
         mode="lines+markers+text",
         name=label,
-        line=dict(color="#3498db", width=3),
+        line=dict(color=theme.BRAND, width=2),
         marker=dict(size=9),
         text=occ_pct.astype(str) + "%",
         textposition="top center",
@@ -313,7 +316,7 @@ def trend_los(los_df: pd.DataFrame, hospital_name: str) -> go.Figure:
         x=los_df["報告年度"], y=los_df["平均在院日数"],
         mode="lines+markers+text",
         name="平均在院日数",
-        line=dict(color="#f39c12", width=3),
+        line=dict(color=theme.BRAND, width=2),
         marker=dict(size=9),
         text=los_df["平均在院日数"].map(lambda v: f"{v:.1f}日" if pd.notna(v) else ""),
         textposition="top center",
@@ -328,7 +331,7 @@ def trend_dpc_cases(dpc_trend_df: pd.DataFrame, hospital_name: str) -> go.Figure
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=dpc_trend_df["年度"], y=dpc_trend_df["DPC症例数"],
-        name="DPC症例数", marker_color="#8b5cf6", opacity=0.85,
+        name="DPC症例数", marker_color=theme.BRAND,
         text=dpc_trend_df["DPC症例数"].map(lambda v: f"{v:,.0f}例"),
         textposition="outside",
         hovertemplate="%{y:,.0f}例<extra></extra>",
@@ -342,12 +345,12 @@ def trend_staff(trend_df: pd.DataFrame, hospital_name: str) -> go.Figure:
     if "常勤医師数" in trend_df.columns:
         fig.add_trace(go.Bar(
             x=trend_df["報告年度"], y=trend_df["常勤医師数"],
-            name="常勤医師数", marker_color="#e74c3c", opacity=0.8,
+            name="常勤医師数", marker_color=theme.CATEGORICAL[0],
         ))
     if "常勤看護師数" in trend_df.columns:
         fig.add_trace(go.Bar(
             x=trend_df["報告年度"], y=trend_df["常勤看護師数"],
-            name="常勤看護師数", marker_color="#3498db", opacity=0.8,
+            name="常勤看護師数", marker_color=theme.CATEGORICAL[1],
         ))
     fig.update_layout(barmode="group")
     return _fig_layout(fig, f"スタッフ数推移 — {hospital_name}")
@@ -366,7 +369,7 @@ def staff_scatter(region_df: pd.DataFrame, highlight: str) -> go.Figure:
     fig = px.scatter(
         df, x="医師数_per100床", y="看護師数_per100床",
         color="is_target",
-        color_discrete_map={True: "#e74c3c", False: "#95a5a6"},
+        color_discrete_map={True: theme.BRAND, False: theme.MUTED_SERIES},
         size="合計_許可病床数",
         size_max=30,
         hover_name="医療機関名",
@@ -382,7 +385,7 @@ def staff_bar_region(region_df: pd.DataFrame, highlight: str, col: str, label: s
     if col not in region_df.columns:
         return go.Figure()
     df = region_df.dropna(subset=[col]).sort_values(col, ascending=True).tail(15)
-    colors = ["#e74c3c" if n == highlight else "#3498db" for n in df["医療機関名"]]
+    colors = [theme.BRAND if n == highlight else theme.MUTED_SERIES for n in df["医療機関名"]]
     fig = go.Figure(go.Bar(
         x=df[col], y=df["医療機関名"],
         orientation="h",
@@ -450,12 +453,13 @@ def admission_route_pie(ward_df: pd.DataFrame, hospital_name: str) -> go.Figure:
 
     labels = ["予定外救急入院", "予定・院内転棟等"]
     values = [kyukyu, other]
-    colors = ["#e74c3c", "#3498db"]
+    colors = theme.CATEGORICAL[:2]
 
     fig = go.Figure(go.Pie(
         labels=labels, values=values,
         hole=0.45,
         marker_colors=colors,
+        marker_line=dict(color=theme.CARD, width=2),
         textinfo="label+percent",
         hovertemplate="%{label}: %{value:,}人 (%{percent})<extra></extra>",
     ))
@@ -486,12 +490,13 @@ def discharge_route_pie(ward_df: pd.DataFrame, hospital_name: str) -> go.Figure:
 
     labels = ["家庭退院", "他院転院", "施設入所", "死亡退院", "その他"]
     values = [katei, tain, shisetsu, shibo, sonota]
-    colors = ["#2ecc71", "#e67e22", "#9b59b6", "#7f8c8d", "#bdc3c7"]
+    colors = theme.CATEGORICAL[:4] + [theme.MUTED_SERIES]
 
     fig = go.Figure(go.Pie(
         labels=labels, values=values,
         hole=0.45,
         marker_colors=colors,
+        marker_line=dict(color=theme.CARD, width=2),
         textinfo="label+percent",
         hovertemplate="%{label}: %{value:,}人 (%{percent})<extra></extra>",
     ))
@@ -534,7 +539,7 @@ def home_return_rate_bar(ward_df: pd.DataFrame, hospital_name: str, secondary_re
     ).round(1)
     agg = agg.dropna(subset=["在宅復帰率(%)"]).sort_values("在宅復帰率(%)", ascending=True).tail(20)
 
-    colors = ["#e74c3c" if n == hospital_name else "#3498db" for n in agg["医療機関名"]]
+    colors = [theme.BRAND if n == hospital_name else theme.MUTED_SERIES for n in agg["医療機関名"]]
 
     fig = go.Figure(go.Bar(
         x=agg["在宅復帰率(%)"], y=agg["医療機関名"],

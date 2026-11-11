@@ -27,6 +27,7 @@ import backup
 import data_sources
 import report_pdf
 import community
+import theme
 
 # 都道府県コード順（北から南）のソートキー
 _PREF_ORDER = {name: code for code, name in PREF_CODE_MAP.items()}
@@ -71,7 +72,7 @@ def _source_tag(text: str, detail: str = "") -> str:
     （data_sources.credit参照。表示している値はいずれも集計・指標計算した加工物のため）。
     """
     return (
-        f"<div style='text-align:right;font-size:0.72rem;color:#6E6A5E;"
+        f"<div style='text-align:right;font-size:0.72rem;color:var(--ink-muted);"
         f"margin:-6px 0 2px;'>出典：{data_sources.credit(text, detail=detail)}</div>"
     )
 
@@ -189,24 +190,28 @@ if (!window.parent.__enterGuardInstalled) {
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap');
 
 /* ══════════════════════════════════════════════════════
-   デザイントークン（シビック・フレンドリー）
+   デザイントークン（DESIGN.md「2. 色」。kijun_web/static/style.css と同じ値）
    - 温かみのある紙色の背景 × 深緑のブランドカラー1色
-   - 見出しは丸ゴシック（Zen Maru Gothic）で親しみを、
-     本文・数値は角ゴシック（Zen Kaku Gothic New）で明瞭さを出す
+   - 書体は見出しも本文も角ゴシック（Zen Kaku Gothic New）
    - 色は「ブランド緑＝操作・強調」「意味色（緑/橙/赤）＝状態」のみに限定
+   - Python側（Plotly・folium等）で色が要る時は theme.py の定数を使う
 ══════════════════════════════════════════════════════ */
 :root {
     --ink:        #26251F;   /* 本文 */
     --ink-muted:  #6E6A5E;   /* 補足テキスト */
-    --paper:      #FAF9F6;   /* ページ背景（温かみのある紙色） */
+    --ink-faint:  #9C9890;   /* さらに弱い文字（件数・注記） */
+    --bg:         #FAF8F4;   /* ページ背景（温かみのある紙色） */
+    --paper:      var(--bg); /* 旧名（互換） */
     --card:       #FFFFFF;   /* カード背景 */
     --line:       #E8E4DB;   /* 罫線（ウォームグレー） */
     --brand:      #12886D;   /* ブランド（深緑） */
-    --brand-deep: #0B6653;
-    --brand-tint: #EAF4F0;   /* ブランドの淡背景 */
+    --brand-dark: #0B5E4B;
+    --brand-soft: #EAF4F0;   /* ブランドの淡背景 */
+    --brand-deep: var(--brand-dark);  /* 旧名（互換） */
+    --brand-tint: var(--brand-soft);  /* 旧名（互換） */
     --brand-line: #BFDFD4;
     --ok:     #1A7F4B;
     --warn:   #A8630A;
@@ -230,11 +235,12 @@ div[data-testid="stSidebar"] span:not([class*="material"]) {
     color: var(--ink);
 }
 
-/* ── 見出しは丸ゴシックで親しみを出す ── */
+/* ── 見出しも角ゴシック（太字）。丸ゴシックは使わない（DESIGN.md「3. 文字」）── */
 h1, h2, h3, h4, h5, h6,
 .section-header, .landing-group-title,
 .method-card .mc-title {
-    font-family: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', 'Zen Kaku Gothic New', sans-serif !important;
+    font-family: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif !important;
+    font-weight: 700;
     color: var(--ink);
 }
 
@@ -491,26 +497,26 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
     /* 白背景・黒文字に統一 */
     body, .main, .stApp {
         background: white !important;
-        color: #111 !important;
+        color: var(--ink) !important;
     }
 
     /* メトリクスカード: 印刷用にシンプル化 */
     .metric-card {
         background: white !important;
-        border: 1px solid #bbb !important;
+        border: 1px solid var(--line) !important;
         border-left-width: 4px !important;
         box-shadow: none !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    .metric-value { color: #111 !important; }
-    .metric-label { color: #444 !important; }
-    .metric-sub   { color: #666 !important; }
+    .metric-value { color: var(--ink) !important; }
+    .metric-label { color: var(--ink) !important; }
+    .metric-sub   { color: var(--ink-muted) !important; }
 
     /* セクションヘッダー */
     .section-header {
-        color: #111 !important;
-        border-bottom-color: #3498db !important;
+        color: var(--ink) !important;
+        border-bottom-color: var(--brand) !important;
         page-break-after: avoid;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
@@ -616,7 +622,7 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
     content: "✕ 閉じる";
     font-size: 0.82rem;
     font-weight: 700;
-    color: #64748b;
+    color: var(--ink-muted);
     letter-spacing: 0.03em;
     white-space: nowrap;
 }
@@ -624,8 +630,8 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
 [data-testid="stSidebarCollapseButton"] button {
     width: auto !important;
     padding: 4px 8px !important;
-    background: #f1f5f9 !important;
-    border: 1px solid #e2e8f0 !important;
+    background: var(--bg) !important;
+    border: 1px solid var(--line) !important;
     border-radius: 6px !important;
 }
 
@@ -639,7 +645,7 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
     content: "☰ メニュー";
     font-size: 0.82rem;
     font-weight: 700;
-    color: #64748b;
+    color: var(--ink-muted);
     letter-spacing: 0.03em;
     white-space: nowrap;
 }
@@ -647,8 +653,8 @@ div[data-testid="stExpander"] { border-radius: 12px !important; }
 [data-testid="stSidebarCollapsedControl"] {
     width: auto !important;
     padding: 6px 10px !important;
-    background: #f1f5f9 !important;
-    border: 1px solid #e2e8f0 !important;
+    background: var(--bg) !important;
+    border: 1px solid var(--line) !important;
     border-radius: 0 6px 6px 0 !important;
 }
 
@@ -740,7 +746,7 @@ def _render_header():
             _user_email = st.session_state.get("username", "")
             if _user_email:
                 st.markdown(
-                    f"<div style='font-size:0.72rem;color:#9ca3af;padding:6px 0 0;'>"
+                    f"<div style='font-size:0.72rem;color:var(--ink-faint);padding:6px 0 0;'>"
                     f"{_user_email}</div>",
                     unsafe_allow_html=True,
                 )
@@ -778,7 +784,7 @@ def _render_header():
     if mode == "home":
         st.markdown(
             "<div style='padding:10px 0 2px;'>"
-            "<span style='font-size:1.05rem;font-weight:800;color:#111827;'>"
+            "<span style='font-size:1.05rem;font-weight:800;color:var(--ink);'>"
             "🏥 ホーム</span></div>",
             unsafe_allow_html=True,
         )
@@ -790,33 +796,33 @@ def _render_header():
                 st.session_state["_hospital_chosen"] = False
                 st.rerun()
         with _hc2:
-            _sep = "<span style='color:#d1d5db;margin:0 5px;'>›</span>"
-            _parts = ["<span style='color:#9ca3af;'>🏥 ホーム</span>"]
+            _sep = "<span style='color:var(--ink-faint);margin:0 5px;'>›</span>"
+            _parts = ["<span style='color:var(--ink-faint);'>🏥 ホーム</span>"]
             if mode == "detail":
-                if _pref:     _parts.append(f"<span style='color:#6b7280;'>{_pref}</span>")
-                if _region:   _parts.append(f"<span style='color:#6b7280;'>{_region}</span>")
-                if _hospital: _parts.append(f"<strong style='color:#111827;'>{_hospital}</strong>")
+                if _pref:     _parts.append(f"<span style='color:var(--ink-muted);'>{_pref}</span>")
+                if _region:   _parts.append(f"<span style='color:var(--ink-muted);'>{_region}</span>")
+                if _hospital: _parts.append(f"<strong style='color:var(--ink);'>{_hospital}</strong>")
             elif mode == "map":
                 _ms_pref = st.session_state.get("_ms_pref", "")
-                if _ms_pref: _parts.append(f"<span style='color:#6b7280;'>{_ms_pref}</span>")
-                _parts.append("<span style='color:#111827;font-weight:600;'>地図で探す</span>")
+                if _ms_pref: _parts.append(f"<span style='color:var(--ink-muted);'>{_ms_pref}</span>")
+                _parts.append("<span style='color:var(--ink);font-weight:600;'>地図で探す</span>")
             elif mode == "distance":
-                _parts.append("<span style='color:#111827;font-weight:600;'>距離・所要時間で探す</span>")
+                _parts.append("<span style='color:var(--ink);font-weight:600;'>距離・所要時間で探す</span>")
             elif mode == "search":
-                _parts.append("<span style='color:#111827;font-weight:600;'>設備・手術条件で探す</span>")
+                _parts.append("<span style='color:var(--ink);font-weight:600;'>設備・手術条件で探す</span>")
             elif mode == "region_vision":
                 _rv_p = st.session_state.get("_rv_sel_pref", "")
                 _rv_r = st.session_state.get("_rv_sel_region", "")
-                if _rv_p: _parts.append(f"<span style='color:#6b7280;'>{_rv_p}</span>")
-                if _rv_r: _parts.append(f"<span style='color:#6b7280;'>{_rv_r}</span>")
-                _parts.append("<span style='color:#111827;font-weight:600;'>地域医療構想分析</span>")
+                if _rv_p: _parts.append(f"<span style='color:var(--ink-muted);'>{_rv_p}</span>")
+                if _rv_r: _parts.append(f"<span style='color:var(--ink-muted);'>{_rv_r}</span>")
+                _parts.append("<span style='color:var(--ink);font-weight:600;'>地域医療構想分析</span>")
             st.markdown(
                 f"<div style='padding:7px 0 0;font-size:0.82rem;'>{_sep.join(_parts)}</div>",
                 unsafe_allow_html=True,
             )
 
     st.markdown(
-        "<hr style='margin:4px 0 14px;border:none;border-top:1px solid #f3f4f6;'>",
+        "<hr style='margin:4px 0 14px;border:none;border-top:1px solid var(--line);'>",
         unsafe_allow_html=True,
     )
 
@@ -830,7 +836,7 @@ def _render_footer():
     with _fa:
         with st.expander("⚠️ 免責事項"):
             st.markdown("""
-<div style="font-size:0.85rem; color:#555; line-height:1.6;">
+<div style="font-size:0.85rem; color:var(--ink-muted); line-height:1.6;">
 
 本ツールは、厚生労働省・地方厚生局が公表する**病床機能報告・DPC調査・外来機能報告・施設基準の届出受理状況**等のデータをもとに、MedilenZが集計・分析を行うものです。分析結果は厚生労働省・地方厚生局が作成したものではありません（出典の詳細は「📄 データの出典と利用条件」参照）。
 
@@ -942,7 +948,7 @@ def _render_footer():
                     st.caption("データ読み込み後に使用できます")
 
     st.markdown(
-        "<div style='text-align:center;font-size:0.7rem;color:#c0c4cc;padding:16px 0;'>"
+        "<div style='text-align:center;font-size:0.7rem;color:var(--ink-faint);padding:16px 0;'>"
         f"© MedilenZ — {data_sources.FOOTER_CREDIT}</div>",
         unsafe_allow_html=True,
     )
@@ -2290,14 +2296,14 @@ if st.session_state.get("_view_mode") == "home":
     st.markdown(
         f"""
 <div style="text-align:center;padding:0 0 34px;">
-  <p style="font-size:0.8rem;font-weight:700;color:#0B6653;letter-spacing:0.18em;margin:0 0 10px;">
+  <p style="font-size:0.8rem;font-weight:700;color:var(--brand-dark);letter-spacing:0.18em;margin:0 0 10px;">
     地域の医療をひらく、公的データのまど
   </p>
-  <h1 style="font-size:3rem;font-weight:900;color:#26251F;margin:0 0 14px;line-height:1.1;
+  <h1 style="font-size:3rem;font-weight:900;color:var(--ink);margin:0 0 14px;line-height:1.1;
              letter-spacing:-0.01em;font-family:'Helvetica Neue',Arial,sans-serif;">
-    Medilen<span style="color:#12886D;">Z</span>
+    Medilen<span style="color:var(--brand);">Z</span>
   </h1>
-  <p style="font-size:0.98rem;font-weight:500;color:#6E6A5E;margin:0;">どうやって探しますか？</p>
+  <p style="font-size:0.98rem;font-weight:500;color:var(--ink-muted);margin:0;">どうやって探しますか？</p>
 </div>""",
         unsafe_allow_html=True,
     )
@@ -2583,16 +2589,16 @@ if st.session_state.get("_view_mode") == "map":
                     _mk = int(_mr.get("合計_稼働病床数", 0) or 0)
                     _mo = f"{_mk / _mb * 100:.1f}%" if _mb > 0 else "—"
                     _mrad = max(5, min(22, _mb / _ms_max_beds * 22))
-                    _mcol = "#e74c3c" if _mb >= 500 else "#e67e22" if _mb >= 300 else "#2ecc71" if _mb >= 100 else "#3498db"
+                    _mcol = theme.SEQ4[0] if _mb >= 500 else theme.SEQ4[1] if _mb >= 300 else theme.SEQ4[2] if _mb >= 100 else theme.SEQ4[3]
                     folium.CircleMarker(
                         location=[float(_mr["lat"]), float(_mr["lon"])],
-                        radius=_mrad, color="#555", weight=1,
+                        radius=_mrad, color=theme.CARD, weight=1,
                         fill=True, fill_color=_mcol, fill_opacity=0.75,
                         popup=folium.Popup(
                             (lambda _n, _mb, _mo, _pref, _reg: (
                                 f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
                                 f'<b style="font-size:13px">{_n}</b><br>'
-                                f'<span style="color:#666;font-size:11px">{_pref} {_reg}</span>'
+                                f'<span style="color:#6E6A5E;font-size:11px">{_pref} {_reg}</span>'
                                 f'<hr style="margin:6px 0">許可病床数: <b>{_mb:,}床</b><br>稼働率: <b>{_mo}</b>'
                                 f'<br><a href="#"'
                                 f' onclick="window.open(window.top.location.origin+\'/?hospital=\'+encodeURIComponent(\'{_n}\'),\'_blank\');return false;"'
@@ -2624,12 +2630,12 @@ if st.session_state.get("_view_mode") == "map":
                     _ms_occ  = f'{_ms_cr["合計稼働率"]:.0f}%' if "合計稼働率" in _ms_cr and pd.notna(_ms_cr["合計稼働率"]) else "—"
                     st.markdown(
                         f'<div style="margin-top:12px;padding:16px 20px;'
-                        f'background:#EAF4F0;border:2px solid #12886D;border-radius:12px;'
+                        f'background:var(--brand-soft);border:2px solid var(--brand);border-radius:12px;'
                         f'display:flex;align-items:center;gap:16px;">'
                         f'<div style="flex:1;">'
-                        f'<div style="font-size:0.75rem;color:#0B6653;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
-                        f'<div style="font-size:1rem;font-weight:800;color:#111827;">{_ms_last}</div>'
-                        f'<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">'
+                        f'<div style="font-size:0.75rem;color:var(--brand-dark);font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
+                        f'<div style="font-size:1rem;font-weight:800;color:var(--ink);">{_ms_last}</div>'
+                        f'<div style="font-size:0.8rem;color:var(--ink-muted);margin-top:2px;">'
                         f'{_ms_cr["都道府県名"]} {_ms_cr["二次医療圏名"]}　🛏 {_ms_beds:,}床　稼働率 {_ms_occ}</div>'
                         f'</div></div>',
                         unsafe_allow_html=True,
@@ -3056,7 +3062,7 @@ if st.session_state.get("_view_mode") == "clinic_search":
                 key="cs_csv_dl",
             )
 
-            _CS_FAC_COLOR = {"病院": "#3b82f6", "有床診療所": "#f59e0b", "無床診療所": "#6b7280"}
+            _CS_FAC_COLOR = {"病院": theme.BRAND, "有床診療所": theme.INK_MUTED, "無床診療所": theme.INK_MUTED}
             _CS_PAGE_SIZE = 100
             _cs_page = _cs_insts.head(_CS_PAGE_SIZE)
 
@@ -3071,7 +3077,7 @@ if st.session_state.get("_view_mode") == "clinic_search":
             ).to_dict()
 
             for _, _cr in _cs_page.iterrows():
-                _fac_color = _CS_FAC_COLOR.get(_cr["施設種別"], "#6b7280")
+                _fac_color = _CS_FAC_COLOR.get(_cr["施設種別"], theme.INK_MUTED)
                 # 住所の先頭（市区町村名部分）だけをタイトルに出す
                 _cs_city = re.match(r"^.{0,10}?[市区町村]", str(_cr.get("住所") or ""))
                 _cs_city_str = _cs_city.group() if _cs_city else ""
@@ -3498,7 +3504,7 @@ if st.session_state.get("_view_mode") == "search":
                     # ため、常に表示しておき、検索ボタン1回で完結するようにする。
                     st.markdown("---")
                     st.markdown(
-                        "<div style='font-size:0.82rem;font-weight:600;color:#b45309;'>"
+                        "<div style='font-size:0.82rem;font-weight:600;color:var(--warn);'>"
                         "🔎 区分で絞り込む（任意・左の届出名称も選んだ場合のみ有効）</div>",
                         unsafe_allow_html=True,
                     )
@@ -4663,8 +4669,7 @@ if st.session_state.get("_view_mode") == "region_vision":
         _rv_bar_src["_total"] = _rv_bar_src[_rv_bt_cols].sum(axis=1)
         _rv_bar_src = _rv_bar_src.sort_values("_total", ascending=True)
 
-        _rv_bt_colors = {"高度急性期": "#e74c3c", "急性期": "#e67e22",
-                         "回復期": "#3498db", "慢性期": "#27ae60"}
+        _rv_bt_colors = theme.BED_COLORS
         fig_rv_stack = _go_rv.Figure()
         for _bt in BED_TYPES:
             _col = f"{_bt}_許可病床数"
@@ -4674,7 +4679,7 @@ if st.session_state.get("_view_mode") == "region_vision":
                     x=_rv_bar_src[_col],
                     y=_rv_bar_src["医療機関名"],
                     orientation="h",
-                    marker_color=_rv_bt_colors.get(_bt, "#999"),
+                    marker_color=_rv_bt_colors.get(_bt, theme.INK_FAINT),
                     hovertemplate=f"%{{y}}<br>{_bt}: %{{x:,}}床<extra></extra>",
                 ))
         fig_rv_stack.update_layout(
@@ -4756,14 +4761,14 @@ if st.session_state.get("_view_mode") == "region_vision":
     ).fillna(0)
 
     _rv_role_colors = {
-        "🏆 急性期拠点候補":   "#e74c3c",
-        "🔴 地域急性期":       "#e67e22",
-        "🚑 高齢者救急":       "#f39c12",
-        "🔄 回復期強化":       "#3498db",
-        "💊 慢性期・在宅支援": "#27ae60",
-        "🏠 専門・外来特化":   "#9b59b6",
-        "⚪ 機能転換検討中":   "#95a5a6",
-        "⚪ データ不足":       "#bdc3c7",
+        "🏆 急性期拠点候補":   theme.CATEGORICAL[0],
+        "🔴 地域急性期":       theme.CATEGORICAL[1],
+        "🚑 高齢者救急":       theme.CATEGORICAL[2],
+        "🔄 回復期強化":       theme.CATEGORICAL[3],
+        "💊 慢性期・在宅支援": theme.CATEGORICAL[4],
+        "🏠 専門・外来特化":   theme.CATEGORICAL[5],
+        "⚪ 機能転換検討中":   theme.INK_FAINT,
+        "⚪ データ不足":       theme.MUTED_SERIES,
     }
 
     fig_rv_scatter = _go_rv.Figure()
@@ -4776,7 +4781,7 @@ if st.session_state.get("_view_mode") == "region_vision":
             name=_rl,
             marker=dict(
                 size=14,
-                color=_rv_role_colors.get(_rl, "#999"),
+                color=_rv_role_colors.get(_rl, theme.INK_FAINT),
                 opacity=0.85,
                 line=dict(width=1.5, color="white"),
             ),
@@ -4814,10 +4819,10 @@ if st.session_state.get("_view_mode") == "region_vision":
 <style>
 .role-def-table { width:100%; border-collapse:collapse; font-size:0.92rem; }
 .role-def-table th {
-    background:#f0f2f6; padding:7px 10px; text-align:left;
-    border-bottom:2px solid #d0d3db; font-size:0.88rem; color:#444;
+    background:var(--bg); padding:7px 10px; text-align:left;
+    border-bottom:2px solid var(--line); font-size:0.88rem; color:var(--ink);
 }
-.role-def-table td { padding:7px 10px; border-bottom:1px solid #e8e8e8; vertical-align:top; }
+.role-def-table td { padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
 .role-def-table tr:last-child td { border-bottom:none; }
 .role-badge {
     display:inline-block; padding:2px 8px; border-radius:10px;
@@ -4835,62 +4840,62 @@ if st.session_state.get("_view_mode") == "region_vision":
 </thead>
 <tbody>
 <tr>
-  <td><span class="role-badge" style="background:#fde8e8;color:#c0392b;">🏆 急性期拠点候補</span></td>
+  <td><span class="role-badge" style="background:#2a78d61F;border:1px solid #2a78d6;color:var(--ink);">🏆 急性期拠点候補</span></td>
   <td>地域の高度・急性期医療を集約的に担う<b>中核病院の候補</b>。新地域医療構想策定ガイドライン（令和8年7月公表）が定める「急性期拠点機能」の考え方に相当。</td>
   <td>①スコアが地域内上位（病院数÷4程度の枠）、かつ②合計スコア<b>38点以上</b></td>
   <td>急性期・高度急性期機能を集約。地域内で1〜3病院程度に絞り込まれる想定。救命救急・専門医療の維持が使命。</td>
 </tr>
 <tr>
-  <td><span class="role-badge" style="background:#fdf0e6;color:#c0392b;">🔴 地域急性期</span></td>
+  <td><span class="role-badge" style="background:#eb68341F;border:1px solid #eb6834;color:var(--ink);">🔴 地域急性期</span></td>
   <td>急性期医療を提供できる規模を持つが、<b>拠点集約の対象外</b>となる急性期病院。</td>
   <td>急性期系病床（高度急性期＋急性期）の<b>比率50%以上</b>かつ<b>150床以上</b></td>
   <td>急性期拠点機能を担う病院と連携・機能分担しながら、地域の入院急性期需要を補完。選択と集中が今後の課題。</td>
 </tr>
 <tr>
-  <td><span class="role-badge" style="background:#fef9e7;color:#d35400;">🚑 高齢者救急</span></td>
+  <td><span class="role-badge" style="background:#1baf7a1F;border:1px solid #1baf7a;color:var(--ink);">🚑 高齢者救急</span></td>
   <td>高齢者の<b>軽〜中等症救急</b>を受け入れ、在宅・介護施設への早期復帰を支援する病院。</td>
   <td>急性期系比率<b>25%以上</b>かつ（回復期比率<b>15%以上</b>または<b>300床未満</b>）</td>
   <td>2040年に向けて最も需要増が見込まれる機能。高齢者の生活機能維持・在宅復帰支援を軸に整備。</td>
 </tr>
 <tr>
-  <td colspan="4" style="font-size:0.78rem;color:#888;padding:2px 10px;border-bottom:none;">
+  <td colspan="4" style="font-size:0.78rem;color:var(--ink-muted);padding:2px 10px;border-bottom:none;">
     ※ 上記「地域急性期」「高齢者救急」は、新ガイドラインでは「高齢者救急・地域急性期機能」という<b>1つの機能</b>として定義されています。
     このツールでは病床構成の違いが見えるよう便宜的に2区分で表示しています。
   </td>
 </tr>
 <tr>
-  <td><span class="role-badge" style="background:#eaf4fb;color:#1a6fa8;">🔄 回復期強化</span></td>
+  <td><span class="role-badge" style="background:#eda1001F;border:1px solid #eda100;color:var(--ink);">🔄 回復期強化</span></td>
   <td>リハビリテーション・<b>回復期機能を主軸</b>とする病院。地域包括ケア病棟を含む。</td>
   <td>回復期病床比率<b>40%以上</b></td>
   <td>術後・脳卒中・骨折後のリハビリ需要は2040年に向けて大幅増。地域包括ケア病棟の充実と急性期後連携が鍵。（病床機能報告の「回復期」区分は令和9年度以降「包括期」に呼称変更予定）</td>
 </tr>
 <tr>
-  <td><span class="role-badge" style="background:#e8f8f0;color:#1a7a4a;">💊 慢性期・在宅支援</span></td>
+  <td><span class="role-badge" style="background:#e87ba41F;border:1px solid #e87ba4;color:var(--ink);">💊 慢性期・在宅支援</span></td>
   <td>長期療養・慢性期入院や<b>在宅療養支援</b>を主体とする病院・診療所。</td>
   <td>慢性期病床比率<b>35%以上</b></td>
   <td>高齢化に伴う療養・看取り需要への対応。在宅療養支援病院機能との連携強化や、訪問診療・看取り体制の整備。</td>
 </tr>
 <tr>
-  <td><span class="role-badge" style="background:#f4ecf7;color:#7d3c98;">🏠 専門・外来特化</span></td>
+  <td><span class="role-badge" style="background:#0083001F;border:1px solid #008300;color:var(--ink);">🏠 専門・外来特化</span></td>
   <td>小規模で<b>専門診療・外来</b>、または在宅支援に特化した医療機関。</td>
   <td>許可病床数<b>100床未満</b></td>
   <td>入院機能を縮小・特化し、外来・専門診療への集中または地域包括ケアの担い手として大病院との後方連携強化。</td>
 </tr>
 <tr>
-  <td><span class="role-badge" style="background:#f2f3f4;color:#666;">⚪ 機能転換検討中</span></td>
+  <td><span class="role-badge" style="background:var(--bg);border:1px solid var(--ink-faint);color:var(--ink-muted);">⚪ 機能転換検討中</span></td>
   <td>上記いずれの特徴も明確でなく、<b>機能の方向性の選択が課題</b>となっている病院。</td>
   <td>上記6分類のいずれの条件も非該当</td>
   <td>急性期から回復期・在宅支援への段階的転換、または地域での明確な役割分担について調整会議での検討が必要。</td>
 </tr>
 </tbody>
 </table>
-<p style="font-size:0.82rem;color:#999;margin-top:8px;">
+<p style="font-size:0.82rem;color:var(--ink-faint);margin-top:8px;">
 ※ 判定基準は病床機能報告の報告値のみを用いた参考分類です。実際の機能定義は都道府県の地域医療構想に基づきます。
 </p>
         """, unsafe_allow_html=True)
 
     _ai_badge = (
-        ' <span style="font-size:0.65rem;color:#7c3aed;background:#f5f3ff;'
+        ' <span style="font-size:0.65rem;color:var(--brand-dark);background:var(--brand-soft);'
         'padding:1px 5px;border-radius:3px;vertical-align:middle;">AI</span>'
         if _ant_key else ""
     )
@@ -4903,7 +4908,7 @@ if st.session_state.get("_view_mode") == "region_vision":
         _scr_r  = int(_rr["_score"])
         _beds_r = _si(_rr.get("合計_許可病床数", 0))
         _surg_r = _surg_map_rv.get(_hn_r, 0)
-        _bc_r   = _rv_role_colors.get(_role_r, "#bdc3c7")
+        _bc_r   = _rv_role_colors.get(_role_r, theme.MUTED_SERIES)
 
         _surg_txt = f" | 手術 {_surg_r:,}件/年" if _surg_r > 0 else ""
         _docs_r   = _si(_rr.get("常勤医師数", 0))
@@ -4911,15 +4916,15 @@ if st.session_state.get("_view_mode") == "region_vision":
 
         st.markdown(f"""
         <div style="border-left:4px solid {_bc_r}; padding:10px 14px; margin:8px 0;
-                    background:#f8f9fa; border-radius:0 8px 8px 0;">
+                    background:var(--bg); border-radius:0 8px 8px 0;">
           <div style="font-weight:600; font-size:0.95rem;">{_hn_r}</div>
-          <div style="font-size:0.82rem; color:#444; margin:4px 0;">
+          <div style="font-size:0.82rem; color:var(--ink); margin:4px 0;">
             {_role_r} &nbsp;
-            <span style="color:#999;">
+            <span style="color:var(--ink-faint);">
               スコア {_scr_r}点 | {_beds_r:,}床{_surg_txt}{_docs_txt}
             </span>
           </div>
-          <div style="font-size:0.8rem; color:#555; line-height:1.6;">
+          <div style="font-size:0.8rem; color:var(--ink-muted); line-height:1.6;">
             {_comm_r}{_ai_badge if _is_ai else ""}
           </div>
         </div>
@@ -4962,7 +4967,7 @@ if st.session_state.get("_view_mode") == "region_vision":
     _rv_proj_cfg = {}
     for _bt, _clr in zip(
         ["高度急性期", "急性期", "回復期", "慢性期"],
-        ["#e74c3c", "#e67e22", "#3498db", "#27ae60"],
+        [theme.BED_COLORS[_b] for _b in ["高度急性期", "急性期", "回復期", "慢性期"]],
     ):
         _cur_beds   = _rv_beds_by_type[_bt]
         _cur_demand = _rv_demand(_bt)
@@ -5034,8 +5039,8 @@ if st.session_state.get("_view_mode") == "region_vision":
 
     # 注意書き
     st.markdown("""
-    <div style="font-size:0.78rem; color:#888; margin-top:20px; padding:12px 14px;
-                background:#f0f0f0; border-radius:6px; line-height:1.7;">
+    <div style="font-size:0.78rem; color:var(--ink-muted); margin-top:20px; padding:12px 14px;
+                background:var(--bg); border-radius:6px; line-height:1.7;">
     📌 <b>本分析の注意点</b><br>
     ・スコアリングは病床機能報告データのみを用いた参考値です。救急搬送実績・地域連携体制・財務状況等は含まれていません。<br>
     ・「急性期拠点候補」等の分類はスコアと地域内順位から算出したものであり、行政・調整会議の公式認定ではありません。名称は新地域医療構想策定ガイドライン（厚生労働省、令和8年7月公表）が示す「急性期拠点機能」等の考え方を参考にしていますが、実際の医療機関機能の指定は令和8年10月開始予定の医療機関機能報告・地域の協議を経て決まります。<br>
@@ -5142,7 +5147,7 @@ if st.session_state.get("_view_mode") == "community":
                 with _cb_pc1:
                     st.markdown(
                         f"**{_post.get('nickname', '匿名')}** "
-                        f"<span style='color:#9ca3af;font-size:0.8rem;'>"
+                        f"<span style='color:var(--ink-faint);font-size:0.8rem;'>"
                         f"{community.format_timestamp(_post.get('created_at', ''))}</span>",
                         unsafe_allow_html=True,
                     )
@@ -5157,10 +5162,10 @@ if st.session_state.get("_view_mode") == "community":
                     _cb_rc1, _cb_rc2 = st.columns([9, 1])
                     with _cb_rc1:
                         st.markdown(
-                            f"<div style='margin-left:20px;padding:8px 12px;background:#F7F6F2;"
+                            f"<div style='margin-left:20px;padding:8px 12px;background:var(--bg);"
                             f"border-radius:8px;margin-top:6px;'>"
                             f"<b>{_reply.get('nickname', '匿名')}</b> "
-                            f"<span style='color:#9ca3af;font-size:0.78rem;'>"
+                            f"<span style='color:var(--ink-faint);font-size:0.78rem;'>"
                             f"{community.format_timestamp(_reply.get('created_at', ''))}</span>"
                             f"<div style='margin-top:4px;'>{_reply.get('body', '')}</div>"
                             f"</div>",
@@ -5254,9 +5259,9 @@ else:
 _sw1, _sw2, _sw3 = st.columns([6, 2, 2])
 with _sw1:
     st.markdown(
-        f"<div style='padding:6px 0;font-size:0.9rem;color:#374151;'>"
+        f"<div style='padding:6px 0;font-size:0.9rem;color:var(--ink);'>"
         f"<strong>{hospital}</strong>"
-        f"<span style='color:#9ca3af;font-size:0.8rem;margin-left:10px;'>{pref} › {region}</span>"
+        f"<span style='color:var(--ink-faint);font-size:0.8rem;margin-left:10px;'>{pref} › {region}</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -5273,7 +5278,7 @@ with _sw3:
         st.session_state["_view_mode"] = "home"
         st.session_state["_hospital_chosen"] = False
         st.rerun()
-st.markdown("<hr style='margin:4px 0 16px;border:none;border-top:1px solid #f3f4f6;'>", unsafe_allow_html=True)
+st.markdown("<hr style='margin:4px 0 16px;border:none;border-top:1px solid var(--line);'>", unsafe_allow_html=True)
 
 # ── ページヘッダー ─────────────────────────────────────────
 
@@ -5282,7 +5287,7 @@ _h_address = "" if str(_h_address) in ("nan", "None", "") else str(_h_address)
 _h_url = hosp_row.get("url", "") if isinstance(hosp_row, pd.Series) else ""
 _h_url = "" if str(_h_url) in ("nan", "None", "") else str(_h_url).strip()
 _addr_part = f"<span>📍 {_h_address}</span>" if _h_address else ""
-_url_part  = f'<a href="{_h_url}" target="_blank" style="color:#12886D;text-decoration:none;">公式サイト ↗</a>' if _h_url else ""
+_url_part  = f'<a href="{_h_url}" target="_blank" style="color:var(--brand);text-decoration:none;">公式サイト ↗</a>' if _h_url else ""
 _meta_parts = " &nbsp;·&nbsp; ".join(p for p in [_addr_part, _url_part] if p)
 
 _hdr_col, _btn_col = st.columns([8, 1])
@@ -5291,17 +5296,17 @@ with _hdr_col:
         f"""
 <div style="margin-bottom:4px;">
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
-    <span style="background:#EAF4F0;color:#0B6653;border-radius:20px;
+    <span style="background:var(--brand-soft);color:var(--brand-dark);border-radius:20px;
                  padding:2px 10px;font-size:0.75rem;font-weight:700;">{year}年度</span>
-    <span style="color:#d1d5db;font-size:0.8rem;">›</span>
-    <span style="background:#f0fdf4;color:#15803d;border-radius:20px;
+    <span style="color:var(--ink-faint);font-size:0.8rem;">›</span>
+    <span style="background:var(--card);border:1px solid var(--line);color:var(--ink-muted);border-radius:20px;
                  padding:2px 10px;font-size:0.75rem;font-weight:700;">{pref}</span>
-    <span style="color:#d1d5db;font-size:0.8rem;">›</span>
-    <span style="background:#fefce8;color:#92400e;border-radius:20px;
+    <span style="color:var(--ink-faint);font-size:0.8rem;">›</span>
+    <span style="background:var(--card);border:1px solid var(--line);color:var(--ink-muted);border-radius:20px;
                  padding:2px 10px;font-size:0.75rem;font-weight:700;">{region}</span>
   </div>
-  <h2 style="font-size:1.65rem;font-weight:800;color:#111827;margin:0 0 6px;line-height:1.25;">{hospital}</h2>
-  <div style="font-size:0.82rem;color:#6b7280;">{_meta_parts}</div>
+  <h2 style="font-size:1.65rem;font-weight:800;color:var(--ink);margin:0 0 6px;line-height:1.25;">{hospital}</h2>
+  <div style="font-size:0.82rem;color:var(--ink-muted);">{_meta_parts}</div>
 </div>""",
         unsafe_allow_html=True,
     )
@@ -5310,19 +5315,19 @@ with _btn_col:
         """
         <style>
         button {
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
+            background: #FAF8F4;
+            border: 1px solid #E8E4DB;
             border-radius: 8px;
             padding: 6px 14px;
             font-size: 0.82rem;
-            color: #374151;
+            color: #26251F;
             cursor: pointer;
             float: right;
             margin-top: 18px;
             font-family: sans-serif;
             transition: background 0.15s;
         }
-        button:hover { background: #f3f4f6; border-color: #d1d5db; }
+        button:hover { background: #E8E4DB; border-color: #9C9890; }
         </style>
         <button onclick="window.parent.print()">🖨️ 印刷</button>
         """,
@@ -5355,7 +5360,7 @@ else:
 region_rank = int(region_rank_row["地域内順位"].values[0]) if len(region_rank_row) > 0 else "-"
 region_share_val = float(region_rank_row["地域シェア(%)"].values[0]) if len(region_rank_row) > 0 else 0
 
-def kpi_card(col, label, value, sub="", color="#3b82f6"):
+def kpi_card(col, label, value, sub="", color="var(--brand)"):
     col.markdown(
         f'<div class="metric-card" style="border-top-color:{color};">'
         f'<div class="metric-label">{label}</div>'
@@ -5367,9 +5372,9 @@ def kpi_card(col, label, value, sub="", color="#3b82f6"):
 
 _occ_pct = occ * 100
 _occ_color = (
-    "#10b981" if _occ_pct >= 80 else
-    "#3b82f6" if _occ_pct >= 60 else
-    "#f59e0b" if _occ_pct >= 40 else "#ef4444"
+    "var(--ok)" if _occ_pct >= 80 else
+    "var(--brand)" if _occ_pct >= 60 else
+    "var(--warn)" if _occ_pct >= 40 else "var(--danger)"
 )
 # 病床機能報告では医師・看護師の人員欄が未記入（0）の病院がある（特に古い
 # 年度）。病床があるのに0人は実態でなく未報告なので「—」で示す。
@@ -5379,11 +5384,11 @@ if doctors > 0:
 else:
     _doc_val, _doc_sub = "—", f"未報告 · {_nurse_txt}"
 
-kpi_card(m1, "許可病床数",  f"{total_kyoka:,}床",         kado_sub,                color="#6366f1")
+kpi_card(m1, "許可病床数",  f"{total_kyoka:,}床",         kado_sub)
 kpi_card(m2, "総稼働率",    f"{_occ_pct:.1f}%",           "在棟延べ数は前年度実績", color=_occ_color)
-kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_df)}院中", color="#8b5cf6")
-kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース",       color="#0ea5e9")
-kpi_card(m5, "常勤医師数",  _doc_val,                     _doc_sub,                color="#14b8a6")
+kpi_card(m3, "地域内順位",  f"{region_rank}位",           f"/ {len(region_df)}院中")
+kpi_card(m4, "地域シェア",  f"{region_share_val:.1f}%",   "許可病床数ベース")
+kpi_card(m5, "常勤医師数",  _doc_val,                     _doc_sub)
 
 # 「総稼働率」だけは年度表記だけでは実態を示せない。厚労省の実施要綱（令和6年度
 # 病床・外来機能報告の実施について）で確認した通り、同じ「令和X年度」報告の中でも
@@ -5780,7 +5785,7 @@ with tab1:
                             _ov_surg_row = _ov_cases[_ov_cases["手術有無"] == "有り"]
                             st.markdown('<div class="section-header">DPC 患者件数 上位3領域</div>', unsafe_allow_html=True)
                             st.markdown(_source_tag(_dpc_source(year)), unsafe_allow_html=True)
-                            _ov_accent = ["#3b82f6", "#8b5cf6", "#06b6d4"]
+                            _ov_accent = ["var(--brand)"] * 3
                             _ov_cols = st.columns(3)
                             for _oi, ((_ov_key, _ov_val), _ov_col, _ov_ac) in enumerate(
                                 zip(_ov_top3.items(), _ov_cols, _ov_accent)
@@ -5837,13 +5842,13 @@ with tab1:
             return str(row[col])
 
         _detail_header = "".join(
-            f'<th style="background:#f0f2f6;padding:8px 10px;text-align:center;'
-            f'border-bottom:2px solid #d0d3db;font-size:0.88rem;color:#444;">{c}</th>'
+            f'<th style="background:var(--bg);padding:8px 10px;text-align:center;'
+            f'border-bottom:2px solid var(--line);font-size:0.88rem;color:var(--ink);">{c}</th>'
             for c in _detail_cols
         )
         _detail_body = "".join(
             '<tr>' + "".join(
-                f'<td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8e8e8;">'
+                f'<td style="padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);">'
                 f'{_detail_cell(row, c)}</td>'
                 for c in _detail_cols
             ) + '</tr>'
@@ -5904,35 +5909,35 @@ with tab1:
             def _modality_card(title: str, accent: str, total: int, breakdown: dict) -> str:
                 items_html = "".join(
                     f'<div style="flex:1;text-align:center;padding:0 6px;'
-                    f'border-right:1px solid #F0EDE6;">'
-                    f'<div style="color:#6E6A5E;font-size:0.93rem;margin-bottom:3px;">{lbl}</div>'
-                    f'<div style="color:#26251F;font-size:1.05rem;font-weight:600;">{val}台</div>'
+                    f'border-right:1px solid var(--line);">'
+                    f'<div style="color:var(--ink-muted);font-size:0.93rem;margin-bottom:3px;">{lbl}</div>'
+                    f'<div style="color:var(--ink);font-size:1.05rem;font-weight:600;">{val}台</div>'
                     f'</div>'
                     for lbl, val in breakdown.items()
                 )
                 return (
-                    f'<div style="background:#fff;border:1px solid #E8E4DB;'
+                    f'<div style="background:var(--card);border:1px solid var(--line);'
                     f'border-left:5px solid {accent};border-radius:12px;'
                     f'box-shadow:0 1px 2px rgba(70,60,35,.05);'
                     f'padding:14px 18px;margin-bottom:10px;">'
                     f'<div style="color:{accent};font-size:0.78rem;font-weight:700;'
                     f'letter-spacing:.4px;margin-bottom:6px;">{title}</div>'
                     f'<div style="display:flex;align-items:baseline;gap:3px;margin-bottom:10px;">'
-                    f'<span style="color:#26251F;font-size:2.2rem;font-weight:700;">{total}</span>'
-                    f'<span style="color:#6E6A5E;font-size:0.9rem;margin-left:2px;">台</span>'
+                    f'<span style="color:var(--ink);font-size:2.2rem;font-weight:700;">{total}</span>'
+                    f'<span style="color:var(--ink-muted);font-size:0.9rem;margin-left:2px;">台</span>'
                     f'</div>'
-                    f'<div style="display:flex;border-top:1px solid #F0EDE6;padding-top:8px;">'
+                    f'<div style="display:flex;border-top:1px solid var(--line);padding-top:8px;">'
                     f'{items_html}'
                     f'</div></div>'
                 )
 
             def _equip_badge(label: str, val: int) -> str:
                 return (
-                    f'<div style="background:#fff;border:1px solid #E8E4DB;'
+                    f'<div style="background:var(--card);border:1px solid var(--line);'
                     f'border-radius:10px;padding:10px 14px;text-align:center;">'
-                    f'<div style="color:#6E6A5E;font-size:0.97rem;margin-bottom:4px;">{label}</div>'
-                    f'<div style="color:#26251F;font-size:1.4rem;font-weight:700;">{val}'
-                    f'<span style="font-size:0.75rem;color:#6E6A5E;margin-left:2px;">台</span></div>'
+                    f'<div style="color:var(--ink-muted);font-size:0.97rem;margin-bottom:4px;">{label}</div>'
+                    f'<div style="color:var(--ink);font-size:1.4rem;font-weight:700;">{val}'
+                    f'<span style="font-size:0.75rem;color:var(--ink-muted);margin-left:2px;">台</span></div>'
                     f'</div>'
                 )
 
@@ -5941,7 +5946,7 @@ with tab1:
             if has_ct:
                 breakdown_ct = {lbl: _ev(col) or 0 for col, lbl in CT_BREAKDOWN.items()}
                 st.markdown(
-                    _modality_card("CT（コンピューター断層撮影装置）", "#33739E", ct_total, breakdown_ct),
+                    _modality_card("CT（コンピューター断層撮影装置）", "var(--brand)", ct_total, breakdown_ct),
                     unsafe_allow_html=True,
                 )
 
@@ -5950,7 +5955,7 @@ with tab1:
             if has_mri:
                 breakdown_mri = {lbl: _ev(col) or 0 for col, lbl in MRI_BREAKDOWN.items()}
                 st.markdown(
-                    _modality_card("MRI（磁気共鳴画像診断装置）", "#B3574B", mri_total, breakdown_mri),
+                    _modality_card("MRI（磁気共鳴画像診断装置）", "var(--brand)", mri_total, breakdown_mri),
                     unsafe_allow_html=True,
                 )
 
@@ -6049,8 +6054,8 @@ with tab1:
                 if "施設種別" in _sk_matched.columns:
                     _sk_fac_type = _sk_matched["施設種別"].iloc[0]
                     _sk_fac_color = {
-                        "病院": "#3b82f6", "有床診療所": "#f59e0b", "無床診療所": "#6b7280",
-                    }.get(_sk_fac_type, "#6b7280")
+                        "病院": theme.BRAND, "有床診療所": theme.INK_MUTED, "無床診療所": theme.INK_MUTED,
+                    }.get(_sk_fac_type, theme.INK_MUTED)
                     st.markdown(
                         f'<span style="display:inline-block;background:{_sk_fac_color}22;'
                         f'color:{_sk_fac_color};border:1px solid {_sk_fac_color}55;'
@@ -6060,17 +6065,17 @@ with tab1:
                     )
 
                 _SK_GROUPS_DEF = [
-                    ("病床・入院体制", "#3498db", [
+                    ("病床・入院体制", theme.BRAND, [
                         "入院基本料", "入院時食事療養",
                         "地域包括ケア病棟", "緩和ケア病棟", "回復期リハビリテーション病棟",
                         "療養病棟入院料", "障害者施設等入院基本料", "短期滞在手術等基本料",
                     ]),
-                    ("救急・集中治療", "#e74c3c", [
+                    ("救急・集中治療", theme.BRAND, [
                         "救急医療管理加算", "集中治療室管理料", "ハイケアユニット",
                         "超急性期脳卒中加算", "新生児集中治療", "院内トリアージ",
                         "小児入院医療管理料",
                     ]),
-                    ("手術・麻酔", "#8e44ad", [
+                    ("手術・麻酔", theme.BRAND, [
                         "腹腔鏡", "胸腔鏡", "切除術", "切断術", "植込術", "交換術",
                         "修復術", "センチネルリンパ節", "体外衝撃波", "麻酔管理料",
                         "輸血管理料", "輸血適正使用加算", "術後疼痛管理", "周術期薬剤管理",
@@ -6081,7 +6086,7 @@ with tab1:
                         "手術の通則の19", "緊急整復固定加算", "下肢創傷処置管理料",
                         "ストーマ合併症加算", "組織拡張器による再建",
                     ]),
-                    ("検査・画像診断", "#2980b9", [
+                    ("検査・画像診断", theme.BRAND, [
                         "検体検査管理加算", "遺伝学的検査", "画像診断管理加算",
                         "ＣＴ撮影", "ＭＲＩ撮影", "病理診断管理加算",
                         "遺伝カウンセリング加算", "ＨＰＶ核酸検出", "ＢＲＣＡ",
@@ -6092,22 +6097,22 @@ with tab1:
                         "定位放射線治療", "画像誘導放射線治療", "一回線量増加加算",
                         "体外照射呼吸性移動",
                     ]),
-                    ("リハビリテーション", "#27ae60", [
+                    ("リハビリテーション", theme.BRAND, [
                         "リハビリテーション料", "摂食嚥下機能回復",
                         "がん患者リハビリテーション料", "排尿自立支援加算",
                         "外来排尿自立指導料", "二次性骨折予防継続管理料",
                         "小児運動器疾患指導管理料",
                     ]),
-                    ("がん・専門診療", "#f39c12", [
+                    ("がん・専門診療", theme.BRAND, [
                         "がん", "抗悪性腫瘍", "外来腫瘍化学療法診療料",
                         "悪性腫瘍病理組織標本加算", "外来化学療法加算",
                         "婦人科特定疾患治療管理料",
                     ]),
-                    ("精神科", "#9b59b6", [
+                    ("精神科", theme.BRAND, [
                         "精神病棟", "精神療養病棟", "精神疾患診療体制加算",
                         "認知症ケア加算", "せん妄ハイリスク",
                     ]),
-                    ("在宅・地域連携", "#16a085", [
+                    ("在宅・地域連携", theme.BRAND, [
                         "在宅療養後方支援病院", "在宅患者訪問", "訪問看護",
                         "在宅時医学総合管理料", "在宅持続陽圧呼吸療法",
                         "開放型病院共同指導料", "がん治療連携計画策定料",
@@ -6115,7 +6120,7 @@ with tab1:
                         "肝炎インターフェロン", "ハイリスク妊娠管理加算",
                         "ハイリスク分娩管理加算",
                     ]),
-                    ("入院管理・加算", "#7f8c8d", [
+                    ("入院管理・加算", theme.BRAND, [
                         "医療ＤＸ", "診療録管理体制加算", "医師事務作業補助",
                         "急性期看護補助", "看護職員夜間配置", "療養環境加算",
                         "重症者等療養環境", "栄養サポートチーム加算",
@@ -6162,7 +6167,7 @@ with tab1:
                         _chips.append(
                             _code if _code not in ("", "nan") else str(_r["受理届出名称"])[:12]
                         )
-                    _sk_group_results.append(("その他", "#95a5a6", _chips, _sk_unassigned))
+                    _sk_group_results.append(("その他", theme.INK_MUTED, _chips, _sk_unassigned))
 
                 # 2カラムカードグリッド
                 _sk_col_a, _sk_col_b = st.columns(2)
@@ -6180,11 +6185,11 @@ with tab1:
                         _extra = len(_chips) - MAX_CHIPS
                         if _extra > 0:
                             _chips_html += (
-                                f'<span style="color:#6E6A5E;font-size:0.72rem;margin-left:4px;">'
+                                f'<span style="color:var(--ink-muted);font-size:0.72rem;margin-left:4px;">'
                                 f'+{_extra}件</span>'
                             )
                         st.markdown(
-                            f'<div style="background:#fff;border:1px solid #E8E4DB;'
+                            f'<div style="background:var(--card);border:1px solid var(--line);'
                             f'border-left:3px solid {_grp_color};'
                             f'border-radius:10px;padding:10px 12px;margin-bottom:8px;">'
                             f'<div style="color:{_grp_color};font-size:0.72rem;font-weight:700;'
@@ -6203,11 +6208,11 @@ with tab1:
                 })
                 if _sk_kubun_values:
                     st.markdown(
-                        '<div style="background:#EAF4F0;border:1px solid #BFDFD4;'
+                        '<div style="background:var(--brand-soft);border:1px solid var(--brand-line);'
                         'border-radius:10px;padding:8px 12px;margin:4px 0 10px 0;">'
-                        '<span style="color:#0B6653;font-weight:700;font-size:0.72rem;">'
+                        '<span style="color:var(--brand-dark);font-weight:700;font-size:0.72rem;">'
                         '入院基本料の区分：</span> '
-                        f'<span style="font-size:0.85rem;color:#26251F;">{"・".join(_sk_kubun_values)}</span>'
+                        f'<span style="font-size:0.85rem;color:var(--ink);">{"・".join(_sk_kubun_values)}</span>'
                         '</div>',
                         unsafe_allow_html=True,
                     )
@@ -6457,14 +6462,14 @@ with tab5:
 
         # col: (常勤列名, 非常勤列名, ラベル, 常勤色, 非常勤色)
         _staff_trend_defs = [
-            ("常勤医師数",          "非常勤医師数",          "医師",             "#e74c3c", "#f1948a"),
-            ("常勤看護師数",         "非常勤看護師数",         "看護師",           "#3498db", "#85c1e9"),
-            ("常勤理学療法士数",     "非常勤理学療法士数",     "理学療法士（PT）", "#10b981", "#6ee7b7"),
-            ("常勤作業療法士数",     "非常勤作業療法士数",     "作業療法士（OT）", "#f59e0b", "#fcd34d"),
-            ("常勤言語聴覚士数",     "非常勤言語聴覚士数",     "言語聴覚士（ST）", "#8b5cf6", "#c4b5fd"),
-            ("常勤薬剤師数",         "非常勤薬剤師数",         "薬剤師",           "#06b6d4", "#67e8f9"),
-            ("常勤診療放射線技師数", "非常勤診療放射線技師数", "診療放射線技師",   "#ec4899", "#f9a8d4"),
-            ("常勤臨床検査技師数",   "非常勤臨床検査技師数",   "臨床検査技師",     "#84cc16", "#bef264"),
+            ("常勤医師数",          "非常勤医師数",          "医師",             theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤看護師数",         "非常勤看護師数",         "看護師",           theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤理学療法士数",     "非常勤理学療法士数",     "理学療法士（PT）", theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤作業療法士数",     "非常勤作業療法士数",     "作業療法士（OT）", theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤言語聴覚士数",     "非常勤言語聴覚士数",     "言語聴覚士（ST）", theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤薬剤師数",         "非常勤薬剤師数",         "薬剤師",           theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤診療放射線技師数", "非常勤診療放射線技師数", "診療放射線技師",   theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
+            ("常勤臨床検査技師数",   "非常勤臨床検査技師数",   "臨床検査技師",     theme.BED_COLORS["急性期"], theme.BED_COLORS["慢性期"]),
         ]
         _trend_avail = [
             (ccol, pcol, lbl, cclr, pclr)
@@ -6773,7 +6778,7 @@ with tab6:
                 pcts = [round(v / total * 100, 1) for v in vals]
                 fig_surg = go.Figure(go.Bar(
                     x=vals, y=labels, orientation="h",
-                    marker_color="#3498db",
+                    marker_color=theme.BRAND,
                     text=[f"{'*' if rv == -1 else f'{v:,}'}件 ({p}%)"
                           for rv, v, p in zip(raw_vals, vals, pcts)],
                     textposition="auto",
@@ -6809,7 +6814,7 @@ with tab6:
                 ).round(1)
                 region_surg = region_surg.sort_values("手術総数", ascending=True)
 
-                colors = ["#e74c3c" if n == hospital_for_year else "#3498db" for n in region_surg["医療機関名"]]
+                colors = [theme.BRAND if n == hospital_for_year else theme.MUTED_SERIES for n in region_surg["医療機関名"]]
                 fig_share = go.Figure(go.Bar(
                     x=region_surg["手術総数"], y=region_surg["医療機関名"],
                     orientation="h",
@@ -6998,19 +7003,19 @@ with tab7:
                     _radius = max(5, min(22, _beds / _max_beds * 22))
 
                     if _beds >= 500:
-                        _color = "#e74c3c"
+                        _color = theme.SEQ4[0]
                     elif _beds >= 300:
-                        _color = "#e67e22"
+                        _color = theme.SEQ4[1]
                     elif _beds >= 100:
-                        _color = "#2ecc71"
+                        _color = theme.SEQ4[2]
                     else:
-                        _color = "#3498db"
+                        _color = theme.SEQ4[3]
 
                     _is_sel = _r["医療機関名"] == hospital_for_year
                     _popup_html = (
                         f'<div style="font-family:Meiryo,sans-serif;min-width:200px;line-height:1.6">'
                         f'<b style="font-size:13px">{_r["医療機関名"]}</b><br>'
-                        f'<span style="color:#666;font-size:11px">{_r["都道府県名"]} {_r["二次医療圏名"]}</span>'
+                        f'<span style="color:#6E6A5E;font-size:11px">{_r["都道府県名"]} {_r["二次医療圏名"]}</span>'
                         f'<hr style="margin:6px 0">許可病床数: <b>{_beds:,}床</b><br>稼働率: <b>{_occ}</b>'
                         f'<br><a href="#"'
                         f' onclick="window.open(window.top.location.origin+\'/?hospital=\'+encodeURIComponent(\'{_r["医療機関名"]}\'),\'_blank\');return false;"'
@@ -7024,7 +7029,7 @@ with tab7:
                     folium.CircleMarker(
                         location=[float(_r["lat"]), float(_r["lon"])],
                         radius=_radius,
-                        color="#c0392b" if _is_sel else "#555",
+                        color=theme.INK if _is_sel else theme.CARD,
                         weight=3 if _is_sel else 1,
                         fill=True,
                         fill_color=_color,
@@ -7039,10 +7044,10 @@ with tab7:
                             box-shadow:2px 2px 8px rgba(0,0,0,0.25);
                             font-size:12px;font-family:Meiryo,sans-serif;z-index:9999">
                   <b>許可病床数</b><br>
-                  <span style="color:#e74c3c;font-size:16px">●</span> 500床以上<br>
-                  <span style="color:#e67e22;font-size:16px">●</span> 300〜499床<br>
-                  <span style="color:#2ecc71;font-size:16px">●</span> 100〜299床<br>
-                  <span style="color:#3498db;font-size:16px">●</span> 100床未満
+                  <span style="color:#0B4F40;font-size:16px">●</span> 500床以上<br>
+                  <span style="color:#12886D;font-size:16px">●</span> 300〜499床<br>
+                  <span style="color:#3FA587;font-size:16px">●</span> 100〜299床<br>
+                  <span style="color:#79C2AA;font-size:16px">●</span> 100床未満
                 </div>
                 """
                 _m.get_root().html.add_child(folium.Element(_legend))
@@ -7069,10 +7074,10 @@ with tab7:
                     _cr_occ  = f'{_cr["合計稼働率"]:.0f}%' if "合計稼働率" in _cr and pd.notna(_cr.get("合計稼働率")) else "—"
                     st.markdown(
                         f'<div style="margin-top:12px;padding:16px 20px;'
-                        f'background:#EAF4F0;border:2px solid #12886D;border-radius:12px;">'
-                        f'<div style="font-size:0.75rem;color:#0B6653;font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
-                        f'<div style="font-size:1rem;font-weight:800;color:#111827;">{_last_clicked}</div>'
-                        f'<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">'
+                        f'background:var(--brand-soft);border:2px solid var(--brand);border-radius:12px;">'
+                        f'<div style="font-size:0.75rem;color:var(--brand-dark);font-weight:700;letter-spacing:0.05em;margin-bottom:4px;">選択中の病院</div>'
+                        f'<div style="font-size:1rem;font-weight:800;color:var(--ink);">{_last_clicked}</div>'
+                        f'<div style="font-size:0.8rem;color:var(--ink-muted);margin-top:2px;">'
                         f'{_cr["都道府県名"]} {_cr["二次医療圏名"]}　🛏 {_cr_beds:,}床　稼働率 {_cr_occ}</div>'
                         f'</div>',
                         unsafe_allow_html=True,
@@ -7305,23 +7310,23 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
             _since_str = _m_since.group(0) if _m_since else ""
 
             _badge_html = f"""<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
-              <span style="background:#dbeafe;color:#1e40af;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:700;">🏥 DPC参加病院</span>
-              {"" if not _since_str else f'<span style="background:#f0fdf4;color:#166534;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;">{_since_str}〜</span>'}
-              {"" if not _dpc_nyuin or _dpc_nyuin=="nan" else f'<span style="background:#fef9c3;color:#92400e;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;">{_dpc_nyuin}</span>'}
-              {"" if not _dpc_url else f'<a href="{_dpc_url}" target="_blank" style="background:#f3e8ff;color:#6b21a8;border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;">📊 病院情報公表</a>'}
+              <span style="background:var(--brand-soft);color:var(--brand-dark);border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:700;">🏥 DPC参加病院</span>
+              {"" if not _since_str else f'<span style="background:var(--card);border:1px solid var(--line);color:var(--ink-muted);border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;">{_since_str}〜</span>'}
+              {"" if not _dpc_nyuin or _dpc_nyuin=="nan" else f'<span style="background:var(--card);border:1px solid var(--line);color:var(--ink-muted);border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;">{_dpc_nyuin}</span>'}
+              {"" if not _dpc_url else f'<a href="{_dpc_url}" target="_blank" style="background:var(--card);border:1px solid var(--brand-line);color:var(--brand-dark);border-radius:20px;padding:3px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;">📊 病院情報公表</a>'}
             </div>"""
             st.markdown(_badge_html, unsafe_allow_html=True)
 
             _di1, _di2, _di3, _di4 = st.columns(4)
             _di1.markdown(
-                f'<div class="metric-card" style="border-top-color:#3b82f6;">'
+                f'<div class="metric-card" style="border-top-color:var(--brand);">'
                 f'<div class="metric-label">DPC算定病床数</div>'
                 f'<div class="metric-value">{_dpc_beds:,}床</div>'
                 f'<div class="metric-sub">病床総数 {_dpc_totbeds:,}床</div></div>',
                 unsafe_allow_html=True,
             )
             _di2.markdown(
-                f'<div class="metric-card" style="border-top-color:#8b5cf6;">'
+                f'<div class="metric-card" style="border-top-color:var(--brand);">'
                 f'<div class="metric-label">DPC算定病床割合</div>'
                 f'<div class="metric-value">{_dpc_ratio_pct*100:.1f}%</div>'
                 f'<div class="metric-sub">&nbsp;</div></div>',
@@ -7332,14 +7337,14 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                 _surg_rate   = float(_dp_proc.iloc[0].get("割合_手術有", 0) or 0)
                 _readm_rate  = float(_dp_readm.iloc[0].get("再入院率", 0) or 0) if not _dp_readm.empty else 0
                 _di3.markdown(
-                    f'<div class="metric-card" style="border-top-color:#10b981;">'
+                    f'<div class="metric-card" style="border-top-color:var(--brand);">'
                     f'<div class="metric-label">年間DPC算定件数</div>'
                     f'<div class="metric-value">{_total_cases:,}件</div>'
                     f'<div class="metric-sub">&nbsp;</div></div>',
                     unsafe_allow_html=True,
                 )
                 _di4.markdown(
-                    f'<div class="metric-card" style="border-top-color:#f59e0b;">'
+                    f'<div class="metric-card" style="border-top-color:var(--brand);">'
                     f'<div class="metric-label">手術実施率</div>'
                     f'<div class="metric-value">{_surg_rate*100:.1f}%</div>'
                     # f'<div class="metric-sub">再入院率 {_readm_rate*100:.2f}%</div></div>',  # 非表示中
@@ -7360,11 +7365,11 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                         _proc_avg[_col] = float(_dp_proc_all[_col].median())
 
             _proc_items = [
-                ("手術実施率",      "割合_手術有",       "件数_手術有",       "#3b82f6"),
-                ("化学療法実施率",  "割合_化学療法有",   "件数_化学療法有",   "#8b5cf6"),
-                ("放射線療法実施率","割合_放射線療法有", "件数_放射線療法有", "#f59e0b"),
-                ("全身麻酔実施率",  "割合_全身麻酔",     "件数_全身麻酔",     "#10b981"),
-                ("救急搬送入院率",  "割合_救急車搬送有", "件数_救急車搬送有", "#ef4444"),
+                ("手術実施率",      "割合_手術有",       "件数_手術有",       "var(--brand)"),
+                ("化学療法実施率",  "割合_化学療法有",   "件数_化学療法有",   "var(--brand)"),
+                ("放射線療法実施率","割合_放射線療法有", "件数_放射線療法有", "var(--brand)"),
+                ("全身麻酔実施率",  "割合_全身麻酔",     "件数_全身麻酔",     "var(--brand)"),
+                ("救急搬送入院率",  "割合_救急車搬送有", "件数_救急車搬送有", "var(--brand)"),
             ]
             _pc1, _pc2, _pc3, _pc4, _pc5 = st.columns(5)
             for _col_ui, (_label, _r_col, _c_col, _color) in zip(
@@ -7403,11 +7408,11 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                 _fig_mdc = _go_dpc.Figure()
                 _fig_mdc.add_trace(_go_dpc.Bar(
                     x=_surg_vals, y=_mdc_names_list, orientation="h",
-                    name="手術あり", marker_color="#f59e0b",
+                    name="手術あり", marker_color=theme.CATEGORICAL[0],
                 ))
                 _fig_mdc.add_trace(_go_dpc.Bar(
                     x=_noop_vals, y=_mdc_names_list, orientation="h",
-                    name="手術なし", marker_color="#3b82f6",
+                    name="手術なし", marker_color=theme.CATEGORICAL[1],
                     text=[f"{t:,}件" for t in _total_vals], textposition="outside",
                 ))
                 _fig_mdc.update_layout(
@@ -7439,14 +7444,14 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
             _retrans_med  = float(_dp_readm_all["再転棟率"].median()) if _dp_readm_all is not None and "再転棟率" in _dp_readm_all.columns else 0
             _ra1, _ra2 = st.columns(2)
             _ra1.markdown(
-                f'<div class="metric-card" style="border-top-color:#ef4444;">'
+                f'<div class="metric-card" style="border-top-color:var(--brand);">'
                 f'<div class="metric-label">再入院率</div>'
                 f'<div class="metric-value">{_readm_rate*100:.2f}%</div>'
                 f'<div class="metric-sub">全施設中央値 {_readm_med*100:.2f}%</div></div>',
                 unsafe_allow_html=True,
             )
             _ra2.markdown(
-                f'<div class="metric-card" style="border-top-color:#f97316;">'
+                f'<div class="metric-card" style="border-top-color:var(--brand);">'
                 f'<div class="metric-label">再転棟率</div>'
                 f'<div class="metric-value">{_retrans_rate*100:.3f}%</div>'
                 f'<div class="metric-sub">全施設中央値 {_retrans_med*100:.3f}%</div></div>',
@@ -7460,7 +7465,7 @@ if tab_dpc is not None and _is_dpc and _dpc_ban is not None:
                 import plotly.graph_objects as _go_readm
                 _fig_r = _go_readm.Figure(_go_readm.Bar(
                     x=_period_labels, y=_period_vals,
-                    marker_color=["#fca5a5","#fb923c","#fbbf24","#a3e635"],
+                    marker_color=theme.SEQ4,
                     text=[f"{v:.1f}%" for v in _period_vals], textposition="outside",
                 ))
                 _fig_r.update_layout(

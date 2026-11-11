@@ -30,11 +30,13 @@ from reportlab.platypus import (
 )
 
 _FONT = "HeiseiKakuGo-W5"
-_BRAND_GREEN = colors.HexColor("#12886D")
-_INK = colors.HexColor("#26251F")
-_INK_MUTED = colors.HexColor("#6E6A5E")
-_LINE = colors.HexColor("#E8E4DB")
-_TINT = colors.HexColor("#EAF4F0")
+import theme
+
+_BRAND_GREEN = colors.HexColor(theme.BRAND)
+_INK = colors.HexColor(theme.INK)
+_INK_MUTED = colors.HexColor(theme.INK_MUTED)
+_LINE = colors.HexColor(theme.LINE)
+_TINT = colors.HexColor(theme.BRAND_SOFT)
 
 _fonts_registered = False
 

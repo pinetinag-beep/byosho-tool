@@ -4,6 +4,7 @@
 """
 import pandas as pd
 import numpy as np
+import theme
 
 REGIONS = {
     "東京都": ["区中央部", "区南部", "区西南部", "区西部", "区西北部", "区東北部", "区東部", "南多摩", "西多摩", "島しょ"],
@@ -157,9 +158,4 @@ def generate_sample_data(years=None, seed=42):
 
 
 BED_TYPES = ["高度急性期", "急性期", "回復期", "慢性期"]
-BED_COLORS = {
-    "高度急性期": "#e74c3c",
-    "急性期": "#e67e22",
-    "回復期": "#2ecc71",
-    "慢性期": "#3498db",
-}
+BED_COLORS = theme.BED_COLORS  # DESIGN.md「グラフの色」
