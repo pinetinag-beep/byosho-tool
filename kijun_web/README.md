@@ -101,7 +101,21 @@ python -m pytest kijun_web/tests -q
    - DBは一時ファイルに書いてから置き換えるので、作り直し中もサイトは古いDBで動き続ける
    - 直前のDBは `data/kijun.prev.sqlite` に残る（「今月の新規届出・取り下げ」機能の比較元にする予定）
 
-## 本番環境（予定）
+## 本番環境（2026年11月11日に稼働）
+
+- ConoHa VPS（Ver.3.0、メモリ2GB `g2l-t-c3m2`、Ubuntu 24.04、ネームタグ `kijun-web`、IPv4 `133.117.74.195`）。
+  セキュリティグループは既存の `IPv4v6-Web`・`IPv4v6-SSH`、SSHキーは `key-2026-08-10-13-24`
+- 作り方: ConoHaの管理画面でサーバーを追加し、スタートアップスクリプトに `deploy/startup-script.sh` の3行を貼る。
+  サーバーが初回起動時に `deploy/cloud-init.sh` を取って実行し、コード取得・DB作成・uvicorn常駐・nginx・ufw・
+  1時間ごとの更新タイマー（`deploy/update.sh`）まで組み立てる（15分ほど）。経過は `/var/log/kijun-setup.log`
+- Claude の環境からはSSH（22番）が通らず、サーバーのIPにもHTTPで届かないので、確認はConoHaのAPI（サーバーの状態）と
+  ユーザーのブラウザで行う。ConoHaのコンソールは日本語キーボードの記号がずれてrootでログインできなかったため、
+  スタートアップスクリプトを入れ忘れた時は、サーバーを作り直すのが早い
+- 公開しているブランチは `/etc/kijun-web.branch`（今は `claude/clever-brown-95s15n`。master にマージしたら書き換える）
+- 広告（AdSense）のIDなどは `/etc/kijun-web.env` に書いて `systemctl restart kijun-web`
+- ドメイン: お名前.com で `medilenz.jp`（と `www`）のAレコードをこのIPに向けると、`update.sh` が自動で Let's Encrypt の証明書を取る
+
+## 本番環境（当初の予定）
 
 - VPS メモリ2GB推奨（アプリ自体は軽いが、`build_db.py` の実行時に約600MBを使う。1GBならスワップを足す）
 - uvicorn（systemd常駐、127.0.0.1:8000）＋ nginx ＋ Let's Encrypt。手順は既存の `DEPLOY.md`（ConoHa VPS時代）とほぼ同じ
