@@ -40,6 +40,7 @@ MHLW_TERMS_URL = "https://www.mhlw.go.jp/chosakuken/index.html"
 ADSENSE_CLIENT = os.environ.get("ADSENSE_CLIENT", "").strip()   # 例: ca-pub-1234567890123456
 ADSENSE_SLOT = os.environ.get("ADSENSE_SLOT", "").strip()       # 手動で置く広告ユニットのID（無ければ自動広告のみ）
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()     # プライバシーポリシーの問い合わせ先
+AD_PREVIEW = os.environ.get("AD_PREVIEW", "") == "1"             # 見た目の確認用: 広告枠の位置にダミーの枠を出す
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # トップと検索結果は届出項目のチェックボックス（約1,300個）を含み350KB程度になるので圧縮して返す
@@ -121,7 +122,7 @@ templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
     mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
-    adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL,
+    adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL, ad_preview=AD_PREVIEW,
 )
 
 

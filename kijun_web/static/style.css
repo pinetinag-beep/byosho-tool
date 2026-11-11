@@ -243,3 +243,4 @@ td.nowrap { white-space: nowrap; }
 /* 広告枠（公表データの表と取り違えないよう、表の外に置き「広告」と明記する） */
 .ad-slot { margin: 28px 0 8px; padding: 10px 12px 12px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--card); }
 .ad-label { display: block; font-size: 0.7rem; color: var(--ink-faint); margin-bottom: 6px; letter-spacing: .05em; }
+.ad-dummy { display: grid; place-items: center; min-height: 120px; padding: 12px; text-align: center; font-size: 0.85rem; color: var(--ink-faint); background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 10px, var(--card) 10px, var(--card) 20px); border-radius: 8px; }
