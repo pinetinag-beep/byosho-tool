@@ -6,7 +6,7 @@
   <p class="eyebrow">MedilenZ 施設基準検索</p>
   <h1>全国{{ "{:,}".format(meta.n_facilities|int // 10000) }}万の医療機関が届け出ている<br class="pc-only">施設基準を、無料で検索・CSVダウンロード</h1>
   <p class="top-lead">地方厚生局が公表する「施設基準の届出受理状況」を、全国47都道府県分まとめて毎月更新しています。
-    営業先のリストづくり、訪問前の下調べ、地域ごとの比較にお使いください。登録は不要で、CSVも伏せ字なしです。</p>
+    営業先のリストづくり、訪問前の下調べ、地域ごとの比較にお使いください。登録は不要です。</p>
   <ul class="top-stats">
     <li><b>{{ "{:,}".format(meta.n_facilities|int) }}</b><span>医療機関</span></li>
     <li><b>{{ "{:,}".format(meta.n_filings|int) }}</b><span>届出</span></li>
@@ -99,7 +99,7 @@
     （病院 {{ "{:,}".format(type_counts.get('病院', 0)) }}・有床診療所 {{ "{:,}".format(type_counts.get('有床診療所', 0)) }}・無床診療所 {{ "{:,}".format(type_counts.get('無床診療所', 0)) }}）</td></tr>
   <tr><th>時点</th><td>{{ meta.as_of_max_label }}までの公表分（厚生局により月の初めの時点が1〜2か月ずれます）</td></tr>
   <tr><th>更新</th><td>毎月（厚生局の公表にあわせて）</td></tr>
-  <tr><th>料金</th><td>無料・登録不要。検索結果のCSVも無料で、医療機関名などの伏せ字はありません</td></tr>
+  <tr><th>料金</th><td>無料・登録不要（検索結果はCSVでダウンロードできます）</td></tr>
 </table>
 </div>
 <p class="small"><a href="/about">データの詳しい説明と利用条件 →</a></p>
