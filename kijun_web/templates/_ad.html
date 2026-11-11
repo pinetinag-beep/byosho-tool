@@ -1,0 +1,10 @@
+{# 広告枠。ADSENSE_CLIENT と ADSENSE_SLOT が両方あるときだけ出す（無ければ自動広告に任せる）。
+   公表データの表と取り違えないよう、表の中には置かず「広告」と明記する。 #}
+{% if adsense_client and adsense_slot %}
+<aside class="ad-slot" aria-label="広告">
+  <span class="ad-label">広告</span>
+  <ins class="adsbygoogle" style="display:block" data-ad-client="{{ adsense_client }}" data-ad-slot="{{ adsense_slot }}"
+       data-ad-format="auto" data-full-width-responsive="true"></ins>
+  <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</aside>
+{% endif %}

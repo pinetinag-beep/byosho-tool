@@ -210,3 +210,23 @@ def test_kanto_kinki_kubun_is_official():
                WHERE f.pref_code = ? AND k.name IN ('一般病棟入院基本料', '療養病棟入院基本料')""", (pref,)
         ).fetchone()
         assert official / total > 0.9, pref
+
+
+def test_privacy_and_ads_txt():
+    assert client.get("/privacy").status_code == 200
+    assert "Google AdSense" in client.get("/privacy").text
+    assert "/privacy" in client.get("/").text            # フッターからリンク
+    if not appmod.ADSENSE_CLIENT:
+        assert client.get("/ads.txt").status_code == 404
+        assert "adsbygoogle" not in client.get("/").text  # IDが無ければ広告タグは出さない
+
+
+def test_ad_slot_renders_when_configured():
+    g = appmod.templates.env.globals
+    old = (g["adsense_client"], g["adsense_slot"])
+    g["adsense_client"], g["adsense_slot"] = "ca-pub-0000000000000000", "1234567890"
+    try:
+        html = client.get("/kijun/" + quote(KIJUN)).text
+        assert 'class="ad-slot"' in html and "ca-pub-0000000000000000" in html and "google-adsense-account" in html
+    finally:
+        g["adsense_client"], g["adsense_slot"] = old

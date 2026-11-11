@@ -36,6 +36,10 @@ FTYPES = ["病院", "有床診療所", "無床診療所"]
 KOUSEIKYOKU_URL = "https://kouseikyoku.mhlw.go.jp/"
 PDL_URL = "https://www.digital.go.jp/resources/open_data/public_data_license_v1.0"
 MHLW_TERMS_URL = "https://www.mhlw.go.jp/chosakuken/index.html"
+# 広告（Google AdSense）。審査に通ってから環境変数で入れる。空なら広告のタグは一切出さない
+ADSENSE_CLIENT = os.environ.get("ADSENSE_CLIENT", "").strip()   # 例: ca-pub-1234567890123456
+ADSENSE_SLOT = os.environ.get("ADSENSE_SLOT", "").strip()       # 手動で置く広告ユニットのID（無ければ自動広告のみ）
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()     # プライバシーポリシーの問い合わせ先
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # トップと検索結果は届出項目のチェックボックス（約1,300個）を含み350KB程度になるので圧縮して返す
@@ -117,6 +121,7 @@ templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
     mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
+    adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL,
 )
 
 
@@ -661,6 +666,20 @@ def about(request: Request):
     with db() as con:
         prefs = _prefs(con)
     return render(request, "about.html", prefs=prefs)
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy(request: Request):
+    return render(request, "privacy.html")
+
+
+@app.get("/ads.txt", response_class=PlainTextResponse)
+def ads_txt():
+    """Google AdSense の販売者確認用。ADSENSE_CLIENT（ca-pub-…）が無ければ置かない。"""
+    if not ADSENSE_CLIENT:
+        raise HTTPException(404)
+    pub = ADSENSE_CLIENT.removeprefix("ca-")
+    return f"google.com, {pub}, DIRECT, f08c47fec0942fa0\n"
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse)

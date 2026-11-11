@@ -239,3 +239,7 @@ td.nowrap { white-space: nowrap; }
 .results th.ic.kb { white-space: normal; min-width: 7em; font-size: 0.78rem; }
 .results .ok.ref { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
 .results .ok.ref .tag.ref { margin: 0 0 0 3px; font-size: 0.65rem; padding: 0 4px; }
+
+/* 広告枠（公表データの表と取り違えないよう、表の外に置き「広告」と明記する） */
+.ad-slot { margin: 28px 0 8px; padding: 10px 12px 12px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--card); }
+.ad-label { display: block; font-size: 0.7rem; color: var(--ink-faint); margin-bottom: 6px; letter-spacing: .05em; }
