@@ -254,6 +254,8 @@ _CATEGORY_COLS = ["都道府県コード", "都道府県名", "受理届出名�
 def _save(out: pd.DataFrame, out_path: Path) -> None:
     # 繰り返し文字列をcategory化してメモリを削減（91万行・約356MB→220MB）。
     # Streamlit Cloudのメモリ制限対策。
+    if "医療機関病床数" in out.columns:
+        out["医療機関病床数"] = pd.to_numeric(out["医療機関病床数"], errors="coerce").astype("Int32")
     for _c in _CATEGORY_COLS:
         if _c in out.columns:
             out[_c] = out[_c].astype(str).astype("category")
@@ -344,6 +346,9 @@ def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
 
     data["都道府県コード"] = data["都道府県コード"].apply(_fmt_pref)
     data["医療機関番号"] = data["医療機関番号"].apply(_fmt_code)
+    # 名簿の「病床数」列は医療機関の病床（例「一般　　69／療養　　37」）。下で届出ごとの内訳の病床数で
+    # 同じ名前の列を作るので、先に別名で残す（施設種別を医療法の定義どおり病床数で決めるため）
+    data["医療機関病床数"] = data["病床数"].map(_sum_beds)
 
     data = data[data["医療機関番号"].ne("")].reset_index(drop=True)
 
@@ -390,7 +395,7 @@ def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
     keep = [
         "都道府県コード", "都道府県名", "医療機関番号", "医療機関名称",
         "医療機関名_正規化", "住所", "受理届出名称", "受理記号", "受理番号", "算定開始年月日",
-        "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "年月",
+        "病棟種別", "病床区分", "病棟数", "病床数", "区分", "内訳その他", "年月", "医療機関病床数",
     ]
     return header_rows[keep].reset_index(drop=True), year_month
 
@@ -408,9 +413,23 @@ _CLINIC_BED_NYUIN_TYPES = {
 }
 
 
+def _sum_beds(v) -> "int | None":
+    """名簿の医療機関の「病床数」欄（「一般　　378\n一般（感染）\n　　感染 9」「療養　198／一般　239」など）の
+    数字を合計する。空欄は None（病床が無いか、厚生局が書いていない）。"""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    nums = re.findall(r"\d+", unicodedata.normalize("NFKC", str(v)))
+    return sum(int(n) for n in nums) if nums else None
+
+
 def _classify_facility_types(df: pd.DataFrame) -> "pd.Series":
     """
     医療機関番号ごとに「病院／有床診療所／無床診療所」を判定する。
+
+    名簿に医療機関の病床数があれば、医療法の定義（第1条の5: 病院は20床以上、診療所は19床以下）どおり
+    20床以上を病院、1〜19床を有床診療所とする。病床数が空欄の医療機関だけ、以下の届出による判定を使う。
+    （2026年11月、病棟がすべて地域包括ケア病棟などの特定入院料の病院は入院基本料を届け出ないため、
+    届出による判定だけでは全国841施設が「無床診療所」になっていた。高知の山村病院・大井田病院など）
 
     入院基本料は入院を算定するための必須の届出（届出なしに入院料は
     算定できない）なので、これらの届出が一切無い医療機関は無床診療所と
@@ -422,7 +441,17 @@ def _classify_facility_types(df: pd.DataFrame) -> "pd.Series":
     has_hospital = set(key[df["受理届出名称"].isin(_HOSPITAL_NYUIN_TYPES)])
     has_clinic_bed = set(key[df["受理届出名称"].isin(_CLINIC_BED_NYUIN_TYPES)])
 
+    beds: dict[str, int] = {}
+    if "医療機関病床数" in df.columns:
+        b = pd.to_numeric(df["医療機関病床数"], errors="coerce")
+        beds = b.groupby(key).max().dropna().astype(int).to_dict()
+
     def _classify(k: str) -> str:
+        n = beds.get(k)
+        if n is not None and n >= 20:
+            return "病院"
+        if n is not None and n >= 1:
+            return "有床診療所"
         if k in has_hospital:
             return "病院"
         if k in has_clinic_bed:
