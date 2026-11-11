@@ -64,7 +64,8 @@ RestartSec=3
 WantedBy=multi-user.target
 UNIT
 
-# 毎日、GitHub に新しいデータ・コードがあれば取り込んでDBを作り直す（HTTPSの証明書の取得もここで試す）
+# 1時間ごとに、GitHub に新しいデータ・コードがあれば取り込んでDBを作り直す（無ければ確認だけで終わる。
+# HTTPSの証明書の取得もここで試す）
 cat > /etc/systemd/system/kijun-update.service <<UNIT
 [Unit]
 Description=MedilenZ 施設基準検索サイトの更新
@@ -74,9 +75,9 @@ ExecStart=/bin/bash $APP/byosho-tool/kijun_web/deploy/update.sh
 UNIT
 cat > /etc/systemd/system/kijun-update.timer <<'UNIT'
 [Unit]
-Description=MedilenZ 施設基準検索サイトの毎日の更新
+Description=MedilenZ 施設基準検索サイトの定期更新
 [Timer]
-OnCalendar=*-*-* 04:30:00
+OnCalendar=hourly
 OnBootSec=5min
 Persistent=true
 [Install]

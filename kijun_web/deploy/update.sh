@@ -1,5 +1,5 @@
 #!/bin/bash
-# kijun-update.timer から毎日呼ばれる。GitHub のブランチに新しいコミットがあれば取り込み、
+# kijun-update.timer から1時間ごとに呼ばれる。GitHub のブランチに新しいコミットがあれば取り込み、
 # 依存パッケージとDBを作り直してサイトを再起動する。ドメインがこのサーバーを向いたらHTTPSの証明書も取る。
 set -euo pipefail
 # git reset でこのファイル自身が書き換わっても途中から読み違えないよう、全体を関数にしてから実行する
