@@ -116,19 +116,22 @@ def _carry_over_details(out: pd.DataFrame, prev_path: Path) -> pd.DataFrame:
 KUBUN_DIR = Path(__file__).parent / "shisetsu_kubun_raw"
 
 
-def _parse_kubun_file(path: Path) -> tuple[pd.DataFrame, str]:
-    """区分補完用の名簿（入院基本料等の届出だけの19列形式）を読み、
-    (届出ごとの 都道府県名・医療機関番号・受理記号・受理番号＋内訳, 時点) を返す。
-    列は位置ではなく見出しの名前で探す（全件の24列形式とは並びが違うため）。"""
+def _parse_kubun_file(path: Path) -> tuple[pd.DataFrame, str, str]:
+    """届出項目別の名簿（19列形式）を読み、
+    (届出ごとの 都道府県名・医療機関番号・受理届出名称・受理記号・受理番号＋内訳, 時点, 種別) を返す。
+    種別はタイトル行の「医科」「歯科」「薬局」。列は位置ではなく見出しの名前で探す
+    （全件の24列形式とは並びが違うため）。形式が違えば空のDataFrameを返す。"""
     out = []
-    snap = ""
+    snap = kind = ""
     for sname in pd.ExcelFile(path).sheet_names:
         raw = pd.read_excel(path, sheet_name=sname, header=None, dtype=str).fillna("")
         hdr = next((i for i in range(min(10, len(raw)))
                     if {"受理届出名称", "受理番号", "備考（見出し）"} <= set(raw.iloc[i].str.strip())), None)
         if hdr is None:
             continue
-        snap = snap or _wareki_date(" ".join(raw.iloc[:hdr].astype(str).values.ravel()))
+        title = " ".join(raw.iloc[:hdr].astype(str).values.ravel())
+        snap = snap or _wareki_date(title)
+        kind = kind or next((k for k in ("医科", "歯科", "薬局") if k in title), "")
         d = raw.iloc[hdr + 1:].copy()
         d.columns = [str(c).strip() for c in raw.iloc[hdr]]
         d = d[d["医療機関番号"].str.strip().ne("")]
@@ -153,48 +156,59 @@ def _parse_kubun_file(path: Path) -> tuple[pd.DataFrame, str]:
             f[c] = [det.get(g, {}).get(c, "") for g in f.index]
         f["内訳その他"] = ["；".join(other.get(g, [])) for g in f.index]
         out.append(f.reset_index(drop=True))
-    return (pd.concat(out, ignore_index=True) if out else pd.DataFrame()), snap
+    return (pd.concat(out, ignore_index=True) if out else pd.DataFrame()), snap, kind
 
 
 def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.DataFrame:
-    """shisetsu_kubun_raw/ の名簿から、受理番号まで同じ届出の内訳（区分・病棟数・加算など）を埋める。
-    名簿は入院基本料等（区分あり）と特定入院料（治療室の病床数・加算など）の2種類があり、どちらも同じ形式。
-    同じ県のファイルが複数あれば時点の新しい方だけを使う。名簿側に値がある項目は名簿の値にする
-    （差分PDFから引き継いだ値より新しい公表のため）。"""
+    """shisetsu_kubun_raw/ の届出項目別の名簿から、受理番号まで同じ届出の内訳
+    （区分・病棟数・病床数・加算など）を、全件データで空いている所だけ埋める。
+
+    厚生局は全件の名簿とは別に、届出項目のまとまりごと（入院基本料等・特定入院料・…）の名簿を出している。
+    全件の名簿に区分を載せない関東信越・近畿でも、こちらには区分がある。
+    - 医科だけを使う（歯科・薬局の名簿は全件データ＝医科と医療機関番号の体系が別のため）
+    - 同じ県・同じまとまりの名簿が複数あれば時点の新しい方（同時点ならファイル名順で後ろ）を使う。
+      まとまりはファイルの最初の届出名称で見分ける（名簿は届出項目の順に並んでいるため）
+    - 全件データに既に値がある項目は書き換えない"""
     files = sorted(folder.glob("*.xlsx")) if folder.exists() else []
     if not files:
         return out
     parsed = []
     for f in files:
-        df, snap = _parse_kubun_file(f)
+        df, snap, kind = _parse_kubun_file(f)
         if df.empty:
-            print(f"  区分補完: {f.name} … スキップ（入院基本料等の名簿の形式ではない）")
+            print(f"  区分補完: {f.name} … スキップ（届出項目別の名簿の形式ではない）")
             continue
-        # 同じ県でも「入院基本料等」と「特定入院料」の名簿は別物なので、県×種類ごとに新しい方を使う
-        # （_keep_latest_per_pref は都道府県コード列で判定する）
-        kind = "入院基本料等" if df["受理届出名称"].str.endswith("入院基本料").any() else "特定入院料"
-        df["都道府県コード"] = df["都道府県名"] + "／" + kind
+        if kind != "医科":
+            print(f"  区分補完: {f.name} … スキップ（{kind or '種別不明'}の名簿）")
+            continue
+        # _keep_latest_per_pref は都道府県コード列で判定するので、県×まとまりを入れる
+        df["都道府県コード"] = df["都道府県名"] + "／" + df["受理届出名称"].iloc[0]
         parsed.append((f.name, df.drop(columns="受理届出名称"), snap))
+    if not parsed:
+        return out
     key = ["都道府県名", "医療機関番号", "受理記号", "受理番号"]
     cols = _DETAIL_COLS + ["内訳その他"]
+    sup = pd.concat(_keep_latest_per_pref(parsed), ignore_index=True)
+    sup = sup.drop(columns="都道府県コード").drop_duplicates(key)
     for c in cols:
         out[c] = out[c].astype(str).replace({"nan": "", "None": ""})
-    for sup in _keep_latest_per_pref(parsed):
-        kind = sup["都道府県コード"].iloc[0].split("／")[1]
-        sup = sup.drop(columns="都道府県コード").drop_duplicates(key)
-        m = out[key].astype(str).merge(sup, on=key, how="left", indicator=True)
-        hit = m["_merge"].eq("both")
-        filled = 0
-        for c in cols:
-            v = m[c].fillna("")
-            use = hit & v.ne("")
-            filled += int((use & out[c].eq("")).sum())
-            out[c] = out[c].where(~use, v)
-        for pref, g in sup.groupby("都道府県名"):
-            n_hit = int((hit & out["都道府県名"].astype(str).eq(pref)).sum())
-            n_kubun = int((hit & out["都道府県名"].astype(str).eq(pref) & out["区分"].ne("")).sum())
-            print(f"  区分補完: {pref}（{kind}）名簿{len(g):,}件のうち全件データと一致{n_hit:,}件（区分あり{n_kubun:,}件）")
-        print(f"  区分補完: 空欄だった内訳を{filled:,}項目埋めた")
+    m = out[key].astype(str).merge(sup, on=key, how="left", indicator=True)
+    hit = m["_merge"].eq("both").to_numpy()
+    filled = pd.Series(0, index=out.index)
+    for c in cols:
+        v = m[c].fillna("").to_numpy()
+        use = hit & (v != "") & out[c].eq("").to_numpy()
+        filled += use
+        out.loc[use, c] = v[use]
+    pref = out["都道府県名"].astype(str)
+    summary = pd.DataFrame({
+        "名簿の届出": sup.groupby("都道府県名").size(),
+        "全件と一致": pd.Series(hit, index=out.index).groupby(pref).sum(),
+        "埋めた項目": filled.groupby(pref).sum(),
+    }).dropna(subset=["名簿の届出"]).astype(int)
+    print("  区分補完（届出項目別の名簿）:")
+    print("    " + summary.to_string().replace("\n", "\n    "))
+    print(f"  区分補完: 空欄だった内訳を合計{int(filled.sum()):,}項目埋めた")
     return out
 
 

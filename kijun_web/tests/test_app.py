@@ -75,7 +75,7 @@ def test_kubun_ref_fills_only_blank_kubun():
     assert con.execute("SELECT COUNT(*) FROM filings WHERE kubun != '' AND kubun_ref != ''").fetchone()[0] == 0
     fid = con.execute(
         """SELECT x.facility_id FROM filings x JOIN facilities f ON f.id = x.facility_id
-           WHERE f.pref_code = '13' AND x.kubun_ref != '' LIMIT 1"""
+           WHERE f.pref_code = '01' AND x.kubun_ref != '' LIMIT 1"""
     ).fetchone()[0]
     r = client.get(f"/facility/{fid}")
     assert "参考" in r.text and "病床機能報告" in r.text
@@ -166,8 +166,9 @@ def test_kubun_search_official_and_reference():
     # 高知県（四国厚生局：区分を公表）→ 公式の○
     html = client.get("/search", params={"pref": "39", "kb": kb}).text
     assert _count(html) > 0 and '<span class="ok" title' in html and "急性期一般入院料１" in html
-    # 東京都（関東信越：区分を公表していない）→ 参考値の○と注意書き
-    html = client.get("/search", params={"pref": "13", "kb": kb}).text
+    # 北海道（区分を公表していない）→ 参考値の○と注意書き
+    # （関東信越・近畿は2026年11月から届出項目別の名簿で公式の区分が入るようになった）
+    html = client.get("/search", params={"pref": "01", "kb": kb}).text
     assert _count(html) > 0 and 'class="ok ref"' in html and "区分について" in html
 
 
@@ -192,7 +193,20 @@ def test_kubun_and_item_and_or():
 
 def test_search_csv_kubun_columns():
     kb = _kubun_id("一般病棟入院基本料", "急性期一般入院料１")
-    text = client.get("/search.csv", params={"pref": "13", "kb": kb}).text
+    text = client.get("/search.csv", params={"pref": "01", "kb": kb}).text
     header = text.splitlines()[0]
     assert "区分：急性期一般入院料１（一般病棟入院基本料）" in header
     assert "○（参考" in text and "区分の列：" in text
+
+
+def test_kanto_kinki_kubun_is_official():
+    """関東信越・近畿は届出項目別の名簿で公式の区分が入り、参考値はほぼ使われない。"""
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    for pref in ("08", "13", "27"):   # 茨城・東京・大阪
+        total, official = con.execute(
+            """SELECT COUNT(*), SUM(x.kubun != '') FROM filings x JOIN kijun k ON k.id = x.kijun_id
+               JOIN facilities f ON f.id = x.facility_id
+               WHERE f.pref_code = ? AND k.name IN ('一般病棟入院基本料', '療養病棟入院基本料')""", (pref,)
+        ).fetchone()
+        assert official / total > 0.9, pref
