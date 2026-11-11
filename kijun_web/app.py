@@ -318,12 +318,70 @@ def _kubun_hits(con, kb_ids: list[int], where: str, params: list,
     return hits
 
 
+# トップの「こんな探し方ができます」。周辺ビジネス（製薬・医療機器の営業、人材紹介、コンサル）がよく
+# 調べそうな組み合わせを、実際の検索URLと件数つきで出す。施設基準名は部分一致（k）、区分は名前で引く。
+EXAMPLES = [
+    {"label": "地域包括ケア病棟のある病院", "pref": "東京都", "k": "地域包括ケア病棟入院料", "ftype": "病院"},
+    {"label": "回復期リハビリテーション病棟のある病院", "pref": "大阪府", "k": "回復期リハビリテーション病棟入院料", "ftype": "病院"},
+    {"label": "急性期一般入院料１の病院", "pref": "", "kubun": "急性期一般入院料１"},
+    {"label": "在宅療養支援診療所", "pref": "福岡県", "k": "在宅療養支援診療所"},
+    {"label": "外来腫瘍化学療法診療料を届け出ている医療機関", "pref": "愛知県", "k": "外来腫瘍化学療法診療料"},
+    {"label": "緩和ケア病棟のある病院", "pref": "", "k": "緩和ケア病棟入院料"},
+]
+_examples_cache: dict[str, list[dict]] = {}
+
+
+def _examples(con) -> list[dict]:
+    built = _meta(con).get("built_at", "")
+    if built in _examples_cache:
+        return _examples_cache[built]
+    prefs = {r["name"]: r["code"] for r in _prefs(con)}
+    out = []
+    for ex in EXAMPLES:
+        c = Cond(pref=prefs.get(ex["pref"], ""), k=ex.get("k", ""), ftypes=[ex["ftype"]] if ex.get("ftype") else [])
+        if ex.get("kubun"):
+            r = con.execute("SELECT id FROM kubuns WHERE name = ?", (ex["kubun"],)).fetchone()
+            if not r:
+                continue
+            c.kubuns = [r["id"]]
+        where, params, _, _ = _search_sql(con, c)
+        n = con.execute(f"SELECT COUNT(*) FROM facilities f WHERE {where}", params).fetchone()[0]
+        if n:
+            out.append({"label": ex["label"], "pref": ex["pref"] or "全国", "n": n, "url": "/search?" + c.query()})
+    _examples_cache.clear()
+    _examples_cache[built] = out
+    return out
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     with db() as con:
-        popular = con.execute("SELECT name, n_facilities FROM kijun ORDER BY n_facilities DESC LIMIT 24").fetchall()
         ctx = _form_ctx(con)
-    return render(request, "index.html", popular=popular, cond=Cond(), **ctx)
+        examples = _examples(con)
+        kijun_names = [r["name"] for r in con.execute("SELECT name FROM kijun ORDER BY n_facilities DESC")]
+        type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
+    return render(request, "index.html", cond=Cond(), examples=examples, kijun_names=kijun_names,
+                  type_counts=type_counts, **ctx)
+
+
+@app.get("/facilities/suggest.json")
+def facility_suggest(q: str = "", pref: str = ""):
+    """トップの「医療機関を調べる」の入力候補（名前の一部、病院・有床診療所を先に）。"""
+    key = search_key(q)
+    if len(key) < 2:
+        return JSONResponse([])
+    sql = """SELECT id, name, pref_name, city, ftype, n_kijun FROM facilities WHERE name_search LIKE ?"""
+    args: list = [f"%{key}%"]
+    if pref:
+        sql += " AND pref_code = ?"
+        args.append(pref)
+    sql += """ ORDER BY CASE WHEN name_search LIKE ? THEN 0 ELSE 1 END,
+                        CASE ftype WHEN '病院' THEN 0 WHEN '有床診療所' THEN 1 ELSE 2 END, n_kijun DESC LIMIT 12"""
+    args.append(f"{key}%")
+    with db() as con:
+        rows = con.execute(sql, args).fetchall()
+    return JSONResponse([{"url": facility_url(r["id"]), "name": r["name"], "where": f'{r["pref_name"]} {r["city"] or ""}'.strip(),
+                          "ftype": r["ftype"], "n": r["n_kijun"]} for r in rows])
 
 
 @app.get("/areas/{pref}.json")

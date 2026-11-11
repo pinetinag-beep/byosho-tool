@@ -3,7 +3,7 @@
 <form class="sx" action="/search" method="get" id="sform"
       data-areas='{{ cond.areas|tojson }}' data-cities='{{ cond.cities|tojson }}' data-items='{{ cond.selected_keys|tojson }}'>
   <div class="sx-main">
-    <label class="sx-label" for="item-q">届け出ている施設基準で探す</label>
+    {% if not hide_label %}<label class="sx-label" for="item-q">届け出ている施設基準で探す</label>{% endif %}
     <div class="sx-box" id="sx-box">
       <span class="sx-icon" aria-hidden="true"></span>
       <div class="sx-chips" id="sel-chips"></div>
@@ -41,10 +41,10 @@
         {% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t in cond.ftypes %}checked{% endif %}><span>{{ t }}</span></label>{% endfor %}
       </div>
     </div>
-    <div class="sx-field sx-grow">
+    {% if not hide_q %}<div class="sx-field sx-grow">
       <label class="sx-flabel" for="f-q">医療機関名・住所</label>
       <input type="text" name="q" id="f-q" value="{{ cond.q }}" placeholder="一部でOK（例：近森、高知市）" autocomplete="off">
-    </div>
+    </div>{% else %}<div class="sx-grow"></div>{% endif %}
     <button type="submit" class="btn sx-submit">検索する</button>
   </div>
 

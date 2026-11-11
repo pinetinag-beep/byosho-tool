@@ -244,3 +244,74 @@ td.nowrap { white-space: nowrap; }
 .ad-slot { margin: 28px 0 8px; padding: 10px 12px 12px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--card); }
 .ad-label { display: block; font-size: 0.7rem; color: var(--ink-faint); margin-bottom: 6px; letter-spacing: .05em; }
 .ad-dummy { display: grid; place-items: center; min-height: 120px; padding: 12px; text-align: center; font-size: 0.85rem; color: var(--ink-faint); background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 10px, var(--card) 10px, var(--card) 20px); border-radius: 8px; }
+
+/* ── トップ（やりたいことごとの入口）── */
+.top-hero { padding: 44px 0 8px; }
+.eyebrow { font-size: 0.8rem; font-weight: 700; color: var(--brand-dark); letter-spacing: .08em; margin: 0 0 8px; }
+.top-hero h1 { font-size: 1.9rem; line-height: 1.45; margin: 0 0 14px; }
+.top-lead { color: var(--ink-muted); max-width: 760px; margin: 0; }
+.top-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; list-style: none; padding: 0; margin: 18px 0 0; }
+.top-stats li { display: flex; align-items: baseline; gap: 6px; }
+.top-stats b { font-size: 1.25rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.top-stats span { font-size: 0.8rem; color: var(--ink-muted); }
+
+.task { margin: 26px 0 8px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 24px rgba(38,37,31,0.05); }
+.task-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+.task-tabs button {
+  font: inherit; text-align: left; padding: 14px 20px 12px; background: none; border: 0; cursor: pointer; color: var(--ink-muted);
+  border-bottom: 3px solid transparent; margin-bottom: -1px; display: flex; flex-direction: column; gap: 2px;
+}
+.task-tabs button + button { border-left: 1px solid var(--line); }
+.task-tabs button b { font-size: 1rem; }
+.task-tabs button small { font-size: 0.75rem; color: var(--ink-faint); }
+.task-tabs button:hover { background: var(--bg); }
+.task-tabs button[aria-selected=true] { color: var(--brand-dark); border-bottom-color: var(--brand); }
+.task-tabs button[aria-selected=true] small { color: var(--ink-muted); }
+.task-tabs button:first-child { border-top-left-radius: 16px; }
+.task-tabs button:last-child { border-top-right-radius: 16px; }
+.task-panel { padding: 20px 22px 18px; }
+.task-q { font-weight: 700; margin: 0 0 10px; }
+.task .sx { border: 0; box-shadow: none; padding: 0; margin: 0; }
+.fac-row { display: flex; gap: 10px; align-items: stretch; }
+.fac-row select { font: inherit; height: 52px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); }
+.fac-box { position: relative; flex: 1; }
+.fac-box input {
+  width: 100%; height: 52px; font: inherit; font-size: 1.02rem; padding: 0 14px; border: 2px solid var(--brand-line); border-radius: 12px; color: var(--ink);
+}
+.fac-box input:focus { outline: 0; border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+.fac-row .btn { padding: 0 26px; }
+.fac-box .sx-suggest li { padding: 0; }
+.fac-box .sx-suggest li a { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; width: 100%; }
+.fac-box .sx-suggest li.none { padding: 8px 10px; }
+.fac-box .sx-suggest .nm small { display: block; color: var(--ink-faint); font-size: 0.75rem; }
+
+.examples { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.examples a {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 12px 14px; height: 100%;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; color: var(--ink);
+}
+.examples a:hover { border-color: var(--brand); }
+.ex-pref { font-size: 0.72rem; font-weight: 700; color: var(--brand-dark); background: var(--brand-soft); border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.ex-label { font-size: 0.9rem; font-weight: 700; line-height: 1.5; }
+.ex-n { font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ex-n small { font-weight: 400; font-size: 0.75rem; color: var(--ink-muted); margin-left: 2px; }
+
+.uses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.use { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; font-size: 0.88rem; color: var(--ink-muted); }
+.use p { margin: 0; }
+.use .use-who { font-weight: 700; color: var(--ink); margin-bottom: 6px; font-size: 0.95rem; }
+.data-about th { width: 7em; background: var(--bg); }
+
+@media (max-width: 760px) {
+  .top-hero { padding-top: 28px; }
+  .top-hero h1 { font-size: 1.35rem; }
+  .task-tabs button { padding: 10px 10px 9px; }
+  .task-tabs button b { font-size: 0.85rem; }
+  .task-tabs button small { display: none; }
+  .task-panel { padding: 16px 14px; }
+  .fac-row { flex-direction: column; }
+  .fac-row select, .fac-box input { height: 46px; }
+  .fac-row .btn { height: 44px; }
+  .uses { grid-template-columns: 1fr; }
+  .examples { grid-template-columns: 1fr; }
+}

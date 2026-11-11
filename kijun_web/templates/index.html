@@ -2,28 +2,170 @@
 {% block title %}施設基準届出 検索 — 全国の病院・診療所を無料で検索・CSVダウンロード{% endblock %}
 {% block canonical %}/{% endblock %}
 {% block content %}
-<section class="hero">
-  <h1>施設基準届出 検索</h1>
-  <p>全国の病院・診療所が地方厚生局に届け出ている施設基準を、地域・施設の種類・届出項目で検索できます。<b>無料・登録不要</b>、CSVも伏せ字なしで無料です。</p>
-  <p class="stats">
-    <span>医療機関 <b>{{ "{:,}".format(meta.n_facilities|int) }}</b> 件</span>
-    <span>届出 <b>{{ "{:,}".format(meta.n_filings|int) }}</b> 件</span>
-    <span>全国47都道府県</span>
-    <span>データ時点 <b>{{ meta.as_of_max_label }}</b> までの公表分</span>
-  </p>
+<section class="top-hero">
+  <p class="eyebrow">MedilenZ 施設基準検索</p>
+  <h1>全国{{ "{:,}".format(meta.n_facilities|int // 10000) }}万の医療機関が届け出ている<br class="pc-only">施設基準を、無料で検索・CSVダウンロード</h1>
+  <p class="top-lead">地方厚生局が公表する「施設基準の届出受理状況」を、全国47都道府県分まとめて毎月更新しています。
+    営業先のリストづくり、訪問前の下調べ、地域ごとの比較にお使いください。登録は不要で、CSVも伏せ字なしです。</p>
+  <ul class="top-stats">
+    <li><b>{{ "{:,}".format(meta.n_facilities|int) }}</b><span>医療機関</span></li>
+    <li><b>{{ "{:,}".format(meta.n_filings|int) }}</b><span>届出</span></li>
+    <li><b>{{ "{:,}".format(meta.n_kijun|int) }}</b><span>種類の施設基準</span></li>
+    <li><b>{{ meta.as_of_max_label }}</b><span>までの公表分</span></li>
+  </ul>
 </section>
 
-{% include "_search_form.html" %}
+<section class="task" id="task">
+  <div class="task-tabs" role="tablist">
+    <button type="button" role="tab" id="t-list" aria-controls="p-list" aria-selected="true">
+      <b>条件でリストを作る</b><small>施設基準 × 地域 で医療機関を抽出</small></button>
+    <button type="button" role="tab" id="t-fac" aria-controls="p-fac" aria-selected="false">
+      <b>医療機関を調べる</b><small>名前から届出の一覧を見る</small></button>
+    <button type="button" role="tab" id="t-area" aria-controls="p-area" aria-selected="false">
+      <b>地域で比べる</b><small>施設基準ごとの都道府県別の数</small></button>
+  </div>
 
-<h2>よく調べられる施設基準</h2>
-<ul class="chips">
-  {% for r in popular %}<li><a href="{{ kijun_url(r.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n_facilities) }}</span></a></li>{% endfor %}
+  <div class="task-panel" role="tabpanel" id="p-list" aria-labelledby="t-list">
+    <p class="task-q">どの施設基準を届け出ている医療機関を探しますか？</p>
+    {% set hide_q = true %}{% set hide_label = true %}
+    {% include "_search_form.html" %}
+  </div>
+
+  <div class="task-panel" role="tabpanel" id="p-fac" aria-labelledby="t-fac" hidden>
+    <p class="task-q">調べたい医療機関の名前を入力してください。</p>
+    <form class="fac-form" action="/search" method="get" autocomplete="off">
+      <div class="fac-row">
+        <select name="pref" id="fac-pref" aria-label="都道府県">
+          <option value="">全国</option>
+          {% for p in prefs %}<option value="{{ p.code }}">{{ p.name }}</option>{% endfor %}
+        </select>
+        <div class="fac-box">
+          <input type="search" name="q" id="fac-q" placeholder="病院・診療所の名前の一部（例：近森、聖路加）" role="combobox"
+                 aria-expanded="false" aria-controls="fac-sug">
+          <ul class="sx-suggest" id="fac-sug" role="listbox" hidden></ul>
+        </div>
+        <button type="submit" class="btn">検索する</button>
+      </div>
+    </form>
+    <p class="hint">候補を選ぶと、その医療機関が届け出ている施設基準の一覧（区分・算定開始日つき）が開きます。住所の一部でも探せます。</p>
+  </div>
+
+  <div class="task-panel" role="tabpanel" id="p-area" aria-labelledby="t-area" hidden>
+    <p class="task-q">どの施設基準の広がりを比べますか？</p>
+    <form class="fac-form" id="area-form" autocomplete="off">
+      <div class="fac-row">
+        <div class="fac-box">
+          <input type="search" id="area-q" list="kijun-list" placeholder="施設基準の名前の一部（例：地域包括ケア病棟入院料）">
+          <datalist id="kijun-list">{% for n in kijun_names %}<option value="{{ n }}">{% endfor %}</datalist>
+        </div>
+        <button type="submit" class="btn">都道府県別に見る</button>
+      </div>
+    </form>
+    <p class="hint">候補から選ぶと、都道府県ごとの届出医療機関数と、病院・診療所の内訳、区分の内訳が見られます。都道府県を押すと医療機関の一覧になります。</p>
+  </div>
+</section>
+
+{% if examples %}
+<h2>こんな探し方ができます</h2>
+<ul class="examples">
+  {% for ex in examples %}
+  <li><a href="{{ ex.url }}"><span class="ex-pref">{{ ex.pref }}</span><span class="ex-label">{{ ex.label }}</span>
+    <span class="ex-n">{{ "{:,}".format(ex.n) }}<small>件</small></span></a></li>
+  {% endfor %}
 </ul>
-<p class="small"><a href="/kijun">すべての施設基準（{{ "{:,}".format(meta.n_kijun|int) }}種類）を見る →</a></p>
+{% endif %}
+
+<h2>使い方の例</h2>
+<div class="uses">
+  <div class="use">
+    <p class="use-who">製薬・医療機器の営業</p>
+    <p>担当エリアで、自社製品に関わる施設基準（化学療法・リハビリ・在宅など）を届け出ている医療機関をリストにして、CSVで持ち出せます。</p>
+  </div>
+  <div class="use">
+    <p class="use-who">医療・介護の人材紹介</p>
+    <p>入院基本料の区分や病棟の種類から、病院の規模や機能のあたりをつけて、求職者への提案先を絞り込めます。</p>
+  </div>
+  <div class="use">
+    <p class="use-who">医療経営コンサル・医事</p>
+    <p>近くの医療機関が届け出ている施設基準を一覧で比べ、自院がまだ届け出ていない項目を洗い出せます。</p>
+  </div>
+</div>
+
+<h2>データについて</h2>
+<div class="table-wrap">
+<table class="data-about">
+  <tr><th>出典</th><td>各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」</td></tr>
+  <tr><th>収録</th><td>全国47都道府県の医科の保険医療機関
+    （病院 {{ "{:,}".format(type_counts.get('病院', 0)) }}・有床診療所 {{ "{:,}".format(type_counts.get('有床診療所', 0)) }}・無床診療所 {{ "{:,}".format(type_counts.get('無床診療所', 0)) }}）</td></tr>
+  <tr><th>時点</th><td>{{ meta.as_of_max_label }}までの公表分（厚生局により月の初めの時点が1〜2か月ずれます）</td></tr>
+  <tr><th>更新</th><td>毎月（厚生局の公表にあわせて）</td></tr>
+  <tr><th>料金</th><td>無料・登録不要。検索結果のCSVも無料で、医療機関名などの伏せ字はありません</td></tr>
+</table>
+</div>
+<p class="small"><a href="/about">データの詳しい説明と利用条件 →</a></p>
 
 <h2>都道府県から探す</h2>
 <ul class="pref-grid">
   {% for p in prefs %}<li><a href="/pref/{{ p.name }}">{{ p.name }}</a></li>{% endfor %}
 </ul>
 {% include "_ad.html" %}
+
+<script>
+(() => {
+  // タブ（URLの #fac / #area でも開ける）
+  const tabs = [...document.querySelectorAll(".task-tabs [role=tab]")];
+  function show(tab, focus) {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute("aria-selected", String(on));
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    }
+    if (focus) document.querySelector(`#${tab.getAttribute("aria-controls")} input[type=search]`)?.focus();
+  }
+  tabs.forEach((t) => t.addEventListener("click", () => { show(t, true); history.replaceState(null, "", "#" + t.id.slice(2)); }));
+  const h = location.hash.slice(1);
+  const init = tabs.find((t) => t.id === "t-" + h);
+  if (init) show(init, false);
+
+  // 医療機関名の入力候補
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const q = document.getElementById("fac-q"), sug = document.getElementById("fac-sug"), pref = document.getElementById("fac-pref");
+  let timer, cand = [], active = -1;
+  async function load() {
+    const v = q.value.trim();
+    if (v.length < 2) { sug.hidden = true; return; }
+    const res = await fetch(`/facilities/suggest.json?q=${encodeURIComponent(v)}&pref=${encodeURIComponent(pref.value)}`);
+    cand = res.ok ? await res.json() : [];
+    active = -1;
+    sug.innerHTML = cand.length
+      ? cand.map((r) => `<li role="option"><a href="${r.url}"><span class="nm">${esc(r.name)}<small>${esc(r.where)}</small></span>
+          <span class="sy">${esc(r.ftype)}</span><span class="ct">届出 ${r.n.toLocaleString()}</span></a></li>`).join("")
+      : `<li class="none">「${esc(v)}」に当てはまる医療機関は見つかりません。検索ボタンで住所からも探せます</li>`;
+    sug.hidden = false;
+    q.setAttribute("aria-expanded", "true");
+  }
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 150); });
+  pref.addEventListener("change", load);
+  q.addEventListener("keydown", (e) => {
+    const lis = [...sug.querySelectorAll("li a")];
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && lis.length) {
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : lis.length - 1)) % lis.length;
+      lis.forEach((a, i) => a.parentElement.classList.toggle("on", i === active));
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault(); location.href = lis[active].href;
+    }
+  });
+  q.addEventListener("blur", () => setTimeout(() => { sug.hidden = true; q.setAttribute("aria-expanded", "false"); }, 150));
+
+  // 地域で比べる → 施設基準のページ（都道府県別の数）
+  const names = new Set([...document.querySelectorAll("#kijun-list option")].map((o) => o.value));
+  document.getElementById("area-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = document.getElementById("area-q").value.trim();
+    if (!v) return;
+    location.href = names.has(v) ? "/kijun/" + encodeURIComponent(v) : "/kijun?q=" + encodeURIComponent(v);
+  });
+})();
+</script>
 {% endblock %}

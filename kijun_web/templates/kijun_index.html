@@ -22,10 +22,14 @@
   var rows = document.querySelectorAll("#ktable tbody tr");
   var norm = function (s) { return s.normalize("NFKC").replace(/\s/g, "").toLowerCase(); };
   var keys = Array.prototype.map.call(rows, function (r) { return norm(r.textContent); });
-  input.addEventListener("input", function () {
+  function apply() {
     var q = norm(input.value);
     rows.forEach(function (r, i) { r.style.display = keys[i].indexOf(q) >= 0 ? "" : "none"; });
-  });
+  }
+  input.addEventListener("input", apply);
+  // トップの「地域で比べる」から ?q= 付きで来たら、その語で絞り込んだ状態で開く
+  var q0 = new URLSearchParams(location.search).get("q");
+  if (q0) { input.value = q0; apply(); }
 })();
 </script>
 {% include "_ad.html" %}
