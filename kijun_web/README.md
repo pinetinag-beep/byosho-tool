@@ -93,9 +93,8 @@ python -m pytest kijun_web/tests -q
 
 ## 毎月の更新
 
-1. ユーザー: 各地方厚生局の最新の「届出受理医療機関名簿」（全件Excel）を `shisetsu_raw/` に置いてpush
-   - ファイル名はダウンロードしたままでよい。同じ県のファイルが複数あれば、`build_shisetsu_kijun.py` が
-     ファイル内の「令和X年Y月Z日 現在」が新しい方だけを使う（古いファイルは後で消せばよい）
+1. Claude: `python fetch_kouseikyoku.py --apply` で全厚生局の最新の名簿（全件・届出項目別・北海道の新規・変更PDF）を
+   `shisetsu_raw/`・`shisetsu_kubun_raw/` に入れる（2026年11月〜。それまではユーザーが手で集めていた）
 2. Claude: `build_shisetsu_kijun.py --dir shisetsu_raw/` で parquet を作り直し、行数が不自然に減っていないか
    旧データと比べてからコミット（CLAUDE.md「施設基準届出データを追加・更新する際の注意」参照）
 3. サーバー: `git pull` → `python kijun_web/build_db.py` → `sudo systemctl restart kijun-web`

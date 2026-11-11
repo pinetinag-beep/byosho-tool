@@ -69,3 +69,6 @@ vps_data_backup/
 
 # 施設基準検索サイトのDB（build_db.pyで毎月作り直す。150MB前後あるのでコミットしない）
 kijun_web/data/
+
+# 厚生局サイトから集めた名簿の置き場（fetch_kouseikyoku.py）
+shisetsu_fetch/
