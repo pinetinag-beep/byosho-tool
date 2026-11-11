@@ -159,18 +159,50 @@ def _parse_kubun_file(path: Path) -> tuple[pd.DataFrame, str, str]:
     return (pd.concat(out, ignore_index=True) if out else pd.DataFrame()), snap, kind
 
 
+def _kubun_from_shinki_pdfs(folder: Path) -> pd.DataFrame:
+    """shisetsu_kubun_raw/<都道府県名>/ に置いた新規・変更届出のPDF（届出受理医療機関一覧表）から、
+    内訳のある届出を集める。北海道厚生局は届出項目別の名簿を出しておらず、全件の名簿にも区分が無いため、
+    毎月の新規・変更PDFに載る区分を積み上げて使う（出し直した届出だけが載るので全部は埋まらない）。
+    同じ届出（受理番号まで同じ）が複数のPDFにあれば、作成日の新しい方を使う。"""
+    dirs = [d for d in sorted(folder.iterdir()) if d.is_dir() and list(d.glob("*.pdf"))] if folder.exists() else []
+    if not dirs:
+        return pd.DataFrame()
+    from parse_shisetsu_shinki_pdf import PREF_NAME_TO_CODE, parse_pdf   # 開発環境のみ（pdfplumber）
+    key = ["都道府県名", "医療機関番号", "受理記号", "受理番号"]
+    cols = _DETAIL_COLS + ["内訳その他"]
+    rows = []
+    for d in dirs:
+        if d.name not in PREF_NAME_TO_CODE:
+            print(f"  区分補完: {d.name}/ … スキップ（フォルダ名が都道府県名ではない）")
+            continue
+        for f in sorted(d.glob("*.pdf")):
+            df = parse_pdf(str(f), d.name)
+            if df.empty:
+                print(f"  区分補完: {d.name}/{f.name} … スキップ（新規・変更届出の一覧表の形式ではない）")
+                continue
+            df["_snap"] = df["年月"].map(_wareki_date)
+            rows.append(df)
+    if not rows:
+        return pd.DataFrame()
+    pdfs = pd.concat(rows, ignore_index=True)
+    pdfs = pdfs[pdfs[cols].ne("").any(axis=1)]
+    return pdfs.sort_values("_snap").drop_duplicates(key, keep="last")[key + cols]
+
+
 def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.DataFrame:
     """shisetsu_kubun_raw/ の届出項目別の名簿から、受理番号まで同じ届出の内訳
     （区分・病棟数・病床数・加算など）を、全件データで空いている所だけ埋める。
 
     厚生局は全件の名簿とは別に、届出項目のまとまりごと（入院基本料等・特定入院料・…）の名簿を出している。
-    全件の名簿に区分を載せない関東信越・近畿でも、こちらには区分がある。
+    全件の名簿に区分を載せない関東信越・近畿でも、こちらには区分がある。北海道はこの名簿が無いため、
+    <都道府県名>/ フォルダに置いた新規・変更届出のPDFからも補う（_kubun_from_shinki_pdfs）。
     - 医科だけを使う（歯科・薬局の名簿は全件データ＝医科と医療機関番号の体系が別のため）
     - 同じ県・同じまとまりの名簿が複数あれば時点の新しい方（同時点ならファイル名順で後ろ）を使う。
       まとまりはファイルの最初の届出名称で見分ける（名簿は届出項目の順に並んでいるため）
     - 全件データに既に値がある項目は書き換えない"""
     files = sorted(folder.glob("*.xlsx")) if folder.exists() else []
-    if not files:
+    pdf_sup = _kubun_from_shinki_pdfs(folder)
+    if not files and pdf_sup.empty:
         return out
     parsed = []
     for f in files:
@@ -184,12 +216,15 @@ def _apply_kubun_supplement(out: pd.DataFrame, folder: Path = KUBUN_DIR) -> pd.D
         # _keep_latest_per_pref は都道府県コード列で判定するので、県×まとまりを入れる
         df["都道府県コード"] = df["都道府県名"] + "／" + df["受理届出名称"].iloc[0]
         parsed.append((f.name, df.drop(columns="受理届出名称"), snap))
-    if not parsed:
-        return out
     key = ["都道府県名", "医療機関番号", "受理記号", "受理番号"]
     cols = _DETAIL_COLS + ["内訳その他"]
-    sup = pd.concat(_keep_latest_per_pref(parsed), ignore_index=True)
-    sup = sup.drop(columns="都道府県コード").drop_duplicates(key)
+    sups = [pdf_sup] if not pdf_sup.empty else []
+    if parsed:
+        # 名簿（その時点の全体）を新規・変更PDFより優先する（後ろに置いて keep="last"）
+        sups.append(pd.concat(_keep_latest_per_pref(parsed), ignore_index=True).drop(columns="都道府県コード"))
+    if not sups:
+        return out
+    sup = pd.concat(sups, ignore_index=True).drop_duplicates(key, keep="last")
     for c in cols:
         out[c] = out[c].astype(str).replace({"nan": "", "None": ""})
     m = out[key].astype(str).merge(sup, on=key, how="left", indicator=True)
