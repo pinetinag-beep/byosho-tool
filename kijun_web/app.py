@@ -40,6 +40,9 @@ MHLW_TERMS_URL = "https://www.mhlw.go.jp/chosakuken/index.html"
 ADSENSE_CLIENT = os.environ.get("ADSENSE_CLIENT", "").strip()   # 例: ca-pub-1234567890123456
 ADSENSE_SLOT = os.environ.get("ADSENSE_SLOT", "").strip()       # 手動で置く広告ユニットのID（無ければ自動広告のみ）
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()     # プライバシーポリシーの問い合わせ先
+# アクセス解析（Google アナリティクス 4）。Streamlit版と同じプロパティ（medilenz.jp のウェブストリーム）。
+# 本番のドメインで開いた時だけ送る（IPアドレス直打ち・手元での確認は数えない）
+GA_MEASUREMENT_ID = os.environ.get("GA_MEASUREMENT_ID", "G-8Y6SDBSCMQ").strip()
 OPERATOR_NAME = "MedilenZ運営事務局"                              # 運営者情報に載せる名前（ユーザー判断、2026年11月）
 # お問い合わせはGoogleフォームで受ける（メールアドレスをページに出さないため）。URLが決まったらここに入れる
 CONTACT_FORM_URL = os.environ.get("CONTACT_FORM_URL", "").strip()
@@ -125,7 +128,7 @@ templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
     mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
-    adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL, operator_name=OPERATOR_NAME,
+    adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL, operator_name=OPERATOR_NAME, ga_id=GA_MEASUREMENT_ID,
     contact_form_url=CONTACT_FORM_URL, ad_preview=AD_PREVIEW,
 )
 

@@ -12,6 +12,25 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
+{% if ga_id %}<script>
+// Google アナリティクス：本番のドメイン（medilenz.jp）で開いた時だけ読み込む
+if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
+  const s = document.createElement("script");
+  s.async = true; s.src = "https://www.googletagmanager.com/gtag/js?id={{ ga_id }}";
+  document.head.appendChild(s);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { dataLayer.push(arguments); };
+  gtag("js", new Date());
+  gtag("config", "{{ ga_id }}");
+  // CSVのダウンロードを数える（どの検索・どのページから落とされたか）
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (a && /\.csv(\?|$)/.test(a.getAttribute("href"))) {
+      gtag("event", "csv_download", { link_url: a.href, page_path: location.pathname });
+    }
+  });
+}
+</script>{% endif %}
 {% if adsense_client %}<meta name="google-adsense-account" content="{{ adsense_client }}">
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>{% endif %}
 </head>

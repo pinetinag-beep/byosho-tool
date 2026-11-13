@@ -266,3 +266,10 @@ def test_adsense_review_pages_linked():
     assert "MedilenZ運営事務局" in client.get("/operator").text
     sm = client.get("/sitemap-static.xml").text
     assert "/operator" in sm and "/contact" in sm and "/guide" in sm
+
+
+def test_analytics_tag_only_on_production_domain():
+    """GA4のタグはページにあるが、medilenz.jp で開いた時だけ読み込む（手元・IP直打ちでは送らない）。"""
+    html = client.get("/").text
+    assert "G-8Y6SDBSCMQ" in html and "medilenz" in html and "csv_download" in html
+    assert "Google アナリティクス" in client.get("/privacy").text
