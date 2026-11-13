@@ -288,3 +288,14 @@ def test_kubun_sorted_by_nursing_standard():
 def test_contact_form_linked():
     html = client.get("/contact").text
     assert "https://forms.gle/3ZzbjR1PvCZbqFZi6" in html and "準備中" not in html
+
+
+def test_facility_page_shows_byosho():
+    """病床機能報告と突合できた病院のページに、病床・人員・設備と年度ごとの推移、出典が出る。"""
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    fid = con.execute("SELECT id FROM facilities WHERE byosho_code IS NOT NULL AND name LIKE '%近森病院%'").fetchone()[0]
+    html = client.get(f"/facility/{fid}").text
+    assert "病床・人員・設備（病床機能報告）" in html and "年度ごとの推移" in html
+    assert "厚生労働省「病床機能報告」" in html and "streamlit.app" not in html
+    assert "ﾊｲｹｱ" not in html

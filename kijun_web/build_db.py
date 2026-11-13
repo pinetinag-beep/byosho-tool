@@ -441,6 +441,39 @@ def _items(head: pd.DataFrame) -> pd.DataFrame:
     return it[["id", "kijun", "symbol", "section", "sort_key", "n_facilities"]]
 
 
+# 病院ページに出す病床機能報告（厚生労働省）。医療機関コードは10桁にそろえる（元データは9桁・10桁が混在）
+BYOSHO_HOSP_COLS = [
+    "報告年度", "医療機関コード", "医療機関名",
+    "高度急性期_許可病床数", "急性期_許可病床数", "回復期_許可病床数", "慢性期_許可病床数", "合計_許可病床数",
+    "合計_在棟延べ数",
+    "常勤医師数", "非常勤医師数", "常勤看護師数", "非常勤看護師数",
+    "常勤理学療法士数", "常勤作業療法士数", "常勤言語聴覚士数", "常勤薬剤師数",
+    "CT台数", "CT_64列以上", "CT_16〜64列", "CT_16列未満", "MRI台数", "MRI_3T以上", "MRI_1.5〜3T", "MRI_1.5T未満",
+    "血管連続撮影装置台数", "SPECT台数", "マンモグラフィ台数", "PET台数", "PETCT台数", "PETMRI台数",
+    "ガンマナイフ台数", "サイバーナイフ台数", "IMRT台数", "内視鏡手術支援機器台数", "救急搬送件数",
+]
+BYOSHO_WARD_COLS = ["報告年度", "医療機関コード", "機能区分", "入院基本料", "許可病床数", "在棟延べ数"]
+
+
+def _build_byosho(con) -> int:
+    """病床機能報告（病院単位・病棟単位）を医療機関コード10桁で引けるようにして入れる。"""
+    if not BYOSHO.exists():
+        return 0
+    cols = [c for c in BYOSHO_HOSP_COLS if c in pq.read_schema(BYOSHO).names]
+    h = pd.read_parquet(BYOSHO, columns=cols)
+    h["code"] = h["医療機関コード"].astype(str).str.zfill(10)
+    h = h.drop(columns=["医療機関コード"]).rename(columns={"報告年度": "year", "医療機関名": "name"})
+    h.to_sql("byosho_hosp", con, index=False)
+    if WARDS.exists():
+        w = pd.read_parquet(WARDS, columns=BYOSHO_WARD_COLS)
+        w["code"] = w["医療機関コード"].astype(str).str.zfill(10)
+        w = w.drop(columns=["医療機関コード"]).rename(columns={"報告年度": "year"})
+        w.to_sql("byosho_ward", con, index=False)
+        con.execute("CREATE INDEX ix_bw ON byosho_ward(code, year)")
+    con.execute("CREATE INDEX ix_bh ON byosho_hosp(code, year)")
+    return len(h)
+
+
 def build(src: Path = SRC, out: Path = OUT) -> dict:
     """メモリを抑えるため、集計用の列だけを辞書エンコード（category）のまま読み、
     届出行はparquetから10万行ずつ読んでDBに流し込む（全列を一度に文字列で
@@ -570,6 +603,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     con.execute("DROP TABLE filings_raw")
     n_filings = con.execute("SELECT COUNT(*) FROM filings").fetchone()[0]
     n_kubuns = _build_kubuns(con)
+    n_byosho_rows = _build_byosho(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -583,6 +617,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_kubun_ref": str(con.execute("SELECT COUNT(*) FROM filings WHERE kubun_ref != ''").fetchone()[0]),
         "n_items": str(len(items)),
         "n_kubuns": str(n_kubuns),
+        "n_byosho_rows": str(n_byosho_rows),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),

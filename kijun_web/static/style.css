@@ -341,3 +341,19 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
 .ct-acc[open] .ct-acc-close { display: inline; color: var(--ink-muted); font-weight: 400; }
 .ct-acc-n { font-size: 0.75rem; font-weight: 700; color: #fff; background: var(--brand); border-radius: 999px; padding: 1px 9px; }
 .ct-items > tbody > tr > td { vertical-align: middle; }
+/* 病院ページ：病床機能報告 */
+.fact .v small { font-size: 0.75rem; font-weight: 400; color: var(--ink-muted); }
+.bedbar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; background: var(--line); gap: 2px; }
+.bedbar span { display: block; height: 100%; min-width: 3px; }
+.bedlegend { display: flex; flex-wrap: wrap; gap: 6px 22px; list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.88rem; }
+.bedlegend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.bedlegend li.zero { color: var(--ink-faint); }
+.bedlegend .muted { font-size: 0.8rem; }
+.wardlist { margin: 14px 0 0; }
+.wardlist > summary { cursor: pointer; color: var(--brand-dark); font-weight: 700; font-size: 0.88rem; padding: 4px 0; }
+.wardlist .table-wrap { margin-top: 8px; }
+.equip { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+.equip li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px; font-size: 0.88rem; }
+.equip li b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.equip li small { flex-basis: 100%; color: var(--ink-muted); font-size: 0.75rem; }
+.trend td.small { color: var(--ink-muted); }

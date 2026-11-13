@@ -706,7 +706,85 @@ def facility(request: Request, fid: str):
             (fid,),
         ).fetchall()
         pref = con.execute("SELECT * FROM prefs WHERE code = ?", (f["pref_code"],)).fetchone()
-    return render(request, "facility.html", f=f, filings=filings, pref=pref)
+        byosho = _byosho_ctx(con, f["byosho_code"])
+    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho)
+
+
+# ── 病床機能報告（厚生労働省）。病院ページに出す ─────────────────────
+BED_FUNCS = [("高度急性期", "#0B4F40"), ("急性期", "#12886D"), ("回復期", "#3FA587"), ("慢性期", "#79C2AA")]
+EQUIPMENT = [  # (列, 表示名)。台数が1以上のものだけ出す
+    ("CT台数", "CT"), ("MRI台数", "MRI"), ("血管連続撮影装置台数", "血管連続撮影装置"), ("SPECT台数", "SPECT"),
+    ("PET台数", "PET"), ("PETCT台数", "PET-CT"), ("PETMRI台数", "PET-MRI"), ("マンモグラフィ台数", "マンモグラフィ"),
+    ("IMRT台数", "IMRT（強度変調放射線治療）"), ("ガンマナイフ台数", "ガンマナイフ"), ("サイバーナイフ台数", "サイバーナイフ"),
+    ("内視鏡手術支援機器台数", "内視鏡手術支援機器（ダビンチ等）"),
+]
+EQUIP_DETAIL = {"CT台数": [("CT_64列以上", "64列以上"), ("CT_16〜64列", "16〜64列"), ("CT_16列未満", "16列未満")],
+                "MRI台数": [("MRI_3T以上", "3T以上"), ("MRI_1.5〜3T", "1.5〜3T"), ("MRI_1.5T未満", "1.5T未満")]}
+
+
+def reiwa(year: int) -> str:
+    return f"令和{year - 2018}年度"
+
+
+def _num(v):
+    try:
+        return None if v is None else int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _occupancy(r) -> float | None:
+    """病床稼働率（%）＝在棟延べ数 ÷（許可病床数 × 365）× 100。病床機能報告の定義どおりで、
+    在棟延べ数は報告年度の前年度1年間の実績、許可病床数は7月1日時点（期間が違うことを注記する）。
+    100%を超える値も補正しない（Streamlit版と同じ方針）。"""
+    beds, days = _num(r["合計_許可病床数"]), _num(r["合計_在棟延べ数"])
+    if not beds or not days:
+        return None
+    return round(days / (beds * 365) * 100, 1)
+
+
+def _byosho_ctx(con, code: str | None) -> dict | None:
+    if not code:
+        return None
+    code = str(code).zfill(10)
+    rows = con.execute("SELECT * FROM byosho_hosp WHERE code = ? ORDER BY year", (code,)).fetchall()
+    if not rows:
+        return None
+    r = rows[-1]
+    total = _num(r["合計_許可病床数"]) or 0
+    funcs = [{"name": n, "color": c, "beds": _num(r[f"{n}_許可病床数"]) or 0} for n, c in BED_FUNCS]
+    for x in funcs:
+        x["pct"] = round(x["beds"] / total * 100, 1) if total else 0
+    equipment = []
+    for col, label in EQUIPMENT:
+        n = _num(r[col])
+        if n:
+            detail = [f"{lab} {_num(r[c])}台" for c, lab in EQUIP_DETAIL.get(col, []) if _num(r[c])]
+            equipment.append({"label": label, "n": n, "detail": "・".join(detail)})
+    wards_raw = con.execute(
+        """SELECT 機能区分 AS func, 入院基本料 AS fee, 許可病床数 AS beds FROM byosho_ward
+           WHERE code = ? AND year = ? ORDER BY
+             CASE 機能区分 WHEN '高度急性期' THEN 0 WHEN '急性期' THEN 1 WHEN '回復期' THEN 2 WHEN '慢性期' THEN 3 ELSE 4 END,
+             許可病床数 DESC""",
+        (code, r["year"]),
+    ).fetchall()
+    # 病床機能報告は病院の自己申告で、半角カナ（ﾊｲｹｱﾕﾆｯﾄ）などが混じるので表示用にそろえる
+    wards = [{"func": w["func"], "fee": unicodedata.normalize("NFKC", w["fee"]) if w["fee"] else w["fee"], "beds": w["beds"]}
+             for w in wards_raw]
+    trend = [{
+        "year": x["year"], "label": reiwa(x["year"]),
+        "beds": [_num(x[f"{n}_許可病床数"]) or 0 for n, _ in BED_FUNCS], "total": _num(x["合計_許可病床数"]) or 0,
+        "occ": _occupancy(x), "doctors": _num(x["常勤医師数"]), "nurses": _num(x["常勤看護師数"]),
+        "ambulance": _num(x["救急搬送件数"]),
+    } for x in rows]
+    return {
+        "year": r["year"], "label": reiwa(r["year"]), "name": r["name"], "total": total, "funcs": funcs,
+        "occ": _occupancy(r), "doctors": _num(r["常勤医師数"]), "nurses": _num(r["常勤看護師数"]),
+        "ambulance": _num(r["救急搬送件数"]), "equipment": equipment, "wards": wards, "trend": trend,
+        "years": f"{reiwa(rows[0]['year'])}〜{reiwa(r['year'])}" if len(rows) > 1 else reiwa(r["year"]),
+        "staff": [(lab, _num(r[c])) for c, lab in [("常勤理学療法士数", "理学療法士"), ("常勤作業療法士数", "作業療法士"),
+                                                 ("常勤言語聴覚士数", "言語聴覚士"), ("常勤薬剤師数", "薬剤師")] if _num(r[c])],
+    }
 
 
 # ── 施設基準ページ ───────────────────────────────────────────

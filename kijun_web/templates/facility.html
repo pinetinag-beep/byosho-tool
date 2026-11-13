@@ -12,14 +12,66 @@
   <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
 </div>
 
-<div class="result-head">
-  {% if f.byosho_name %}
-  <a class="btn" href="{{ streamlit_url(f.byosho_name) }}" rel="noopener">病床機能報告・DPCで詳しく見る →</a>
-  {% else %}<span></span>{% endif %}
-  <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>
+{% if byosho %}{% set b = byosho %}
+<h2>病床・人員・設備（病床機能報告）</h2>
+<p class="muted small">{{ b.label }}（{{ b.year }}年7月1日時点）の病床機能報告による。{% if b.name != f.name %}病床機能報告での名称：{{ b.name }}{% endif %}</p>
+<div class="facts">
+  <div class="fact"><div class="k">許可病床数</div><div class="v">{{ "{:,}".format(b.total) }} <small>床</small></div></div>
+  <div class="fact"><div class="k">病床稼働率 ※</div><div class="v">{% if b.occ is not none %}{{ b.occ }} <small>%</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">常勤医師数</div><div class="v">{% if b.doctors is not none %}{{ "{:,}".format(b.doctors) }} <small>人</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">常勤看護師数</div><div class="v">{% if b.nurses is not none %}{{ "{:,}".format(b.nurses) }} <small>人</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">救急車の受入件数（年間）</div><div class="v">{% if b.ambulance is not none %}{{ "{:,}".format(b.ambulance) }} <small>件</small>{% else %}—{% endif %}</div></div>
 </div>
 
-<h2>施設基準の届出一覧</h2>
+{% if b.total %}
+<h3>病床機能の内訳</h3>
+<div class="bedbar" role="img" aria-label="{% for x in b.funcs %}{{ x.name }} {{ x.beds }}床{% if not loop.last %}、{% endif %}{% endfor %}">
+  {% for x in b.funcs if x.beds %}<span style="width:{{ x.pct }}%;background:{{ x.color }}" title="{{ x.name }} {{ x.beds }}床（{{ x.pct }}%）"></span>{% endfor %}
+</div>
+<ul class="bedlegend">
+  {% for x in b.funcs %}<li class="{% if not x.beds %}zero{% endif %}"><i style="background:{{ x.color }}"></i>{{ x.name }} <b>{{ "{:,}".format(x.beds) }}</b>床<span class="muted">（{{ x.pct }}%）</span></li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if b.wards %}
+<details class="wardlist">
+  <summary>病棟ごとの機能区分と入院基本料（{{ b.wards|length }}病棟）</summary>
+  <div class="table-wrap"><table>
+    <thead><tr><th>機能区分</th><th>入院基本料・特定入院料</th><th class="num">許可病床数</th></tr></thead>
+    <tbody>{% for w in b.wards %}<tr><td class="nowrap">{{ w.func or '—' }}</td><td>{{ w.fee or '—' }}</td><td class="num">{{ w.beds if w.beds is not none else '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+
+{% if b.equipment or b.staff %}
+<h3>主な医療設備・医療職</h3>
+<ul class="equip">
+  {% for e in b.equipment %}<li><span>{{ e.label }}</span><b>{{ e.n }}台</b>{% if e.detail %}<small>{{ e.detail }}</small>{% endif %}</li>{% endfor %}
+  {% for lab, n in b.staff %}<li><span>常勤{{ lab }}</span><b>{{ "{:,}".format(n) }}人</b></li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if b.trend|length > 1 %}
+<h3>年度ごとの推移</h3>
+<div class="table-wrap"><table class="trend">
+  <thead><tr><th>報告年度</th><th class="num">許可病床数</th><th>病床機能の内訳</th><th class="num">病床稼働率 ※</th><th class="num">常勤医師</th><th class="num">常勤看護師</th><th class="num">救急車受入</th></tr></thead>
+  <tbody>{% for t in b.trend %}<tr>
+    <td class="nowrap">{{ t.label }}</td><td class="num">{{ "{:,}".format(t.total) }}</td>
+    <td class="small">{% for n, _ in [('高度急性期',0),('急性期',0),('回復期',0),('慢性期',0)] %}{% if t.beds[loop.index0] %}{{ n }} {{ t.beds[loop.index0] }}{% if not loop.last %}　{% endif %}{% endif %}{% endfor %}</td>
+    <td class="num">{{ t.occ if t.occ is not none else '—' }}{% if t.occ is not none %}%{% endif %}</td>
+    <td class="num">{{ t.doctors if t.doctors is not none else '—' }}</td><td class="num">{{ t.nurses if t.nurses is not none else '—' }}</td>
+    <td class="num">{{ "{:,}".format(t.ambulance) if t.ambulance is not none else '—' }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<p class="note small">※ 病床稼働率＝在棟患者延べ数 ÷（許可病床数 × 365日）。病床機能報告の定義によります。許可病床数は各年度の7月1日時点、在棟患者延べ数はその前年度1年間の実績のため、期間が1年ずれています。医師・看護師数は常勤の人数です。</p>
+<p class="source">出典：厚生労働省「病床機能報告」（{{ b.years }}）を加工して作成</p>
+{% endif %}
+
+<div class="result-head">
+  <h2 style="margin:0">施設基準の届出一覧</h2>
+  <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>
+</div>
 <div class="table-wrap">
 <table>
   <thead><tr><th>施設基準（受理届出名称）</th><th>区分・内訳</th><th>病棟・病床</th><th>算定開始日</th><th>受理番号</th></tr></thead>
