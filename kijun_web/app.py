@@ -47,7 +47,7 @@ CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()     # プライバ�
 GA_MEASUREMENT_ID = os.environ.get("GA_MEASUREMENT_ID", "G-8Y6SDBSCMQ").strip()
 OPERATOR_NAME = "MedilenZ運営事務局"                              # 運営者情報に載せる名前（ユーザー判断、2026年11月）
 # お問い合わせはGoogleフォームで受ける（メールアドレスをページに出さないため）。URLが決まったらここに入れる
-CONTACT_FORM_URL = os.environ.get("CONTACT_FORM_URL", "").strip()
+CONTACT_FORM_URL = os.environ.get("CONTACT_FORM_URL", "https://forms.gle/3ZzbjR1PvCZbqFZi6").strip()
 AD_PREVIEW = os.environ.get("AD_PREVIEW", "") == "1"             # 見た目の確認用: 広告枠の位置にダミーの枠を出す
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)

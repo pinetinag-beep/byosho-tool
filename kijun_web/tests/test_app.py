@@ -283,3 +283,8 @@ def test_kubun_sorted_by_nursing_standard():
         "急性期病院Ａ一般入院料", "急性期一般入院料１", "急性期一般入院料６", "地域一般入院料１", "特別入院基本料"]
     ratio = ["１５対１入院基本料", "７対１入院基本料", "１０対１入院基本料"]
     assert sorted(ratio, key=lambda n: k("障害者施設等入院基本料", n)) == ["７対１入院基本料", "１０対１入院基本料", "１５対１入院基本料"]
+
+
+def test_contact_form_linked():
+    html = client.get("/contact").text
+    assert "https://forms.gle/3ZzbjR1PvCZbqFZi6" in html and "準備中" not in html
