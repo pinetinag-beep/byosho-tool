@@ -18,10 +18,7 @@
     {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
 </div>
 
-<details class="cm-edit" {% if total == 0 %}open{% endif %}>
-  <summary>検索条件を変更する</summary>
-  {% include "_search_form.html" %}
-</details>
+<p class="cm-edit"><a class="btn secondary" href="/?{{ cond.query() }}">検索条件を変更する</a></p>
 
 {% if matched_kubun %}
 <div class="callout small">

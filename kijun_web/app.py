@@ -138,7 +138,8 @@ def render(request: Request, template: str, status_code: int = 200, **ctx) -> HT
 class Cond:
     """検索条件。フォームの複数選択（二次医療圏・市区町村・施設の種類・届出項目）は同じ名前の
     パラメータを繰り返す（?area=中央&area=安芸）。"""
-    pref: str = ""
+    pref: str = ""             # 都道府県が1つだけの時のコード（二次医療圏・市区町村はこの時だけ使える）
+    prefs: list[str] = field(default_factory=list)   # 選んだ都道府県（複数可）
     areas: list[str] = field(default_factory=list)
     cities: list[str] = field(default_factory=list)
     ftypes: list[str] = field(default_factory=list)
@@ -149,13 +150,21 @@ class Cond:
     k: str = ""                # 施設基準名称の一部（施設基準ページの「条件を足して検索」など、従来のリンク用）
     kx: str = ""               # 施設基準名称の完全一致（施設基準ページのCSVリンク用）
 
+    def __post_init__(self):
+        if self.pref and not self.prefs:
+            self.prefs = [self.pref]
+        self.prefs = list(dict.fromkeys(p for p in self.prefs if p))
+        self.pref = self.prefs[0] if len(self.prefs) == 1 else ""
+        if not self.pref:
+            self.areas, self.cities = [], []
+
     @classmethod
     def from_request(cls, request: Request) -> "Cond":
         qp = request.query_params
         items = [int(v) for v in qp.getlist("item") if v.isdigit()]
         kubuns = [int(v) for v in qp.getlist("kb") if v.isdigit()]
         return cls(
-            pref=qp.get("pref", "").strip(),
+            prefs=[v.strip() for v in qp.getlist("pref") if v.strip()],
             areas=[v for v in qp.getlist("area") if v],
             cities=[v for v in qp.getlist("city") if v],
             ftypes=[v for v in qp.getlist("ftype") if v in FTYPES],
@@ -168,7 +177,7 @@ class Cond:
         )
 
     def query(self, **extra) -> str:
-        pairs = [("pref", self.pref)] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
+        pairs = [("pref", p) for p in self.prefs] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
         pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
         pairs += [("kb", i) for i in self.kubuns]
         if self.n_selected > 1 and self.mode == "or":
@@ -187,7 +196,7 @@ class Cond:
 
     @property
     def empty(self) -> bool:
-        return not (self.pref or self.ftypes or self.q or self.items or self.kubuns or self.k or self.kx)
+        return not (self.prefs or self.ftypes or self.q or self.items or self.kubuns or self.k or self.kx)
 
 
 def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
@@ -205,9 +214,10 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
     if k and not kx and con.execute("SELECT 1 FROM kijun WHERE name = ?", (k,)).fetchone():
         kx = k
     where, params = [], []
+    if c.prefs:
+        where.append(f"f.pref_code IN ({','.join('?' * len(c.prefs))})")
+        params += c.prefs
     if c.pref:
-        where.append("f.pref_code = ?")
-        params.append(c.pref)
         if c.areas:
             where.append(f"f.area IN ({','.join('?' * len(c.areas))})")
             params += c.areas
@@ -353,15 +363,35 @@ def _examples(con) -> list[dict]:
     return out
 
 
+REGIONS = [("北海道・東北", 1, 7), ("関東", 8, 14), ("中部", 15, 23), ("近畿", 24, 30),
+           ("中国", 31, 35), ("四国", 36, 39), ("九州・沖縄", 40, 47)]
+
+
+def _cond_table_ctx(con) -> dict:
+    """トップの条件表（都道府県・届出項目をチェックボックスで並べる）に要るもの。サーバー側で
+    全部描くので、JavaScript が無くても選んで検索できる。"""
+    prefs = _prefs(con)
+    regions = [(name, [p for p in prefs if lo <= int(p["code"]) <= hi]) for name, lo, hi in REGIONS]
+    rows = con.execute(
+        """SELECT i.id, i.symbol, i.section, kj.name AS kijun, i.n_facilities
+           FROM items i JOIN kijun kj ON kj.id = i.kijun_id ORDER BY i.id"""
+    ).fetchall()
+    sections: dict[str, list] = {}
+    for r in rows:
+        sections.setdefault(r["section"], []).append(r)
+    kubuns = [r for r in _kubun_rows(con) if r["n_facilities"]]
+    return {"regions": regions, "sections": list(sections.items()), "kubun_rows": kubuns, "ftypes": FTYPES}
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    cond = Cond.from_request(request)   # 検索結果の「条件を変更する」から来た時は、選んだ条件を入れた状態で開く
     with db() as con:
-        ctx = _form_ctx(con)
+        ctx = _cond_table_ctx(con)
         examples = _examples(con)
-        kijun_names = [r["name"] for r in con.execute("SELECT name FROM kijun ORDER BY n_facilities DESC")]
         type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
-    return render(request, "index.html", cond=Cond(), examples=examples, kijun_names=kijun_names,
-                  type_counts=type_counts, **ctx)
+    return render(request, "index.html", cond=cond, examples=examples, type_counts=type_counts,
+                  sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
 
 
 @app.get("/facilities/suggest.json")
@@ -498,8 +528,8 @@ def search(request: Request, page: int = Query(1, ge=1)):
                        WHERE b.search LIKE ? ORDER BY b.n_facilities DESC""",
                     [f"%{search_key(c.k)}%"],
                 ).fetchall()
-        ctx = _form_ctx(con)
-    pref_name = next((p["name"] for p in ctx["prefs"] if p["code"] == c.pref), "")
+        ctx = {"prefs": _prefs(con)}
+    pref_name = "・".join(p["name"] for p in ctx["prefs"] if p["code"] in c.prefs)
     return render(
         request, "search.html",
         rows=rows, hits=hits, sel_cols=sel_cols, marks=marks, total=total, page=page, pages=pages,
@@ -507,9 +537,9 @@ def search(request: Request, page: int = Query(1, ge=1)):
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
         page_url=lambda p: "/search?" + c.query(page=p),
-        narrow_url=lambda name: "/search?" + Cond(pref=c.pref, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
+        narrow_url=lambda name: "/search?" + Cond(prefs=c.prefs, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
                                                   q=c.q, k=name).query(),
-        kubun_url=lambda kid: "/search?" + Cond(pref=c.pref, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
+        kubun_url=lambda kid: "/search?" + Cond(prefs=c.prefs, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
                                                 q=c.q, kubuns=[kid]).query(),
         **ctx,
     )

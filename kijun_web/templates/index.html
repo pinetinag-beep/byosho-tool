@@ -1,69 +1,104 @@
 {% extends "base.html" %}
-{% block title %}施設基準届出 検索 — 全国の病院・診療所を無料で検索・CSVダウンロード{% endblock %}
+{% block title %}施設基準届出データベース — 全国の病院・診療所を条件で抽出・CSVダウンロード{% endblock %}
 {% block canonical %}/{% endblock %}
 {% block content %}
-<section class="top-hero">
-  <p class="eyebrow">MedilenZ 施設基準検索</p>
-  <h1>全国{{ "{:,}".format(meta.n_facilities|int // 10000) }}万の医療機関が届け出ている<br class="pc-only">施設基準を、無料で検索・CSVダウンロード</h1>
-  <p class="top-lead">地方厚生局が公表する「施設基準の届出受理状況」を、全国47都道府県分まとめて毎月更新しています。
-    営業先のリストづくり、訪問前の下調べ、地域ごとの比較にお使いください。登録は不要です。</p>
-  <ul class="top-stats">
-    <li><b>{{ "{:,}".format(meta.n_facilities|int) }}</b><span>医療機関</span></li>
-    <li><b>{{ "{:,}".format(meta.n_filings|int) }}</b><span>届出</span></li>
-    <li><b>{{ "{:,}".format(meta.n_kijun|int) }}</b><span>種類の施設基準</span></li>
-    <li><b>{{ meta.as_of_max_label }}</b><span>までの公表分</span></li>
+<section class="db-head">
+  <h1>施設基準届出データベース</h1>
+  <ul class="db-notes">
+    <li>出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」（{{ meta.as_of_max_label }}までの公表分）。
+      医療機関 {{ "{:,}".format(meta.n_facilities|int) }} 件・届出 {{ "{:,}".format(meta.n_filings|int) }} 件</li>
+    <li>地域・施設の種類・届出項目を指定して医療機関のリストを抽出し、CSVでダウンロードできます（無料・登録不要。複数選択可）。</li>
+    <li>何も指定しない場合は、すべての医療機関が表示されます。</li>
   </ul>
 </section>
 
-<section class="task" id="task">
-  <div class="task-tabs" role="tablist">
-    <button type="button" role="tab" id="t-list" aria-controls="p-list" aria-selected="true">
-      <b>条件でリストを作る</b><small>施設基準 × 地域 で医療機関を抽出</small></button>
-    <button type="button" role="tab" id="t-fac" aria-controls="p-fac" aria-selected="false">
-      <b>医療機関を調べる</b><small>名前から届出の一覧を見る</small></button>
-    <button type="button" role="tab" id="t-area" aria-controls="p-area" aria-selected="false">
-      <b>地域で比べる</b><small>施設基準ごとの都道府県別の数</small></button>
+<form class="ct-form" id="ct" action="/search" method="get" autocomplete="off">
+  <div class="ct-actions">
+    <button type="submit" class="btn ct-go">リストを抽出する</button>
+    <a class="btn secondary ct-clear" href="/">条件をクリア</a>
   </div>
 
-  <div class="task-panel" role="tabpanel" id="p-list" aria-labelledby="t-list">
-    <p class="task-q">どの施設基準を届け出ている医療機関を探しますか？</p>
-    {% set hide_q = true %}{% set hide_label = true %}
-    {% include "_search_form.html" %}
-  </div>
-
-  <div class="task-panel" role="tabpanel" id="p-fac" aria-labelledby="t-fac" hidden>
-    <p class="task-q">調べたい医療機関の名前を入力してください。</p>
-    <form class="fac-form" action="/search" method="get" autocomplete="off">
-      <div class="fac-row">
-        <select name="pref" id="fac-pref" aria-label="都道府県">
-          <option value="">全国</option>
-          {% for p in prefs %}<option value="{{ p.code }}">{{ p.name }}</option>{% endfor %}
-        </select>
-        <div class="fac-box">
-          <input type="search" name="q" id="fac-q" placeholder="病院・診療所の名前の一部（例：近森、聖路加）" role="combobox"
-                 aria-expanded="false" aria-controls="fac-sug">
-          <ul class="sx-suggest" id="fac-sug" role="listbox" hidden></ul>
+  <table class="ct">
+    <tr>
+      <th scope="row">都道府県</th>
+      <td>
+        <label class="ct-all"><input type="checkbox" id="pref-all">すべて選択／すべて解除</label>
+        {% for name, ps in regions %}
+        <div class="ct-region">
+          <span class="ct-rname">{{ name }}</span>
+          <div class="ct-checks">
+            {% for p in ps %}<label><input type="checkbox" name="pref" value="{{ p.code }}" {% if p.code in cond.prefs %}checked{% endif %}>{{ p.name }}</label>{% endfor %}
+          </div>
         </div>
-        <button type="submit" class="btn">検索する</button>
-      </div>
-    </form>
-    <p class="hint">候補を選ぶと、その医療機関が届け出ている施設基準の一覧（区分・算定開始日つき）が開きます。住所の一部でも探せます。</p>
+        {% endfor %}
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">二次医療圏</th>
+      <td><p class="ct-wait" id="area-wait">※都道府県を1つだけ選ぶと選択肢が表示されます。</p><div class="ct-checks" id="area-box"></div></td>
+    </tr>
+    <tr>
+      <th scope="row">市区町村</th>
+      <td><p class="ct-wait" id="city-wait">※二次医療圏を1つだけ選ぶと選択肢が表示されます。</p><div class="ct-checks" id="city-box"></div></td>
+    </tr>
+    <tr>
+      <th scope="row">施設の種類</th>
+      <td><div class="ct-checks">
+        {% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t in cond.ftypes %}checked{% endif %}>{{ t }}<small>{{ "{:,}".format(type_counts.get(t, 0)) }}</small></label>{% endfor %}
+      </div></td>
+    </tr>
+    <tr>
+      <th scope="row"><label for="ct-q">医療機関名・住所</label></th>
+      <td>
+        <div class="ct-name">
+          <input type="search" name="q" id="ct-q" value="{{ cond.q }}" placeholder="名前や住所の一部（例：近森、高知市）" role="combobox" aria-expanded="false" aria-controls="ct-sug">
+          <ul class="sx-suggest" id="ct-sug" role="listbox" hidden></ul>
+        </div>
+        <p class="ct-hint">名前を入れると候補が出ます。候補を選ぶとその医療機関の届出一覧が開きます。</p>
+      </td>
+    </tr>
+  </table>
+
+  <h2 class="ct-h">届出項目</h2>
+  <ul class="db-notes">
+    <li>地方厚生局への届出項目（受理記号）を指定して絞り込めます（複数選択可）。記号にカーソルを当てると正式名称が出ます。</li>
+    <li>何も指定しない場合は、届出項目で絞り込みません。<a href="/kijun">正式名称の一覧はこちら</a></li>
+  </ul>
+  <div class="ct-tools">
+    <input type="search" id="ct-filter" placeholder="記号・正式名称で絞り込む（例：地域包括、がん）">
+    <label class="ct-toggle"><input type="checkbox" id="ct-full">正式名称で表示</label>
+    <span class="ct-mode">選んだ項目の
+      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべてを届け出ている</label>
+      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
+    </span>
   </div>
 
-  <div class="task-panel" role="tabpanel" id="p-area" aria-labelledby="t-area" hidden>
-    <p class="task-q">どの施設基準の広がりを比べますか？</p>
-    <form class="fac-form" id="area-form" autocomplete="off">
-      <div class="fac-row">
-        <div class="fac-box">
-          <input type="search" id="area-q" list="kijun-list" placeholder="施設基準の名前の一部（例：地域包括ケア病棟入院料）">
-          <datalist id="kijun-list">{% for n in kijun_names %}<option value="{{ n }}">{% endfor %}</datalist>
-        </div>
-        <button type="submit" class="btn">都道府県別に見る</button>
+  <table class="ct ct-items" id="ct-items">
+    {% for sec, items in sections %}
+    <tr data-sec>
+      <th scope="row">{{ sec }}<small>{{ items|length }}項目</small></th>
+      <td><div class="ct-grid">
+        {% for it in items %}<label title="{{ it.kijun }}（{{ "{:,}".format(it.n_facilities) }}施設）" data-k="{{ (it.symbol ~ ' ' ~ it.kijun)|lower }}"><input type="checkbox" name="item" value="{{ it.id }}" {% if it.id in sel_items %}checked{% endif %}><span class="s">{{ it.symbol or it.kijun }}</span><span class="f">{{ it.kijun }}</span></label>{% endfor %}
+      </div></td>
+    </tr>
+    {% if loop.first and kubun_rows %}
+    <tr data-sec>
+      <th scope="row">入院基本料の区分<small>急性期一般入院料１など</small></th>
+      <td><div class="ct-grid ct-grid-wide">
+        {% for b in kubun_rows %}<label title="{{ b.kijun }}の区分（{{ "{:,}".format(b.n_facilities) }}施設）" data-k="{{ (b.name ~ ' ' ~ b.kijun)|lower }}"><input type="checkbox" name="kb" value="{{ b.id }}" {% if b.id in sel_kubuns %}checked{% endif %}><span class="s">{{ b.name }}</span><span class="f">{{ b.name }}（{{ b.kijun }}）</span></label>{% endfor %}
       </div>
-    </form>
-    <p class="hint">候補から選ぶと、都道府県ごとの届出医療機関数と、病院・診療所の内訳、区分の内訳が見られます。都道府県を押すと医療機関の一覧になります。</p>
+      <p class="ct-hint">区分が公表されていない届出（北海道など）は、病床機能報告の病棟の入院基本料から補った参考値も含みます。</p></td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+
+  {% if cond.k %}<p class="ct-hint">施設基準名「{{ cond.k }}」の条件も引き続き使います。<label><input type="checkbox" name="k" value="{{ cond.k }}" checked> この条件を使う</label></p>{% endif %}
+  <div class="ct-bar" id="ct-bar">
+    <span class="ct-count" id="ct-count">条件の指定なし（すべての医療機関）</span>
+    <button type="submit" class="btn">リストを抽出する</button>
   </div>
-</section>
+</form>
 
 {% if examples %}
 <h2>こんな探し方ができます</h2>
@@ -75,97 +110,117 @@
 </ul>
 {% endif %}
 
-<h2>使い方の例</h2>
-<div class="uses">
-  <div class="use">
-    <p class="use-who">製薬・医療機器の営業</p>
-    <p>担当エリアで、自社製品に関わる施設基準（化学療法・リハビリ・在宅など）を届け出ている医療機関をリストにして、CSVで持ち出せます。</p>
-  </div>
-  <div class="use">
-    <p class="use-who">医療・介護の人材紹介</p>
-    <p>入院基本料の区分や病棟の種類から、病院の規模や機能のあたりをつけて、求職者への提案先を絞り込めます。</p>
-  </div>
-  <div class="use">
-    <p class="use-who">医療経営コンサル・医事</p>
-    <p>近くの医療機関が届け出ている施設基準を一覧で比べ、自院がまだ届け出ていない項目を洗い出せます。</p>
-  </div>
-</div>
-
-<h2>データについて</h2>
-<div class="table-wrap">
-<table class="data-about">
-  <tr><th>出典</th><td>各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」</td></tr>
-  <tr><th>収録</th><td>全国47都道府県の医科の保険医療機関
-    （病院 {{ "{:,}".format(type_counts.get('病院', 0)) }}・有床診療所 {{ "{:,}".format(type_counts.get('有床診療所', 0)) }}・無床診療所 {{ "{:,}".format(type_counts.get('無床診療所', 0)) }}）</td></tr>
-  <tr><th>時点</th><td>{{ meta.as_of_max_label }}までの公表分（厚生局により月の初めの時点が1〜2か月ずれます）</td></tr>
-  <tr><th>更新</th><td>毎月（厚生局の公表にあわせて）</td></tr>
-  <tr><th>料金</th><td>無料・登録不要（検索結果はCSVでダウンロードできます）</td></tr>
-</table>
-</div>
-<p class="small"><a href="/about">データの詳しい説明と利用条件 →</a></p>
-
-<h2>都道府県から探す</h2>
+<h2>都道府県別のページ</h2>
 <ul class="pref-grid">
-  {% for p in prefs %}<li><a href="/pref/{{ p.name }}">{{ p.name }}</a></li>{% endfor %}
+  {% for name, ps in regions %}{% for p in ps %}<li><a href="/pref/{{ p.name }}">{{ p.name }}</a></li>{% endfor %}{% endfor %}
 </ul>
+<p class="small"><a href="/about">データの詳しい説明と利用条件 →</a></p>
 {% include "_ad.html" %}
 
 <script>
 (() => {
-  // タブ（URLの #fac / #area でも開ける）
-  const tabs = [...document.querySelectorAll(".task-tabs [role=tab]")];
-  function show(tab, focus) {
-    for (const t of tabs) {
-      const on = t === tab;
-      t.setAttribute("aria-selected", String(on));
-      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
-    }
-    if (focus) document.querySelector(`#${tab.getAttribute("aria-controls")} input[type=search]`)?.focus();
-  }
-  tabs.forEach((t) => t.addEventListener("click", () => { show(t, true); history.replaceState(null, "", "#" + t.id.slice(2)); }));
-  const h = location.hash.slice(1);
-  const init = tabs.find((t) => t.id === "t-" + h);
-  if (init) show(init, false);
-
-  // 医療機関名の入力候補
+  const form = document.getElementById("ct");
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-  const q = document.getElementById("fac-q"), sug = document.getElementById("fac-sug"), pref = document.getElementById("fac-pref");
-  let timer, cand = [], active = -1;
+  const prefBoxes = [...form.querySelectorAll('input[name=pref]')];
+  const initAreas = {{ cond.areas|tojson }}, initCities = {{ cond.cities|tojson }};
+
+  // ── 都道府県 → 二次医療圏 → 市区町村（1つだけ選んだ時に次の選択肢を出す）──
+  const areaBox = document.getElementById("area-box"), cityBox = document.getElementById("city-box");
+  const areaWait = document.getElementById("area-wait"), cityWait = document.getElementById("city-wait");
+  let areaData = [], loadedPref = "";
+  const checks = (name, list, sel) => list.map((x) =>
+    `<label><input type="checkbox" name="${name}" value="${esc(x.name)}" ${sel.includes(x.name) ? "checked" : ""}>${esc(x.name)}<small>${x.n.toLocaleString()}</small></label>`).join("");
+  function renderCities(sel) {
+    const a = [...areaBox.querySelectorAll("input:checked")].map((i) => i.value);
+    const one = a.length === 1 ? areaData.find((x) => x.name === a[0]) : null;
+    cityBox.innerHTML = one ? checks("city", one.cities, sel || []) : "";
+    cityWait.hidden = !!one;
+  }
+  async function renderAreas(first) {
+    const p = prefBoxes.filter((b) => b.checked).map((b) => b.value);
+    if (p.length !== 1) { areaData = []; loadedPref = ""; areaBox.innerHTML = ""; areaWait.hidden = false; renderCities(); return; }
+    if (loadedPref !== p[0]) {
+      const res = await fetch(`/areas/${encodeURIComponent(p[0])}.json`);
+      areaData = res.ok ? await res.json() : [];
+      loadedPref = p[0];
+    }
+    areaBox.innerHTML = checks("area", areaData, first ? initAreas : []);
+    areaWait.hidden = true;
+    renderCities(first ? initCities : []);
+  }
+  prefBoxes.forEach((b) => b.addEventListener("change", () => { renderAreas(false); count(); }));
+  areaBox.addEventListener("change", () => { renderCities(); count(); });
+  cityBox.addEventListener("change", count);
+  document.getElementById("pref-all").addEventListener("change", (e) => {
+    prefBoxes.forEach((b) => { b.checked = e.target.checked; });
+    renderAreas(false); count();
+  });
+
+  // ── 届出項目：絞り込み・正式名称の表示切替 ──
+  const table = document.getElementById("ct-items");
+  const labels = [...table.querySelectorAll(".ct-grid label")];
+  const norm = (s) => s.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+  const keys = labels.map((l) => norm(l.dataset.k));
+  document.getElementById("ct-filter").addEventListener("input", (e) => {
+    const t = norm(e.target.value);
+    labels.forEach((l, i) => { l.hidden = !!t && !keys[i].includes(t) && !l.querySelector("input").checked; });
+    table.querySelectorAll("tr[data-sec]").forEach((tr) => { tr.hidden = !!t && !tr.querySelector(".ct-grid label:not([hidden])"); });
+  });
+  document.getElementById("ct-full").addEventListener("change", (e) => table.classList.toggle("full", e.target.checked));
+
+  // ── 選んだ条件の件数を下のバーに出す ──
+  const bar = document.getElementById("ct-count");
+  function count() {
+    const n = (sel) => form.querySelectorAll(sel + ":checked").length;
+    const parts = [];
+    if (n("input[name=pref]")) parts.push(`都道府県 ${n("input[name=pref]")}`);
+    if (n("input[name=area]")) parts.push(`二次医療圏 ${n("input[name=area]")}`);
+    if (n("input[name=city]")) parts.push(`市区町村 ${n("input[name=city]")}`);
+    if (n("input[name=ftype]")) parts.push(`施設の種類 ${n("input[name=ftype]")}`);
+    const items = n("input[name=item]") + n("input[name=kb]");
+    if (items) parts.push(`届出項目 ${items}`);
+    if (document.getElementById("ct-q").value.trim()) parts.push("名前・住所");
+    bar.textContent = parts.length ? "選択中：" + parts.join("・") : "条件の指定なし（すべての医療機関）";
+  }
+  table.addEventListener("change", count);
+  form.querySelectorAll("input[name=ftype]").forEach((b) => b.addEventListener("change", count));
+
+  // ── 医療機関名の入力候補 ──
+  const q = document.getElementById("ct-q"), sug = document.getElementById("ct-sug");
+  let timer, active = -1;
   async function load() {
     const v = q.value.trim();
     if (v.length < 2) { sug.hidden = true; return; }
-    const res = await fetch(`/facilities/suggest.json?q=${encodeURIComponent(v)}&pref=${encodeURIComponent(pref.value)}`);
-    cand = res.ok ? await res.json() : [];
+    const p = prefBoxes.filter((b) => b.checked).map((b) => b.value);
+    const res = await fetch(`/facilities/suggest.json?q=${encodeURIComponent(v)}&pref=${p.length === 1 ? p[0] : ""}`);
+    const cand = res.ok ? await res.json() : [];
     active = -1;
     sug.innerHTML = cand.length
       ? cand.map((r) => `<li role="option"><a href="${r.url}"><span class="nm">${esc(r.name)}<small>${esc(r.where)}</small></span>
           <span class="sy">${esc(r.ftype)}</span><span class="ct">届出 ${r.n.toLocaleString()}</span></a></li>`).join("")
-      : `<li class="none">「${esc(v)}」に当てはまる医療機関は見つかりません。検索ボタンで住所からも探せます</li>`;
+      : `<li class="none">名前の候補はありません。「リストを抽出する」で住所からも探せます</li>`;
     sug.hidden = false;
     q.setAttribute("aria-expanded", "true");
   }
-  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 150); });
-  pref.addEventListener("change", load);
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 150); count(); });
   q.addEventListener("keydown", (e) => {
-    const lis = [...sug.querySelectorAll("li a")];
-    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && lis.length) {
+    const as = [...sug.querySelectorAll("li a")];
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && as.length && !sug.hidden) {
       e.preventDefault();
-      active = (active + (e.key === "ArrowDown" ? 1 : lis.length - 1)) % lis.length;
-      lis.forEach((a, i) => a.parentElement.classList.toggle("on", i === active));
-    } else if (e.key === "Enter" && active >= 0) {
-      e.preventDefault(); location.href = lis[active].href;
+      active = (active + (e.key === "ArrowDown" ? 1 : as.length - 1)) % as.length;
+      as.forEach((a, i) => a.parentElement.classList.toggle("on", i === active));
+    } else if (e.key === "Enter" && active >= 0 && !sug.hidden) {
+      e.preventDefault(); location.href = as[active].href;
     }
   });
   q.addEventListener("blur", () => setTimeout(() => { sug.hidden = true; q.setAttribute("aria-expanded", "false"); }, 150));
 
-  // 地域で比べる → 施設基準のページ（都道府県別の数）
-  const names = new Set([...document.querySelectorAll("#kijun-list option")].map((o) => o.value));
-  document.getElementById("area-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const v = document.getElementById("area-q").value.trim();
-    if (!v) return;
-    location.href = names.has(v) ? "/kijun/" + encodeURIComponent(v) : "/kijun?q=" + encodeURIComponent(v);
-  });
+  // 送信時、空の名前欄はURLに付けない
+  form.addEventListener("submit", () => { if (!q.value.trim()) q.disabled = true; });
+  window.addEventListener("pageshow", () => { q.disabled = false; });
+
+  renderAreas(true);
+  count();
 })();
 </script>
 {% endblock %}

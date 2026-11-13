@@ -230,3 +230,29 @@ def test_ad_slot_renders_when_configured():
         assert 'class="ad-slot"' in html and "ca-pub-0000000000000000" in html and "google-adsense-account" in html
     finally:
         g["adsense_client"], g["adsense_slot"] = old
+
+
+def _get(path: str) -> str:
+    return client.get(path).text
+
+
+
+
+def test_multiple_prefs():
+    """都道府県は複数選べる（高知＋徳島 = それぞれの合計）。2つ以上なら二次医療圏は無視する。"""
+    kochi = _count(_get("/search?pref=39"))
+    toku = _count(_get("/search?pref=36"))
+    both = _count(_get("/search?pref=39&pref=36"))
+    assert both == kochi + toku
+    assert _count(_get("/search?pref=39&pref=36&area=" + quote("中央"))) == both
+
+
+def test_top_condition_table_prefilled():
+    """トップは条件表。検索結果の「条件を変更する」から戻ると、選んだ条件が入っている。"""
+    r = client.get("/")
+    assert 'name="pref" value="39"' in r.text and 'name="item"' in r.text and 'name="kb"' in r.text
+    r = client.get("/?pref=39&ftype=" + quote("病院") + "&item=1")
+    assert re.search(r'name="pref" value="39" checked', r.text)
+    assert re.search(r'name="item" value="1" checked', r.text)
+    s = client.get("/search?pref=39&item=1")
+    assert 'href="/?pref=39&amp;item=1"' in s.text
