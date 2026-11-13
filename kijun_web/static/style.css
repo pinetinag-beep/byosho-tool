@@ -155,7 +155,7 @@ h2 { font-size: 1.15rem; font-weight: 700; margin: 36px 0 12px; padding-left: 10
 .results th.ic, .results td.ic { text-align: center; width: 1%; white-space: nowrap; padding-left: 8px; padding-right: 8px; }
 .results th.ic { cursor: help; }
 .results .ok { color: var(--brand); font-weight: 900; }
-.results td.addr { white-space: nowrap; }
+.results td.addr, td.addr { white-space: normal; min-width: 12em; }
 .sec-row th { background: var(--brand-soft); color: var(--brand-dark); font-size: 0.82rem; }
 .sym { color: var(--ink-faint); font-size: 0.75rem; margin-left: 4px; white-space: nowrap; }
 .btn {
@@ -227,7 +227,7 @@ td.nowrap { white-space: nowrap; }
   .sx-suggest .sy { display: none; }
   .pc-only { display: none; }
   .sp-only { display: inline; }
-  .results td.addr { white-space: normal; min-width: 6.5em; font-size: 0.8rem; }
+  .results td.addr, td.addr { min-width: 8em; font-size: 0.8rem; }
   /* 一覧表の住所は医療機関ページで見られるので、スマホでは区分の列を優先して隠す */
   .hide-sp { display: none; }
 }

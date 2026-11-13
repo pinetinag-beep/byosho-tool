@@ -73,7 +73,7 @@
         {% if hits.get(r.id) %}<ul class="hitlist">{% for h in hits[r.id][:5] %}<li>{{ h }}</li>{% endfor %}{% if hits[r.id]|length > 5 %}<li>ほか{{ hits[r.id]|length - 5 }}件</li>{% endif %}</ul>{% endif %}
       </td>
       <td class="pc-only"><span class="tag {% if r.ftype == '病院' %}hosp{% endif %}">{{ r.ftype }}</span></td>
-      <td class="addr"><span class="pc-only">{{ r.pref_name }} </span>{{ r.city or '' }}{% if r.area and r.area != '（二次医療圏不明）' %}<br><span class="muted small">{{ r.area }}医療圏</span>{% endif %}</td>
+      <td class="addr">{{ r.pref_name }}{{ r.address or '' }}{% if r.area and r.area != '（二次医療圏不明）' %}<br><span class="muted small">{{ r.area }}医療圏</span>{% endif %}</td>
       {% if sel_cols and item_cols %}{% for s in sel_cols %}{% set m = got.get(s.key) %}<td class="ic">{% if m == "ok" %}<span class="ok" title="{{ s.title }}">○</span>{% elif m %}<span class="ok ref" title="病床機能報告（{{ meta.kubun_ref_label }}）からの参考値{% if m == 'ref_likely_changed' %}。その後に届出が出し直されており、令和8年度改定で別の区分（急性期病院Ａ/Ｂ一般入院料など）に移った可能性が高い{% elif m == 'ref_changed' %}。その後に届出が出し直されており、区分が変わっている場合があります{% endif %}">○<span class="tag ref">参考</span>{% if m == 'ref_likely_changed' %}※※{% elif m == 'ref_changed' %}※{% endif %}</span>{% endif %}</td>{% endfor %}
       {% elif sel_cols %}<td class="small">{% for s in sel_cols if got.get(s.key) %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if got.get(s.key) != "ok" %}<span class="tag ref">参考</span>{% endif %}{% if not loop.last %}・{% endif %}{% endfor %}</td>
       {% else %}<td class="num">{{ r.n_kijun }}</td>{% endif %}
