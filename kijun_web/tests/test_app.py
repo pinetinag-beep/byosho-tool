@@ -273,3 +273,13 @@ def test_analytics_tag_only_on_production_domain():
     html = client.get("/").text
     assert "G-8Y6SDBSCMQ" in html and "medilenz" in html and "csv_download" in html
     assert "Google アナリティクス" in client.get("/privacy").text
+
+
+def test_kubun_sorted_by_nursing_standard():
+    """入院基本料の区分は、看護の基準が高い順（７対１→１０対１、急性期一般入院料１→６、特別入院基本料は最後）。"""
+    k = appmod.kubun_sort_key
+    ippan = ["特別入院基本料", "地域一般入院料１", "急性期一般入院料６", "急性期一般入院料１", "急性期病院Ａ一般入院料"]
+    assert sorted(ippan, key=lambda n: k("一般病棟入院基本料", n)) == [
+        "急性期病院Ａ一般入院料", "急性期一般入院料１", "急性期一般入院料６", "地域一般入院料１", "特別入院基本料"]
+    ratio = ["１５対１入院基本料", "７対１入院基本料", "１０対１入院基本料"]
+    assert sorted(ratio, key=lambda n: k("障害者施設等入院基本料", n)) == ["７対１入院基本料", "１０対１入院基本料", "１５対１入院基本料"]

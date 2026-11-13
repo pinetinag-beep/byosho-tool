@@ -81,13 +81,20 @@
         {% for it in items %}<label title="{{ it.kijun }}（{{ "{:,}".format(it.n_facilities) }}施設）" data-k="{{ (it.symbol ~ ' ' ~ it.kijun)|lower }}"><input type="checkbox" name="item" value="{{ it.id }}" {% if it.id in sel_items %}checked{% endif %}><span class="s">{{ it.symbol or it.kijun }}</span><span class="f">{{ it.kijun }}</span></label>{% endfor %}
       </div></td>
     </tr>
-    {% if loop.first and kubun_rows %}
+    {% if loop.first and kubun_groups %}
     <tr data-sec>
-      <th scope="row">入院基本料の区分<small>急性期一般入院料１など</small></th>
-      <td><div class="ct-grid ct-grid-wide">
-        {% for b in kubun_rows %}<label title="{{ b.kijun }}の区分（{{ "{:,}".format(b.n_facilities) }}施設）" data-k="{{ (b.name ~ ' ' ~ b.kijun)|lower }}"><input type="checkbox" name="kb" value="{{ b.id }}" {% if b.id in sel_kubuns %}checked{% endif %}><span class="s">{{ b.name }}</span><span class="f">{{ b.name }}（{{ b.kijun }}）</span></label>{% endfor %}
-      </div>
-      <p class="ct-hint">区分が公表されていない届出（北海道など）は、病床機能報告の病棟の入院基本料から補った参考値も含みます。</p></td>
+      <th scope="row">入院基本料の区分<small>看護の基準が高い順</small></th>
+      <td>
+        {% for kijun, rows in kubun_groups %}
+        <div class="ct-kgroup">
+          <span class="ct-kname">{{ kijun|replace('入院基本料', '') }}</span>
+          <div class="ct-grid ct-grid-wide">
+          {% for b in rows %}<label title="{{ kijun }}の区分（{{ "{:,}".format(b.n_facilities) }}施設）" data-k="{{ (b.name ~ ' ' ~ kijun)|lower }}"><input type="checkbox" name="kb" value="{{ b.id }}" {% if b.id in sel_kubuns %}checked{% endif %}><span class="s">{{ b.name }}</span><span class="f">{{ b.name }}（{{ kijun }}）</span></label>{% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        <p class="ct-hint">区分が公表されていない届出（北海道など）は、病床機能報告の病棟の入院基本料から補った参考値も含みます。</p>
+      </td>
     </tr>
     {% endif %}
     {% endfor %}

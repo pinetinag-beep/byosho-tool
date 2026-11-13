@@ -12,7 +12,9 @@ import csv
 import io
 import math
 import os
+import re
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -374,6 +376,51 @@ REGIONS = [("北海道・東北", 1, 7), ("関東", 8, 14), ("中部", 15, 23), 
            ("中国", 31, 35), ("四国", 36, 39), ("九州・沖縄", 40, 47)]
 
 
+# 入院基本料の区分の並び順：入院基本料の種類ごとにまとめ、その中は看護配置の基準が高い（手厚い）順。
+KUBUN_GROUP_ORDER = ["一般病棟入院基本料", "特定機能病院入院基本料", "専門病院入院基本料", "療養病棟入院基本料",
+                     "障害者施設等入院基本料", "精神病棟入院基本料", "結核病棟入院基本料",
+                     "有床診療所入院基本料", "有床診療所療養病床入院基本料"]
+_SPECIAL_KUBUN = ("特別入院基本料", "超過減算", "経過措置", "注11")
+
+
+def kubun_sort_key(kijun: str, name: str) -> tuple:
+    """区分を看護の基準が高い順に並べるキー。
+    - 「N対1」はNが小さいほど上（７対１ → １０対１ → １３対１ …）
+    - 一般病棟：急性期病院Ａ → 急性期病院Ｂ → 急性期一般入院料１〜６ → 地域一般入院料１〜３
+    - 同じ配置なら 急性期病院Ａ → Ｂ → Ｃ → 記号なし（特定機能病院・精神病棟）
+    - 番号付き（入院料１・入院基本料１など）は番号が小さいほど上
+    - 特別入院基本料・夜勤時間特別入院基本料・超過減算・経過措置などの例外は最後"""
+    n = unicodedata.normalize("NFKC", name)
+    special = 1 if any(w in n for w in _SPECIAL_KUBUN) else 0
+    m = re.search(r"(\d+)対1", n)
+    ratio = int(m.group(1)) if m else 99
+    letter = next((i for i, c in enumerate("ABC") if re.search(rf"(病院|特定機能病院){c}", n)), 3)
+    tier = 50
+    if (m2 := re.search(r"急性期一般入院料(\d+)", n)):
+        tier = 10 + int(m2.group(1))
+    elif (m2 := re.search(r"地域一般入院料(\d+)", n)):
+        tier = 20 + int(m2.group(1))
+    elif n.startswith("急性期病院"):
+        tier = 0
+    elif "割" in n:
+        tier = 60
+    num_m = re.search(r"入院(基本)?料(\d+)$", n)
+    num = int(num_m.group(2)) if num_m else 40
+    # 療養病棟は令和6年改定後の「入院料１・２」が今の名前。旧名の「入院基本料１・２」は後ろに
+    old = 1 if kijun == "療養病棟入院基本料" and "入院基本料" in n else 0
+    return (special, ratio, tier, letter, old, num, n)
+
+
+def _kubun_groups(con) -> list[tuple[str, list]]:
+    rows = [r for r in _kubun_rows(con) if r["n_facilities"]]
+    groups: dict[str, list] = {}
+    for r in rows:
+        groups.setdefault(r["kijun"], []).append(r)
+    order = {k: i for i, k in enumerate(KUBUN_GROUP_ORDER)}
+    return [(k, sorted(v, key=lambda r: kubun_sort_key(k, r["name"])))
+            for k, v in sorted(groups.items(), key=lambda kv: order.get(kv[0], 99))]
+
+
 def _cond_table_ctx(con) -> dict:
     """トップの条件表（都道府県・届出項目をチェックボックスで並べる）に要るもの。サーバー側で
     全部描くので、JavaScript が無くても選んで検索できる。"""
@@ -386,8 +433,7 @@ def _cond_table_ctx(con) -> dict:
     sections: dict[str, list] = {}
     for r in rows:
         sections.setdefault(r["section"], []).append(r)
-    kubuns = [r for r in _kubun_rows(con) if r["n_facilities"]]
-    return {"regions": regions, "sections": list(sections.items()), "kubun_rows": kubuns, "ftypes": FTYPES}
+    return {"regions": regions, "sections": list(sections.items()), "kubun_groups": _kubun_groups(con), "ftypes": FTYPES}
 
 
 @app.get("/", response_class=HTMLResponse)
