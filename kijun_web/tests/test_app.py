@@ -299,3 +299,11 @@ def test_facility_page_shows_byosho():
     assert "病床・人員・設備（病床機能報告）" in html and "年度ごとの推移" in html
     assert "厚生労働省「病床機能報告」" in html and "streamlit.app" not in html
     assert "ﾊｲｹｱ" not in html
+
+
+def test_facility_page_shows_dpc():
+    with appmod.db() as con:
+        fid = con.execute(
+            "SELECT f.id FROM facilities f JOIN dpc_hosp d ON d.code = f.byosho_code LIMIT 1").fetchone()[0]
+    html = _get(f"/facility/{fid}")
+    assert "入院患者の診療実績（DPC）" in html and "退院患者調査" in html and "主要診断群" in html

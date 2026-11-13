@@ -707,7 +707,8 @@ def facility(request: Request, fid: str):
         ).fetchall()
         pref = con.execute("SELECT * FROM prefs WHERE code = ?", (f["pref_code"],)).fetchone()
         byosho = _byosho_ctx(con, f["byosho_code"])
-    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho)
+        dpc = _dpc_ctx(con, f["byosho_code"])
+    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc)
 
 
 # ── 病床機能報告（厚生労働省）。病院ページに出す ─────────────────────
@@ -784,6 +785,73 @@ def _byosho_ctx(con, code: str | None) -> dict | None:
         "years": f"{reiwa(rows[0]['year'])}〜{reiwa(r['year'])}" if len(rows) > 1 else reiwa(r["year"]),
         "staff": [(lab, _num(r[c])) for c, lab in [("常勤理学療法士数", "理学療法士"), ("常勤作業療法士数", "作業療法士"),
                                                  ("常勤言語聴覚士数", "言語聴覚士"), ("常勤薬剤師数", "薬剤師")] if _num(r[c])],
+    }
+
+
+# ── DPC（厚生労働省のDPC退院患者調査）。病院ページに出す ───────────────
+MDC_LABELS = {  # 主要診断群（MDC）の名称。厚生労働省の定義どおり
+    "MDC01": "神経系疾患", "MDC02": "眼科系疾患", "MDC03": "耳鼻咽喉科系疾患", "MDC04": "呼吸器系疾患",
+    "MDC05": "循環器系疾患", "MDC06": "消化器系疾患、肝臓・胆道・膵臓疾患", "MDC07": "筋骨格系疾患",
+    "MDC08": "皮膚・皮下組織の疾患", "MDC09": "乳房の疾患", "MDC10": "内分泌・栄養・代謝に関する疾患",
+    "MDC11": "腎・尿路系疾患及び男性生殖器系疾患", "MDC12": "女性生殖器系疾患及び産褥期疾患・異常妊娠分娩",
+    "MDC13": "血液・造血器・免疫臓器の疾患", "MDC14": "新生児疾患、先天性奇形", "MDC15": "小児疾患",
+    "MDC16": "外傷・熱傷・中毒", "MDC17": "精神疾患", "MDC18": "その他",
+}
+DPC_ITEMS = [("件数_手術有", "手術あり"), ("件数_全身麻酔", "全身麻酔"), ("件数_化学療法有", "化学療法あり"),
+             ("件数_放射線療法有", "放射線療法あり"), ("件数_救急車搬送有", "救急車による搬送")]
+
+
+def dpc_source(year: int) -> str:
+    """調査名は令和6年度から「DPCの評価・検証等に係る調査」に変わった（公表資料の名称どおりに書く）。"""
+    name = "DPCの評価・検証等に係る調査" if year >= 2024 else "DPC導入の影響評価に係る調査"
+    return f"{reiwa(year)}{name}「退院患者調査」"
+
+
+def _dpc_kind(t: str | None) -> str:
+    t = t or ""
+    if "DPC参加" in t:
+        return "DPC対象病院"
+    if "準備" in t:
+        return "DPC準備病院"
+    if "出来高" in t:
+        return "出来高算定病院（DPCのデータ提出のみ）"
+    return t
+
+
+def _dpc_ctx(con, code: str | None) -> dict | None:
+    if not code:
+        return None
+    code = str(code).zfill(10)
+    try:
+        rows = con.execute("SELECT * FROM dpc_hosp WHERE code = ? ORDER BY year", (code,)).fetchall()
+    except sqlite3.OperationalError:  # DPCを入れていない古いDB
+        return None
+    rows = [r for r in rows if _num(r["件数_総数"])]
+    if not rows:
+        return None
+    r = rows[-1]
+    total = _num(r["件数_総数"])
+    items = []
+    for col, label in DPC_ITEMS:
+        n = _num(r[col])
+        items.append({"label": label, "n": n, "pct": round(n / total * 100, 1) if n is not None and total else None})
+    mdc = []
+    for m in con.execute("SELECT mdc, n_surg, n_nosurg FROM dpc_mdc WHERE code = ? AND year = ?", (code, r["year"])):
+        s, ns = _num(m["n_surg"]), _num(m["n_nosurg"])
+        known = (s or 0) + (ns or 0)
+        mdc.append({"code": m["mdc"], "label": MDC_LABELS.get(m["mdc"], m["mdc"]), "surg": s, "nosurg": ns,
+                    "known": known, "partial": s is None or ns is None})
+    mdc.sort(key=lambda x: -x["known"])
+    top = max((x["known"] for x in mdc), default=0)
+    for x in mdc:
+        x["w"] = round(x["known"] / top * 100, 1) if top else 0
+        x["pct"] = round(x["known"] / total * 100, 1) if total else None
+    trend = [{"label": reiwa(x["year"]), "total": _num(x["件数_総数"]),
+              **{col: _num(x[col]) for col, _ in DPC_ITEMS}} for x in rows]
+    return {
+        "year": r["year"], "label": reiwa(r["year"]), "name": r["dpc_name"], "kind": _dpc_kind(r["dpc_type"]),
+        "beds": _num(r["dpc_beds"]), "total": total, "procs": items, "mdc": mdc, "trend": trend,
+        "sources": "、".join(dpc_source(x["year"]) for x in rows),
     }
 
 

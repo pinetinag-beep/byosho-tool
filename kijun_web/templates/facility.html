@@ -68,6 +68,42 @@
 <p class="source">出典：厚生労働省「病床機能報告」（{{ b.years }}）を加工して作成</p>
 {% endif %}
 
+
+{% if dpc %}{% set d = dpc %}
+<h2>入院患者の診療実績（DPC）</h2>
+<p class="muted small">{{ d.label }}（{{ d.year }}年4月〜{{ d.year + 1 }}年3月の退院患者）のDPC退院患者調査による。<span class="tag">{{ d.kind }}</span>{% if d.beds %}　DPC算定病床数 {{ "{:,}".format(d.beds) }}床{% endif %}</p>
+<div class="facts facts-3">
+  <div class="fact"><div class="k">退院患者数（年間）</div><div class="v">{{ "{:,}".format(d.total) }} <small>件</small></div></div>
+  {% for x in d.procs %}<div class="fact"><div class="k">{{ x.label }}</div><div class="v">{% if x.n is not none %}{{ "{:,}".format(x.n) }} <small>件（{{ x.pct }}%）</small>{% else %}—{% endif %}</div></div>{% endfor %}
+</div>
+
+{% if d.mdc %}
+<h3>疾患の分野（主要診断群）ごとの患者数</h3>
+<div class="table-wrap"><table class="mdc">
+  <thead><tr><th>主要診断群（MDC）</th><th class="num">手術あり</th><th class="num">手術なし</th><th class="num">計</th><th class="bar-col"><span class="sr-only">患者数の多さ</span></th></tr></thead>
+  <tbody>{% for m in d.mdc %}<tr>
+    <td>{{ m.label }}</td>
+    <td class="num">{{ "{:,}".format(m.surg) if m.surg is not none else '—' }}</td>
+    <td class="num">{{ "{:,}".format(m.nosurg) if m.nosurg is not none else '—' }}</td>
+    <td class="num"><b>{{ "{:,}".format(m.known) }}</b>{% if m.partial %}<span class="muted">＋</span>{% endif %}</td>
+    <td class="bar-col"><span class="hbar" style="width:{{ m.w }}%" title="{{ m.label }} {{ m.known }}件（退院患者数の{{ m.pct }}%）"></span></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+<p class="note small">「—」は10件未満のため公表されていない件数です（「＋」の付いた計は、公表されている件数だけの合計です）。</p>
+{% endif %}
+
+{% if d.trend|length > 1 %}
+<h3>年度ごとの推移</h3>
+<div class="table-wrap"><table class="trend">
+  <thead><tr><th>調査年度</th><th class="num">退院患者数</th>{% for col, lab in [('件数_手術有','手術あり'),('件数_全身麻酔','全身麻酔'),('件数_化学療法有','化学療法'),('件数_放射線療法有','放射線療法'),('件数_救急車搬送有','救急車搬送')] %}<th class="num">{{ lab }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for t in d.trend %}<tr><td class="nowrap">{{ t.label }}</td><td class="num">{{ "{:,}".format(t.total) }}</td>
+    {% for col in ['件数_手術有','件数_全身麻酔','件数_化学療法有','件数_放射線療法有','件数_救急車搬送有'] %}<td class="num">{{ "{:,}".format(t[col]) if t[col] is not none else '—' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<p class="note small">※ DPC退院患者調査の件数は、DPC（診断群分類）のデータを提出している病院の、その年度の4月〜翌年3月に退院した患者の数です。病床機能報告とは対象の期間が異なります。</p>
+<p class="source">出典：厚生労働省 {{ d.sources }} を加工して作成</p>
+{% endif %}
+
 <div class="result-head">
   <h2 style="margin:0">施設基準の届出一覧</h2>
   <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>

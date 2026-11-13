@@ -357,3 +357,11 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
 .equip li b { margin-left: auto; font-variant-numeric: tabular-nums; }
 .equip li small { flex-basis: 100%; color: var(--ink-muted); font-size: 0.75rem; }
 .trend td.small { color: var(--ink-muted); }
+
+/* DPC 主要診断群ごとの患者数 */
+table.mdc .bar-col { width: 30%; min-width: 80px; vertical-align: middle; }
+.facts.facts-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .facts.facts-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; background: var(--brand); min-width: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 640px) { table.mdc .bar-col { display: none; } }

@@ -33,6 +33,10 @@ ROOT = HERE.parent
 SRC = ROOT / "shisetsu_kijun_cache.parquet"
 BYOSHO = ROOT / "data_cache.parquet"
 WARDS = ROOT / "ward_cache.parquet"
+DPC_HOSP = ROOT / "dpc_hospitals.parquet"
+DPC_MATCH = ROOT / "dpc_match.parquet"
+DPC_PROC = ROOT / "dpc_procedure_stats.parquet"
+DPC_MDC = ROOT / "dpc_mdc_cases.parquet"
 GAIRAI = ROOT / "gairai_form1_annual.parquet"   # 市区町村→二次医療圏の対応に使う（外来機能報告）
 ABBR = HERE / "abbr_order.json"                 # 受理記号の分類と並び順（make_abbr_order.py が作る）
 OUT = HERE / "data" / "kijun.sqlite"
@@ -474,6 +478,58 @@ def _build_byosho(con) -> int:
     return len(h)
 
 
+_JIS_PREFS = (
+    "北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 "
+    "新潟県 富山県 石川県 福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 "
+    "奈良県 和歌山県 鳥取県 島根県 岡山県 広島県 山口県 徳島県 香川県 愛媛県 高知県 福岡県 佐賀県 長崎県 "
+    "熊本県 大分県 宮崎県 鹿児島県 沖縄県"
+).split()
+DPC_PROC_COLS = ["件数_総数", "件数_手術有", "件数_化学療法有", "件数_放射線療法有", "件数_救急車搬送有", "件数_全身麻酔"]
+
+
+def _build_dpc(con) -> int:
+    """DPC（退院患者調査）を病床機能報告の医療機関コード10桁で引けるようにして入れる。
+
+    告示番号 → (施設名, 都道府県) → dpc_match の病床報告施設名 → 病床機能報告の医療機関コード、の順でつなぐ。
+    同じ施設名・都道府県の組が対応表に複数ある、または同じ年度に1つの医療機関コードへ
+    複数の告示番号がつながるものは、取り違えを避けるため入れない。
+    """
+    if not (DPC_HOSP.exists() and DPC_MATCH.exists() and BYOSHO.exists()):
+        return 0
+    bd = pd.read_parquet(BYOSHO, columns=["都道府県名", "医療機関名", "医療機関コード"]).drop_duplicates()
+    key = {(p, n): str(c).zfill(10) for p, n, c in bd.itertuples(index=False)}
+    m = pd.read_parquet(DPC_MATCH)
+    m = m[m["マッチ状態"].astype(str) != "未結合"].drop_duplicates(["DPC施設名", "都道府県"], keep=False)
+    m["code"] = [key.get((p, n)) for p, n in m[["都道府県", "病床報告施設名"]].itertuples(index=False)]
+    h = pd.read_parquet(DPC_HOSP, columns=["年度", "告示番号", "施設名", "市町村番号", "病院類型", "DPC算定病床数"])
+    h["pref"] = h["市町村番号"].map(lambda x: _JIS_PREFS[int(x) // 1000 - 1] if pd.notna(x) else None)
+    h = h.merge(m[["DPC施設名", "都道府県", "code"]], left_on=["施設名", "pref"],
+                right_on=["DPC施設名", "都道府県"], how="inner").dropna(subset=["code"])
+    h = h[~h.duplicated(["年度", "code"], keep=False)]
+    h = h.rename(columns={"年度": "year", "告示番号": "kokuji", "施設名": "dpc_name",
+                          "病院類型": "dpc_type", "DPC算定病床数": "dpc_beds"})
+    h = h[["code", "year", "kokuji", "dpc_name", "dpc_type", "dpc_beds"]]
+    if DPC_PROC.exists():
+        p = pd.read_parquet(DPC_PROC, columns=["年度", "告示番号"] + DPC_PROC_COLS)
+        p = p.drop_duplicates(["年度", "告示番号"]).rename(columns={"年度": "year", "告示番号": "kokuji"})
+        h = h.merge(p, on=["year", "kokuji"], how="left")
+    h.to_sql("dpc_hosp", con, index=False)
+    con.execute("CREATE INDEX ix_dh ON dpc_hosp(code, year)")
+    if DPC_MDC.exists():
+        c = pd.read_parquet(DPC_MDC)
+        c = c[c["手術有無"].isin(["有り", "無し"])]
+        mdcs = [f"MDC{i:02d}" for i in range(1, 19)]
+        c = c.melt(id_vars=["年度", "告示番号", "手術有無"], value_vars=mdcs, var_name="mdc", value_name="n")
+        c = c.pivot_table(index=["年度", "告示番号", "mdc"], columns="手術有無", values="n",
+                          aggfunc="first", dropna=False).reset_index()
+        c = c.rename(columns={"年度": "year", "告示番号": "kokuji", "有り": "n_surg", "無し": "n_nosurg"})
+        c = c.merge(h[["year", "kokuji", "code"]], on=["year", "kokuji"], how="inner")
+        c = c.dropna(subset=["n_surg", "n_nosurg"], how="all")
+        c[["code", "year", "mdc", "n_surg", "n_nosurg"]].to_sql("dpc_mdc", con, index=False)
+        con.execute("CREATE INDEX ix_dm ON dpc_mdc(code, year)")
+    return len(h)
+
+
 def build(src: Path = SRC, out: Path = OUT) -> dict:
     """メモリを抑えるため、集計用の列だけを辞書エンコード（category）のまま読み、
     届出行はparquetから10万行ずつ読んでDBに流し込む（全列を一度に文字列で
@@ -604,6 +660,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_filings = con.execute("SELECT COUNT(*) FROM filings").fetchone()[0]
     n_kubuns = _build_kubuns(con)
     n_byosho_rows = _build_byosho(con)
+    n_dpc_rows = _build_dpc(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -618,6 +675,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_items": str(len(items)),
         "n_kubuns": str(n_kubuns),
         "n_byosho_rows": str(n_byosho_rows),
+        "n_dpc_rows": str(n_dpc_rows),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),
