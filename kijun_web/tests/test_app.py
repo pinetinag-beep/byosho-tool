@@ -25,7 +25,7 @@ def _first_facility_id(name_like: str) -> str:
 
 
 @pytest.mark.parametrize("path", [
-    "/", "/kijun", "/about", "/pref/" + quote("高知県"),
+    "/", "/kijun", "/about", "/guide", "/operator", "/contact", "/privacy", "/pref/" + quote("高知県"),
     "/kijun/" + quote(KIJUN), "/kijun/" + quote(KIJUN) + "/" + quote("高知県"),
     "/search?k=" + quote("地域包括ケア"), "/search?q=" + quote("近森"),
 ])
@@ -256,3 +256,13 @@ def test_top_condition_table_prefilled():
     assert re.search(r'name="item" value="1" checked', r.text)
     s = client.get("/search?pref=39&item=1")
     assert 'href="/?pref=39&amp;item=1"' in s.text
+
+
+def test_adsense_review_pages_linked():
+    """AdSenseの審査で見られる運営者情報・お問い合わせ・プライバシーポリシーが全ページのフッターから辿れる。"""
+    html = client.get("/kijun").text
+    for path in ["/operator", "/contact", "/privacy", "/about", "/guide"]:
+        assert f'href="{path}"' in html
+    assert "MedilenZ運営事務局" in client.get("/operator").text
+    sm = client.get("/sitemap-static.xml").text
+    assert "/operator" in sm and "/contact" in sm and "/guide" in sm

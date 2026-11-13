@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}お問い合わせ{% endblock %}
+{% block description %}MedilenZ（施設基準届出データベース）へのお問い合わせ。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › お問い合わせ</p>
+<h1>お問い合わせ</h1>
+<p>本サイトへのご意見・ご要望、不具合のご報告は、下のお問い合わせフォームからお送りください。内容を確認のうえ、必要に応じて返信します（返信までお時間をいただく場合があります）。</p>
+{% if contact_form_url %}
+<p><a class="btn" href="{{ contact_form_url }}" rel="noopener" target="_blank">お問い合わせフォームを開く</a></p>
+<p class="small muted">フォームはGoogleフォームを使っています。入力いただいた内容は、お問い合わせへの対応のためだけに使います（<a href="/privacy">プライバシーポリシー</a>）。</p>
+{% else %}
+<p class="note">お問い合わせフォームは準備中です。</p>
+{% endif %}
+
+<h2>お問い合わせの前に</h2>
+<ul>
+  <li><strong>医療機関の届出内容の誤り</strong>：本サイトのデータは各地方厚生局の公表データをもとにしています。届出内容そのものの訂正は本サイトではできません。最新の内容は各地方厚生局の公表資料、または各医療機関にご確認ください。</li>
+  <li><strong>データの更新時期</strong>：毎月1回を目安に、最新の公表分へ更新しています。都道府県ごとの時点は<a href="/about">データの出典と利用条件</a>で確認できます。</li>
+  <li><strong>使い方</strong>：<a href="/guide">施設基準とこのサイトの使い方</a>をご覧ください。</li>
+  <li>受診先の相談や、医療・診療報酬の個別のご相談にはお答えできません。</li>
+</ul>
+{% endblock %}

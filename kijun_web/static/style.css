@@ -325,3 +325,5 @@ h2.ct-h { margin-top: 32px; }
   .ct-bar .btn { padding: 9px 14px; }
   .examples { grid-template-columns: 1fr; }
 }
+.data-about th { width: 9em; background: var(--bg); }
+h3 { font-size: 1rem; margin: 22px 0 6px; }
