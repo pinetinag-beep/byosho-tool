@@ -77,14 +77,19 @@
     {% for sec, items in sections %}
     <tr data-sec>
       <th scope="row">{{ sec }}<small>{{ items|length }}項目</small></th>
-      <td><div class="ct-grid">
+      {% set nsel = items|selectattr('id', 'in', sel_items)|list|length %}
+      <td><details class="ct-acc" {% if nsel %}open{% endif %}>
+        <summary><span class="ct-acc-open">{{ items|length }}項目を表示する</span><span class="ct-acc-close">閉じる</span><span class="ct-acc-n" {% if not nsel %}hidden{% endif %}>{{ nsel }}件選択中</span></summary>
+        <div class="ct-grid">
         {% for it in items %}<label title="{{ it.kijun }}（{{ "{:,}".format(it.n_facilities) }}施設）" data-k="{{ (it.symbol ~ ' ' ~ it.kijun)|lower }}"><input type="checkbox" name="item" value="{{ it.id }}" {% if it.id in sel_items %}checked{% endif %}><span class="s">{{ it.symbol or it.kijun }}</span><span class="f">{{ it.kijun }}</span></label>{% endfor %}
-      </div></td>
+      </div></details></td>
     </tr>
     {% if loop.first and kubun_groups %}
     <tr data-sec>
       <th scope="row">入院基本料の区分<small>看護の基準が高い順</small></th>
-      <td>
+      {% set ksel = namespace(n=0) %}{% for kijun, rows in kubun_groups %}{% for b in rows %}{% if b.id in sel_kubuns %}{% set ksel.n = ksel.n + 1 %}{% endif %}{% endfor %}{% endfor %}
+      <td><details class="ct-acc" {% if ksel.n %}open{% endif %}>
+        <summary><span class="ct-acc-open">区分を表示する（{{ kubun_groups|map(attribute=1)|map('length')|sum }}区分）</span><span class="ct-acc-close">閉じる</span><span class="ct-acc-n" {% if not ksel.n %}hidden{% endif %}>{{ ksel.n }}件選択中</span></summary>
         {% for kijun, rows in kubun_groups %}
         <div class="ct-kgroup">
           <span class="ct-kname">{{ kijun|replace('入院基本料', '') }}</span>
@@ -94,7 +99,7 @@
         </div>
         {% endfor %}
         <p class="ct-hint">区分が公表されていない届出（北海道など）は、病床機能報告の病棟の入院基本料から補った参考値も含みます。</p>
-      </td>
+      </details></td>
     </tr>
     {% endif %}
     {% endfor %}
@@ -171,7 +176,13 @@
   document.getElementById("ct-filter").addEventListener("input", (e) => {
     const t = norm(e.target.value);
     labels.forEach((l, i) => { l.hidden = !!t && !keys[i].includes(t) && !l.querySelector("input").checked; });
-    table.querySelectorAll("tr[data-sec]").forEach((tr) => { tr.hidden = !!t && !tr.querySelector(".ct-grid label:not([hidden])"); });
+    table.querySelectorAll("tr[data-sec]").forEach((tr) => {
+      const hit = !!tr.querySelector(".ct-grid label:not([hidden])");
+      tr.hidden = !!t && !hit;
+      const d = tr.querySelector("details.ct-acc");
+      if (t && hit) d.open = true;               // 絞り込んだら当てはまる区分を開く
+      else if (!t) d.open = !!tr.querySelector(".ct-grid input:checked");
+    });
   });
   document.getElementById("ct-full").addEventListener("change", (e) => table.classList.toggle("full", e.target.checked));
 
@@ -190,6 +201,14 @@
     bar.textContent = parts.length ? "選択中：" + parts.join("・") : "条件の指定なし（すべての医療機関）";
   }
   table.addEventListener("change", count);
+  // 区分ごとに「n件選択中」を出す（閉じていても選んだものが分かるように）
+  table.addEventListener("change", (e) => {
+    const tr = e.target.closest("tr[data-sec]");
+    if (!tr) return;
+    const n = tr.querySelectorAll(".ct-grid input:checked").length;
+    const b = tr.querySelector(".ct-acc-n");
+    b.textContent = `${n}件選択中`; b.hidden = !n;
+  });
   form.querySelectorAll("input[name=ftype]").forEach((b) => b.addEventListener("change", count));
 
   // ── 医療機関名の入力候補 ──
