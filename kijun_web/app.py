@@ -708,7 +708,8 @@ def facility(request: Request, fid: str):
         pref = con.execute("SELECT * FROM prefs WHERE code = ?", (f["pref_code"],)).fetchone()
         byosho = _byosho_ctx(con, f["byosho_code"])
         dpc = _dpc_ctx(con, f["byosho_code"])
-    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc)
+        gairai = _gairai_ctx(con, fid)
+    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai)
 
 
 # ── 病床機能報告（厚生労働省）。病院ページに出す ─────────────────────
@@ -785,6 +786,38 @@ def _byosho_ctx(con, code: str | None) -> dict | None:
         "years": f"{reiwa(rows[0]['year'])}〜{reiwa(r['year'])}" if len(rows) > 1 else reiwa(r["year"]),
         "staff": [(lab, _num(r[c])) for c, lab in [("常勤理学療法士数", "理学療法士"), ("常勤作業療法士数", "作業療法士"),
                                                  ("常勤言語聴覚士数", "言語聴覚士"), ("常勤薬剤師数", "薬剤師")] if _num(r[c])],
+    }
+
+
+# ── 外来機能報告（厚生労働省）。病院・診療所のページに出す ─────────────
+def _gairai_ctx(con, facility_id: str) -> dict | None:
+    try:
+        rows = con.execute("SELECT * FROM gairai WHERE facility_id = ? ORDER BY year", (facility_id,)).fetchall()
+    except sqlite3.OperationalError:  # 外来機能報告を入れていない古いDB
+        return None
+    if not rows:
+        return None
+
+    def rec(x):
+        # 初診患者数が0の年は報告されていないもの（令和4年度は全件0）として、紹介率などを出さない
+        has = bool(_num(x["n_first"]))
+        return {
+            "year": x["year"], "label": reiwa(x["year"]),
+            "n_first": _num(x["n_first"]) if has else None, "n_referred": _num(x["n_referred"]) if has else None,
+            "n_back": _num(x["n_back"]) if has else None,
+            "referral_rate": x["referral_rate"] if has else None, "back_rate": x["back_rate"] if has else None,
+            "focus_first": x["focus_first"], "focus_re": x["focus_re"],
+        }
+    recs = [rec(x) for x in rows]
+    shown = [r for r in recs if r["n_first"] is not None or r["focus_first"] is not None]
+    if not shown:
+        return None
+    last = shown[-1]
+    focus_ok = (last["focus_first"] is not None and last["focus_re"] is not None
+                and last["focus_first"] >= 40 and last["focus_re"] >= 25)
+    return {
+        **last, "owner": rows[-1]["owner"], "kind": rows[-1]["kind"], "trend": shown, "focus_ok": focus_ok,
+        "years": f"{shown[0]['label']}〜{last['label']}" if len(shown) > 1 else last["label"],
     }
 
 

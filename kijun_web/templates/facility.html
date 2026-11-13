@@ -104,6 +104,32 @@
 <p class="source">出典：厚生労働省 {{ d.sources }} を加工して作成</p>
 {% endif %}
 
+
+{% if gairai %}{% set g = gairai %}
+<h2>外来の状況（外来機能報告）</h2>
+<p class="muted small">{{ g.label }}の外来機能報告による。{% if g.owner %}設置主体：<span class="tag">{{ g.owner }}</span>{% endif %}</p>
+<div class="facts facts-3">
+  <div class="fact"><div class="k">初診患者数（年間）</div><div class="v">{% if g.n_first is not none %}{{ "{:,}".format(g.n_first) }} <small>人</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">紹介率 ※1</div><div class="v">{% if g.referral_rate is not none %}{{ g.referral_rate }} <small>%</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">逆紹介率 ※1</div><div class="v">{% if g.back_rate is not none %}{{ g.back_rate }} <small>%</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">紹介受診重点外来の割合（初診） ※2</div><div class="v">{% if g.focus_first is not none %}{{ g.focus_first }} <small>%</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">紹介受診重点外来の割合（再診） ※2</div><div class="v">{% if g.focus_re is not none %}{{ g.focus_re }} <small>%</small>{% else %}—{% endif %}</div></div>
+  <div class="fact"><div class="k">紹介受診重点医療機関の基準 ※3</div><div class="v small">{% if g.focus_first is none or g.focus_re is none %}—{% elif g.focus_ok %}満たす水準{% else %}満たさない水準{% endif %}</div></div>
+</div>
+{% if g.trend|length > 1 %}
+<div class="table-wrap"><table class="trend">
+  <thead><tr><th>報告年度</th><th class="num">初診患者数</th><th class="num">紹介患者数</th><th class="num">逆紹介患者数</th><th class="num">紹介率</th><th class="num">逆紹介率</th><th class="num">重点外来（初診）</th><th class="num">重点外来（再診）</th></tr></thead>
+  <tbody>{% for t in g.trend %}<tr><td class="nowrap">{{ t.label }}</td>
+    {% for k in ['n_first','n_referred','n_back'] %}<td class="num">{{ "{:,}".format(t[k]) if t[k] is not none else '—' }}</td>{% endfor %}
+    {% for k in ['referral_rate','back_rate','focus_first','focus_re'] %}<td class="num">{{ t[k] ~ '%' if t[k] is not none else '—' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<p class="note small">※1 紹介率＝紹介患者数 ÷ 初診患者数、逆紹介率＝逆紹介患者数 ÷ 初診患者数（外来機能報告の定義。100%を超えることがあります）。初診患者数が報告されていない年度は「—」にしています。<br>
+※2 初診（再診）の外来の患者延べ数のうち、紹介受診重点外来（令和4年度は「医療資源を重点的に活用する外来」という名称）の患者延べ数の割合。<br>
+※3 紹介受診重点医療機関の基準の水準（初診40%以上かつ再診25%以上）に、報告された割合が達しているかどうかです。実際に紹介受診重点医療機関になっているかは、都道府県の協議の場での確認を経て公表されるため、ここでは分かりません。</p>
+<p class="source">出典：厚生労働省「外来機能報告」（{{ g.years }}）を加工して作成</p>
+{% endif %}
+
 <div class="result-head">
   <h2 style="margin:0">施設基準の届出一覧</h2>
   <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>

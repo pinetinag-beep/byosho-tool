@@ -33,6 +33,8 @@ ROOT = HERE.parent
 SRC = ROOT / "shisetsu_kijun_cache.parquet"
 BYOSHO = ROOT / "data_cache.parquet"
 WARDS = ROOT / "ward_cache.parquet"
+GAIRAI = ROOT / "gairai_form1_annual.parquet"
+GAIRAI2 = ROOT / "gairai_form2.parquet"
 DPC_HOSP = ROOT / "dpc_hospitals.parquet"
 DPC_MATCH = ROOT / "dpc_match.parquet"
 DPC_PROC = ROOT / "dpc_procedure_stats.parquet"
@@ -214,11 +216,30 @@ def _byosho_link(fac: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
                     break
         return code
 
+    # 外来機能報告には厚生局の医療機関コード（医科、10桁＝都道府県2桁＋「1」＋医療機関番号7桁）と
+    # 病床機能報告と同じオープンデータの医療機関コードが両方載っているので、まずそれでつなぐ
+    # （名前の突合だと「宇都宮病院」同士など別の病院につながることがあった。2026年11月に31件見つかった）
+    by_code = {k: v for k, v in _gairai_codes().items() if v in latest_name.index}
     codes = pd.Series(
-        [match(p, n, t) for p, n, t in fac[["pref_name", "name", "ftype"]].itertuples(index=False)],
+        [by_code.get(fid) or match(p, n, t)
+         for fid, p, n, t in fac[["facility_id", "pref_name", "name", "ftype"]].itertuples(index=False)],
         index=fac.index, dtype=object,
     )
     return codes, codes.map(latest_name)
+
+
+def _gairai_codes() -> dict[str, str]:
+    """外来機能報告の (厚生局の医療機関番号から作る facility_id) → オープンデータの医療機関コード（病床機能報告の形）。"""
+    if not GAIRAI.exists():
+        return {}
+    a = pd.read_parquet(GAIRAI, columns=["報告年度", "医療機関コード（医科）", "オープンデータ\n医療機関コード"])
+    a = a.dropna().sort_values("報告年度")
+    ika = a["医療機関コード（医科）"].astype(str)
+    a = a[ika.str.len() == 10]
+    ika = a["医療機関コード（医科）"].astype(str)
+    fid = ika.str[:2] + ika.str[3:]
+    od = a["オープンデータ\n医療機関コード"].astype(str).str.zfill(10).str.lstrip("0")
+    return dict(zip(fid, od))
 
 
 def _kubun_ref() -> tuple[dict[tuple[str, str], str], int | None]:
@@ -478,6 +499,46 @@ def _build_byosho(con) -> int:
     return len(h)
 
 
+GAIRAI_COLS = {  # 外来機能報告（様式1・年間）の列 → DBの列
+    "設置主体": "owner", "病診区分": "kind",
+    "初診患者数（年間）": "n_first", "紹介患者数（年間）": "n_referred", "逆紹介患者数（年間）": "n_back",
+    "紹介率（年間）": "referral_rate", "逆紹介率（年間）": "back_rate", "救急車の受入件数（年間）": "ambulance",
+}
+
+
+def _build_gairai(con) -> int:
+    """外来機能報告を、厚生局の医療機関コード（医科）から作る facility_id で引けるようにして入れる
+    （病院だけでなく診療所も対象。名前の突合は使わない）。"""
+    if not GAIRAI.exists():
+        return 0
+    a = pd.read_parquet(GAIRAI, columns=["報告年度", "医療機関コード（医科）"] + list(GAIRAI_COLS))
+    a = a.dropna(subset=["医療機関コード（医科）"])
+    ika = a["医療機関コード（医科）"].astype(str)
+    a = a[ika.str.len() == 10].copy()
+    ika = a["医療機関コード（医科）"].astype(str)
+    a["facility_id"] = ika.str[:2] + ika.str[3:]
+    a["ika"] = ika
+    a = a.rename(columns={"報告年度": "year", **GAIRAI_COLS}).drop(columns=["医療機関コード（医科）"])
+    for c in ["n_first", "n_referred", "n_back", "referral_rate", "back_rate", "ambulance"]:
+        a[c] = pd.to_numeric(a[c], errors="coerce")  # 「*」（10件以下で非公表）は空にする
+    if GAIRAI2.exists():
+        # 紹介受診重点外来（令和4年度は「医療資源を重点的に活用する外来」という名前）の患者割合。報告月0が年間
+        cols = ["紹介受診重点外来の患者割合", "紹介受診重点外来の患者割合__1",
+                "医療資源を重点的に活用する患者割合", "医療資源を重点的に活用する患者割合__1"]
+        b = pd.read_parquet(GAIRAI2, columns=["報告年度", "医療機関コード（医科）", "報告月"] + cols)
+        b = b[b["報告月"].astype(str) == "0"].copy()
+        num = {c: pd.to_numeric(b[c], errors="coerce") for c in cols}
+        b["focus_first"] = num[cols[0]].fillna(num[cols[2]])
+        b["focus_re"] = num[cols[1]].fillna(num[cols[3]])
+        b = b.rename(columns={"報告年度": "year", "医療機関コード（医科）": "ika"})[["year", "ika", "focus_first", "focus_re"]]
+        b["ika"] = b["ika"].astype(str)
+        a = a.merge(b.drop_duplicates(["year", "ika"]), on=["year", "ika"], how="left")
+    a = a.drop(columns=["ika"]).drop_duplicates(["facility_id", "year"])
+    a.to_sql("gairai", con, index=False)
+    con.execute("CREATE INDEX ix_ga ON gairai(facility_id, year)")
+    return len(a)
+
+
 _JIS_PREFS = (
     "北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 "
     "新潟県 富山県 石川県 福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 "
@@ -661,6 +722,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_kubuns = _build_kubuns(con)
     n_byosho_rows = _build_byosho(con)
     n_dpc_rows = _build_dpc(con)
+    n_gairai_rows = _build_gairai(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -676,6 +738,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_kubuns": str(n_kubuns),
         "n_byosho_rows": str(n_byosho_rows),
         "n_dpc_rows": str(n_dpc_rows),
+        "n_gairai_rows": str(n_gairai_rows),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),

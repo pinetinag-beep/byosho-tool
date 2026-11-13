@@ -307,3 +307,12 @@ def test_facility_page_shows_dpc():
             "SELECT f.id FROM facilities f JOIN dpc_hosp d ON d.code = f.byosho_code LIMIT 1").fetchone()[0]
     html = _get(f"/facility/{fid}")
     assert "入院患者の診療実績（DPC）" in html and "退院患者調査" in html and "主要診断群" in html
+
+
+def test_facility_page_shows_gairai_for_clinic():
+    with appmod.db() as con:
+        fid = con.execute(
+            """SELECT f.id FROM facilities f JOIN gairai g ON g.facility_id = f.id
+               WHERE f.ftype = '有床診療所' AND g.n_first > 0 LIMIT 1""").fetchone()[0]
+    html = _get(f"/facility/{fid}")
+    assert "外来の状況（外来機能報告）" in html and "紹介率" in html
