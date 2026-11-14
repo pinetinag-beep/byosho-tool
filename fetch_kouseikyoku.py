@@ -22,7 +22,9 @@ Excel/ZIPをまとめて取り、**中身で**見分ける（ファイル名や�
 from __future__ import annotations
 
 import argparse
+import datetime
 import html
+import json
 import re
 import shutil
 import sys
@@ -255,6 +257,16 @@ def apply(found: list[dict], pdfs: list[Path]) -> None:
                 dest = dir_ / c["path"].name
             shutil.copy2(c["path"], dest)
             print(f"  追加: {dir_.name}/{dest.name}（{c['snap']}）")
+    # 出典に書く「利用した日」（名簿を取った日）を県ごとに残す（kijun_web/sources.py 参照）
+    fetched_path = RAW_DIR / "fetched.json"
+    fetched = json.loads(fetched_path.read_text(encoding="utf-8")) if fetched_path.exists() else {}
+    today = datetime.date.today().isoformat()
+    for c in found:
+        if c["type"] == "full":
+            for pref in c["prefs"]:
+                fetched[pref] = today
+    fetched_path.write_text(json.dumps(dict(sorted(fetched.items())), ensure_ascii=False, indent=1) + "\n",
+                            encoding="utf-8")
     hk_dir = KUBUN_DIR / "北海道"
     hk_dir.mkdir(exist_ok=True)
     for f in pdfs:

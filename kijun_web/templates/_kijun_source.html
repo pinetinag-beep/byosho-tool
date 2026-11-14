@@ -1,0 +1,2 @@
+{#- 1つの都道府県の届出データの出典（厚生局の利用規約の記載例どおり：ページ名（厚生局）（URL）（利用した日）を加工して作成） -#}
+<p class="source">出典：{% if p.bureau %}「{{ p.bureau_page }}」（{{ p.bureau }}）（<a href="{{ p.bureau_url }}" rel="noopener">{{ p.bureau_url }}</a>）{% if p.used_on_label %}（{{ p.used_on_label }}に利用）{% endif %}{% else %}{{ p.name }}を管轄する地方厚生局「施設基準の届出受理状況」{% endif %}を加工して作成（{{ p.as_of_label }}時点の名簿）</p>

@@ -316,3 +316,11 @@ def test_facility_page_shows_gairai_for_clinic():
                WHERE f.ftype = '有床診療所' AND g.n_first > 0 LIMIT 1""").fetchone()[0]
     html = _get(f"/facility/{fid}")
     assert "外来の状況（外来機能報告）" in html and "紹介率" in html
+
+
+def test_sources_follow_bureau_citation_example():
+    # 厚生局の利用規約の記載例：「ページ名」（厚生局名）（URL）（利用した日）を加工して作成
+    html = _get(f"/pref/{quote('高知県')}")
+    assert "（四国厚生支局）" in html and "kouseikyoku.mhlw.go.jp/shikoku/" in html and "に利用）を加工して作成" in html
+    about = _get("/about")
+    assert 'id="sources"' in about and about.count("kouseikyoku.mhlw.go.jp/") >= 8 and "www.mhlw.go.jp" in about

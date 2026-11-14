@@ -28,11 +28,17 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+try:  # kijun_web.build_db として読まれる場合と、python kijun_web/build_db.py で動かす場合の両方
+    from .sources import BUREAU_OF_PREF
+except ImportError:
+    from sources import BUREAU_OF_PREF
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 SRC = ROOT / "shisetsu_kijun_cache.parquet"
 BYOSHO = ROOT / "data_cache.parquet"
 WARDS = ROOT / "ward_cache.parquet"
+FETCHED = ROOT / "shisetsu_raw" / "fetched.json"
 GAIRAI = ROOT / "gairai_form1_annual.parquet"
 GAIRAI2 = ROOT / "gairai_form2.parquet"
 DPC_HOSP = ROOT / "dpc_hospitals.parquet"
@@ -80,7 +86,9 @@ SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE prefs (
     code TEXT PRIMARY KEY, name TEXT NOT NULL, as_of TEXT, as_of_label TEXT,
-    n_facilities INTEGER, n_filings INTEGER
+    n_facilities INTEGER, n_filings INTEGER,
+    bureau TEXT, bureau_page TEXT, bureau_url TEXT,  -- 出典（管轄の厚生局・名簿のページの名前・URL）
+    used_on TEXT, used_on_label TEXT                  -- 出典の「利用した日」（名簿を取った日）
 );
 CREATE TABLE facilities (
     id TEXT PRIMARY KEY,          -- 都道府県コード(2桁)+医療機関番号(7桁)
@@ -591,6 +599,20 @@ def _build_dpc(con) -> int:
     return len(h)
 
 
+def _with_sources(prefs: pd.DataFrame) -> pd.DataFrame:
+    """都道府県ごとに、出典に書く厚生局・名簿のページ・URL・利用した日（名簿を取った日）を付ける。"""
+    fetched = json.loads(FETCHED.read_text(encoding="utf-8")) if FETCHED.exists() else {}
+    p = prefs.copy()
+    names = p["都道府県名"].astype(str)
+    p["bureau"] = names.map(lambda n: BUREAU_OF_PREF.get(n, ("", "", ""))[0])
+    p["bureau_page"] = names.map(lambda n: BUREAU_OF_PREF.get(n, ("", "", ""))[1])
+    p["bureau_url"] = names.map(lambda n: BUREAU_OF_PREF.get(n, ("", "", ""))[2])
+    p["used_on"] = names.map(lambda n: fetched.get(n, ""))
+    p["used_on_label"] = p["used_on"].map(
+        lambda d: f"{int(d[:4])}年{int(d[5:7])}月{int(d[8:10])}日" if d else "")
+    return p
+
+
 def build(src: Path = SRC, out: Path = OUT) -> dict:
     """メモリを抑えるため、集計用の列だけを辞書エンコード（category）のまま読み、
     届出行はparquetから10万行ずつ読んでDBに流し込む（全列を一度に文字列で
@@ -672,8 +694,9 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     con.executescript(SCHEMA)
     con.execute("CREATE TEMP TABLE filings_raw AS SELECT * FROM filings WHERE 0")
     con.executemany(
-        "INSERT INTO prefs VALUES (?,?,?,?,?,?)",
-        prefs[["都道府県コード", "都道府県名", "as_of", "as_of_label", "n_facilities", "n_filings"]]
+        "INSERT INTO prefs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        _with_sources(prefs)[["都道府県コード", "都道府県名", "as_of", "as_of_label", "n_facilities", "n_filings",
+                              "bureau", "bureau_page", "bureau_url", "used_on", "used_on_label"]]
         .astype(object).itertuples(index=False, name=None),
     )
     con.executemany(

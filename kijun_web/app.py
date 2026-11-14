@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .build_db import OUT as DEFAULT_DB, search_key
+from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -131,7 +132,7 @@ templates.env.globals.update(
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
     mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
     adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL, operator_name=OPERATOR_NAME, ga_id=GA_MEASUREMENT_ID,
-    contact_form_url=CONTACT_FORM_URL, ad_preview=AD_PREVIEW,
+    contact_form_url=CONTACT_FORM_URL, ad_preview=AD_PREVIEW, mhlw_urls=MHLW_URLS,
 )
 
 
@@ -624,7 +625,8 @@ def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
             w.writerow(["区分の列：○は厚生局が公表している区分。○（参考）は区分が公表されていない届出（北海道など）"
                         "について、厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
                         "区分が分からない届出（北海道の精神病棟・結核病棟・有床診療所など）は結果に含まれません"])
-        w.writerow(["出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（MedilenZ）"])
+        w.writerow(["出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（MedilenZ）。"
+                    f"各厚生局のページのURLと利用した日は {SITE_URL}/about#sources"])
         yield buf.getvalue()
 
     return StreamingResponse(
@@ -986,7 +988,15 @@ def pref_page(request: Request, pref_name: str):
 def about(request: Request):
     with db() as con:
         prefs = _prefs(con)
-    return render(request, "about.html", prefs=prefs)
+    # 出典の一覧：厚生局ごとに、名簿のページ（URL）・管轄の都道府県・利用した日（名簿を取った日）
+    used = {}
+    for p in prefs:
+        if p["bureau"] and p["used_on_label"]:
+            used.setdefault(p["bureau"], set()).add((p["used_on"], p["used_on_label"]))
+    bureaus = [{"name": b, "page": title, "url": KOUSEIKYOKU_BASE + path, "prefs": "・".join(ps),
+                "used_on": "、".join(lab for _, lab in sorted(used.get(b, [])))}
+               for b, title, path, ps in BUREAUS]
+    return render(request, "about.html", prefs=prefs, bureaus=bureaus)
 
 
 @app.get("/privacy", response_class=HTMLResponse)
