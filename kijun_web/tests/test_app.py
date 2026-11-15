@@ -324,3 +324,15 @@ def test_sources_follow_bureau_citation_example():
     assert "（四国厚生支局）" in html and "kouseikyoku.mhlw.go.jp/shikoku/" in html and "に利用）を加工して作成" in html
     about = _get("/about")
     assert 'id="sources"' in about and about.count("kouseikyoku.mhlw.go.jp/") >= 8 and "www.mhlw.go.jp" in about
+
+
+def test_hospital_conditions_filter_and_show_values():
+    # 病床・設備・実績（病床機能報告・DPC・外来機能報告）で絞り込み、使った値を結果とCSVに出す
+    html = _get("/search?pref=39&bmin=200&eq=robot&amb=1000")
+    assert "許可病床数 200床以上" in html and "手術支援ロボット（ダビンチ等）あり" in html and "高知赤十字病院" in html
+    assert "病床機能報告" in html
+    csv_text = client.get("/search.csv?pref=39&bmin=200&eq=robot&amb=1000").text
+    assert "許可病床数（床）" in csv_text and "救急車の受入件数（件）" in csv_text
+    # トップに条件を入れた状態で戻れる
+    top = _get("/?pref=39&bmin=200&eq=robot&amb=1000")
+    assert 'name="bmin" min="0" step="1" inputmode="numeric" value="200"' in top and 'value="robot" checked' in top

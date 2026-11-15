@@ -59,6 +59,43 @@
     </tr>
   </table>
 
+
+  {% if hosp_counts %}
+  <h2 class="ct-h">病床・設備・実績（病院）</h2>
+  <ul class="db-notes">
+    <li>病床の数・医療機器・救急や手術の件数で病院を絞り込めます。厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) }}）・「DPC退院患者調査」（{{ reiwa(meta.hstats_dpc_year|int) }}）・「外来機能報告」（{{ reiwa(meta.hstats_gairai_year|int) }}）の値を使います。</li>
+    <li>指定した条件はすべて満たす病院を探します。病床機能報告に載っていない医療機関（多くの診療所）は、これらの条件を使うと結果に出ません（対象 {{ "{:,}".format(hosp_counts.n) }} 施設）。</li>
+  </ul>
+  <table class="ct ct-items ct-hosp" id="ct-hosp">
+    <tr>
+      <th scope="row">許可病床数</th>
+      <td><div class="ct-range">
+        <input type="number" name="bmin" min="0" step="1" inputmode="numeric" value="{{ fmt_num(cond.bmin) }}" aria-label="許可病床数の下限">床以上
+        <input type="number" name="bmax" min="0" step="1" inputmode="numeric" value="{{ fmt_num(cond.bmax) }}" aria-label="許可病床数の上限">床以下
+      </div></td>
+    </tr>
+    <tr>
+      <th scope="row">病床機能<small>その病床を持つ</small></th>
+      <td><div class="ct-checks">
+        {% for k, col, name in h_funcs %}<label><input type="checkbox" name="fn" value="{{ k }}" {% if k in cond.funcs %}checked{% endif %}>{{ name }}<small>{{ "{:,}".format(hosp_counts.get(col, 0)) }}</small></label>{% endfor %}
+      </div></td>
+    </tr>
+    <tr>
+      <th scope="row">医療機器<small>1台以上ある</small></th>
+      <td><div class="ct-checks">
+        {% for k, col, name in h_equip %}<label><input type="checkbox" name="eq" value="{{ k }}" {% if k in cond.eqs %}checked{% endif %}>{{ name }}<small>{{ "{:,}".format(hosp_counts.get(col, 0)) }}</small></label>{% endfor %}
+      </div></td>
+    </tr>
+    <tr>
+      <th scope="row">実績<small>年間・以上</small></th>
+      <td><div class="ct-nums">
+        {% for k, col, name, unit in h_nums %}<label><span>{{ name }}</span><input type="number" name="{{ k }}" min="0" step="{{ '0.1' if unit == '%' else '1' }}" inputmode="decimal" value="{{ fmt_num(cond.nums[k]) if k in cond.nums else '' }}"><em>{{ unit }}以上</em></label>{% endfor %}
+      </div>
+      <p class="ct-hint">DPCの件数は、DPC（診断群分類）のデータを提出している病院の、その年度に退院した患者の数です。紹介率＝紹介患者数÷初診患者数（外来機能報告の定義）。</p></td>
+    </tr>
+  </table>
+  {% endif %}
+
   <h2 class="ct-h">届出項目</h2>
   <ul class="db-notes">
     <li>地方厚生局への届出項目（受理記号）を指定して絞り込めます（複数選択可）。記号にカーソルを当てると正式名称が出ます。</li>
@@ -198,9 +235,14 @@
     const items = n("input[name=item]") + n("input[name=kb]");
     if (items) parts.push(`届出項目 ${items}`);
     if (document.getElementById("ct-q").value.trim()) parts.push("名前・住所");
+    const hosp = n("input[name=fn]") + n("input[name=eq]") +
+      [...form.querySelectorAll("#ct-hosp input[type=number]")].filter((i) => i.value !== "").length;
+    if (hosp) parts.push(`病床・設備・実績 ${hosp}`);
     bar.textContent = parts.length ? "選択中：" + parts.join("・") : "条件の指定なし（すべての医療機関）";
   }
   table.addEventListener("change", count);
+  const hospTable = document.getElementById("ct-hosp");
+  if (hospTable) { hospTable.addEventListener("change", count); hospTable.addEventListener("input", count); }
   // 区分ごとに「n件選択中」を出す（閉じていても選んだものが分かるように）
   table.addEventListener("change", (e) => {
     const tr = e.target.closest("tr[data-sec]");
@@ -242,7 +284,11 @@
   q.addEventListener("blur", () => setTimeout(() => { sug.hidden = true; q.setAttribute("aria-expanded", "false"); }, 150));
 
   // 送信時、空の名前欄はURLに付けない
-  form.addEventListener("submit", () => { if (!q.value.trim()) q.disabled = true; });
+  form.addEventListener("submit", () => {
+    if (!q.value.trim()) q.disabled = true;
+    // 空の数値欄はURLに載せない
+    form.querySelectorAll("#ct-hosp input[type=number]").forEach((i) => { if (i.value === "") i.disabled = true; });
+  });
   window.addEventListener("pageshow", () => { q.disabled = false; });
 
   renderAreas(true);

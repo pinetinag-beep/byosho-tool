@@ -13,6 +13,7 @@
   {% if cond.ftypes %}<span class="v">{{ cond.ftypes|join('・') }}</span>{% endif %}
   {% if cond.q %}<span class="v">「{{ cond.q }}」</span>{% endif %}
   {% if cond.k %}<span class="v">施設基準「{{ cond.k }}」</span>{% endif %}
+  {% for h in cond.hosp_labels %}<span class="v">{{ h }}</span>{% endfor %}
   {% if sel_cols|length == 1 %}<span class="v">{% if sel_cols[0].kubun %}区分{% else %}届出項目{% endif %}：<abbr title="{{ sel_cols[0].title }}">{{ sel_cols[0].head }}</abbr></span>
   {% elif sel_cols %}<span class="v">{{ sel_cols|length }}件の{% if cond.mode == 'or' %}いずれか{% else %}すべて{% endif %}に当てはまる：
     {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
@@ -63,6 +64,7 @@
     {% if sel_cols and item_cols %}{% for s in sel_cols %}<th class="ic{% if s.kubun %} kb{% endif %}" title="{{ s.title }}">{{ s.head }}</th>{% endfor %}
     {% elif sel_cols %}<th>当てはまる項目</th>
     {% else %}<th class="num">届出数</th>{% endif %}
+    {% for h in hosp_cols %}<th class="num">{{ h.label }}</th>{% endfor %}
   </tr></thead>
   <tbody>
   {% for r in rows %}
@@ -77,6 +79,8 @@
       {% if sel_cols and item_cols %}{% for s in sel_cols %}{% set m = got.get(s.key) %}<td class="ic">{% if m == "ok" %}<span class="ok" title="{{ s.title }}">○</span>{% elif m %}<span class="ok ref" title="病床機能報告（{{ meta.kubun_ref_label }}）からの参考値{% if m == 'ref_likely_changed' %}。その後に届出が出し直されており、令和8年度改定で別の区分（急性期病院Ａ/Ｂ一般入院料など）に移った可能性が高い{% elif m == 'ref_changed' %}。その後に届出が出し直されており、区分が変わっている場合があります{% endif %}">○<span class="tag ref">参考</span>{% if m == 'ref_likely_changed' %}※※{% elif m == 'ref_changed' %}※{% endif %}</span>{% endif %}</td>{% endfor %}
       {% elif sel_cols %}<td class="small">{% for s in sel_cols if got.get(s.key) %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if got.get(s.key) != "ok" %}<span class="tag ref">参考</span>{% endif %}{% if not loop.last %}・{% endif %}{% endfor %}</td>
       {% else %}<td class="num">{{ r.n_kijun }}</td>{% endif %}
+      {% set hv = hosp_vals.get(r.id) %}
+      {% for h in hosp_cols %}<td class="num">{% if hv and hv[h.col] is not none %}{{ hosp_fmt(hv[h.col], h.unit) }}<small class="muted">{{ h.unit }}</small>{% else %}—{% endif %}</td>{% endfor %}
     </tr>
   {% endfor %}
   </tbody>
@@ -95,6 +99,7 @@
 {% else %}
 <p class="note">条件に合う医療機関は見つかりませんでした。届出項目を「いずれか」にする、地域を広げるなどして探してみてください。</p>
 {% endif %}
+{% if hosp_cols %}<p class="note small">病床・設備・救急車の受入件数は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) }}）、DPCの件数は「{{ dpc_source(meta.hstats_dpc_year|int) }}」、紹介率は「外来機能報告」（{{ reiwa(meta.hstats_gairai_year|int) }}）の値です（いずれも厚生労働省、加工して作成）。病床機能報告に載っていない医療機関（多くの診療所）は、これらの条件では結果に出ません。「—」は報告されていない、または公表されていない値です。</p>{% endif %}
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（各厚生局のページと利用した日は<a href="/about#sources">データについて</a>）</p>
 {% include "_ad.html" %}
 {% endblock %}

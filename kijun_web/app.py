@@ -145,6 +145,25 @@ def render(request: Request, template: str, status_code: int = 200, **ctx) -> HT
 
 # ── 検索 ────────────────────────────────────────────────────
 
+# トップの条件表「病床・設備・実績（病院）」。hstats の列と画面の表示名
+H_FUNCS = [("hk", "b_hk", "高度急性期"), ("ak", "b_ak", "急性期"), ("kf", "b_kf", "回復期"), ("mk", "b_mk", "慢性期")]
+H_EQUIP = [("ct", "ct", "CT"), ("ct64", "ct64", "CT（64列以上）"), ("mri", "mri", "MRI"), ("mri3t", "mri3t", "MRI（3T以上）"),
+           ("pet", "pet", "PET（PET-CT・PET-MRIを含む）"), ("angio", "angio", "血管連続撮影装置"),
+           ("robot", "robot", "手術支援ロボット（ダビンチ等）"), ("imrt", "imrt", "IMRT（強度変調放射線治療）")]
+H_NUMS = [  # (パラメータ, hstats の列, 表示名, 単位)
+    ("amb", "amb", "救急車の受入件数", "件"), ("dpc", "dpc_total", "DPC退院患者数", "件"),
+    ("dsurg", "dpc_surg", "DPC手術ありの件数", "件"), ("ref", "referral", "紹介率", "%"),
+]
+
+
+def _pos_num(v: str | None) -> float | None:
+    try:
+        x = float(str(v).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+    return x if x >= 0 else None
+
+
 @dataclass
 class Cond:
     """検索条件。フォームの複数選択（二次医療圏・市区町村・施設の種類・届出項目）は同じ名前の
@@ -160,6 +179,12 @@ class Cond:
     mode: str = "and"          # 届出項目・区分を「すべて」届け出ている(and) / 「いずれか」(or)
     k: str = ""                # 施設基準名称の一部（施設基準ページの「条件を足して検索」など、従来のリンク用）
     kx: str = ""               # 施設基準名称の完全一致（施設基準ページのCSVリンク用）
+    # 病床・設備・実績（病院。病床機能報告・DPC・外来機能報告の最新年度の値で絞り込む）
+    bmin: float | None = None  # 許可病床数の下限
+    bmax: float | None = None  # 許可病床数の上限
+    funcs: list[str] = field(default_factory=list)   # 持っている病床機能（H_FUNCS のキー。いずれも持つ）
+    eqs: list[str] = field(default_factory=list)     # 持っている設備（H_EQUIP のキー。いずれも持つ）
+    nums: dict = field(default_factory=dict)         # 実績の下限（H_NUMS のキー → 値）
 
     def __post_init__(self):
         if self.pref and not self.prefs:
@@ -185,6 +210,11 @@ class Cond:
             mode="or" if qp.get("mode") == "or" else "and",
             k=qp.get("k", "").strip(),
             kx=qp.get("kx", "").strip(),
+            bmin=_pos_num(qp.get("bmin")),
+            bmax=_pos_num(qp.get("bmax")),
+            funcs=[v for v in dict.fromkeys(qp.getlist("fn")) if v in {k for k, _, _ in H_FUNCS}],
+            eqs=[v for v in dict.fromkeys(qp.getlist("eq")) if v in {k for k, _, _ in H_EQUIP}],
+            nums={k: n for k, _, _, _ in H_NUMS if (n := _pos_num(qp.get(k))) is not None},
         )
 
     def query(self, **extra) -> str:
@@ -193,7 +223,10 @@ class Cond:
         pairs += [("kb", i) for i in self.kubuns]
         if self.n_selected > 1 and self.mode == "or":
             pairs.append(("mode", "or"))
-        pairs += [("k", self.k), ("kx", self.kx)] + list(extra.items())
+        pairs += [("k", self.k), ("kx", self.kx)]
+        pairs += [("bmin", _fmt_num(self.bmin)), ("bmax", _fmt_num(self.bmax))]
+        pairs += [("fn", f) for f in self.funcs] + [("eq", e) for e in self.eqs]
+        pairs += [(k, _fmt_num(v)) for k, v in self.nums.items()] + list(extra.items())
         return urlencode([(k, v) for k, v in pairs if v not in ("", None)])
 
     @property
@@ -206,8 +239,83 @@ class Cond:
         return [f"i{i}" for i in self.items] + [f"b{i}" for i in self.kubuns]
 
     @property
+    def has_hosp(self) -> bool:
+        """病床・設備・実績の条件があるか。"""
+        return bool(self.bmin is not None or self.bmax is not None or self.funcs or self.eqs or self.nums)
+
+    @property
+    def hosp_labels(self) -> list[str]:
+        """検索結果の「条件」欄に出す文言。"""
+        out = []
+        if self.bmin is not None or self.bmax is not None:
+            lo = f"{_fmt_num(self.bmin)}床以上" if self.bmin is not None else ""
+            hi = f"{_fmt_num(self.bmax)}床以下" if self.bmax is not None else ""
+            out.append("許可病床数 " + "・".join(x for x in (lo, hi) if x))
+        names = dict((k, n) for k, _, n in H_FUNCS)
+        out += [f"{names[f]}の病床あり" for f in self.funcs]
+        names = dict((k, n) for k, _, n in H_EQUIP)
+        out += [f"{names[e]}あり" for e in self.eqs]
+        for k, _, n, unit in H_NUMS:
+            if k in self.nums:
+                out.append(f"{n} {_fmt_num(self.nums[k])}{unit}以上")
+        return out
+
+    @property
     def empty(self) -> bool:
-        return not (self.prefs or self.ftypes or self.q or self.items or self.kubuns or self.k or self.kx)
+        return not (self.prefs or self.ftypes or self.q or self.items or self.kubuns or self.k or self.kx
+                    or self.has_hosp)
+
+
+def _fmt_num(v: float | None) -> str:
+    if v is None:
+        return ""
+    return str(int(v)) if float(v).is_integer() else str(v)
+
+
+def _hosp_sql(c: Cond) -> tuple[str, list]:
+    """病床・設備・実績の条件（すべて満たす）。hstats に無い医療機関（病床機能報告に無い診療所など）は外れる。"""
+    w, p = [], []
+    if c.bmin is not None:
+        w.append("beds >= ?"); p.append(c.bmin)
+    if c.bmax is not None:
+        w.append("beds <= ?"); p.append(c.bmax)
+    cols = dict((k, col) for k, col, _ in H_FUNCS)
+    w += [f"{cols[f]} > 0" for f in c.funcs]
+    cols = dict((k, col) for k, col, _ in H_EQUIP)
+    w += [f"{cols[e]} > 0" for e in c.eqs]
+    cols = dict((k, col) for k, col, _, _ in H_NUMS)
+    for k, v in c.nums.items():
+        w.append(f"{cols[k]} >= ?"); p.append(v)
+    return " AND ".join(w), p
+
+
+def _hosp_cols(c: Cond) -> list[dict]:
+    """検索結果・CSVに足す列（条件に使った値。CLAUDE.md「検索条件に使ったデータは結果とCSVに出す」）。"""
+    if not c.has_hosp:
+        return []
+    cols = [{"col": "beds", "label": "許可病床数", "unit": "床"}]
+    cols += [{"col": col, "label": f"{n}の病床数", "unit": "床"} for k, col, n in H_FUNCS if k in c.funcs]
+    cols += [{"col": col, "label": n, "unit": "台"} for k, col, n in H_EQUIP if k in c.eqs]
+    cols += [{"col": col, "label": n, "unit": unit} for k, col, n, unit in H_NUMS if k in c.nums]
+    return cols
+
+
+def _hosp_values(con, ids: list[str] | None, where: str = "", params: list | None = None) -> dict[str, sqlite3.Row]:
+    if ids is not None:
+        if not ids:
+            return {}
+        rows = con.execute(f"SELECT * FROM hstats WHERE facility_id IN ({','.join('?' * len(ids))})", ids)
+    else:
+        rows = con.execute(f"SELECT h.* FROM hstats h JOIN facilities f ON f.id = h.facility_id WHERE {where}", params or [])
+    return {r["facility_id"]: r for r in rows}
+
+
+def _hosp_fmt(v, unit: str) -> str:
+    if v is None:
+        return ""
+    if unit == "%":
+        return f"{v:.1f}"
+    return f"{int(v):,}" if float(v).is_integer() else str(v)
 
 
 def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
@@ -263,6 +371,10 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
     if sel:
         where.append("(" + (" OR " if c.mode == "or" else " AND ").join(sel) + ")")
         params += sel_params
+    if c.has_hosp:
+        hw, hp = _hosp_sql(c)
+        where.append(f"f.id IN (SELECT facility_id FROM hstats WHERE {hw})")
+        params += hp
     kwhere, kparams = "", []
     if kx:
         kwhere, kparams = "x.kijun_id IN (SELECT id FROM kijun WHERE name = ?)", [kx]
@@ -438,6 +550,16 @@ def _cond_table_ctx(con) -> dict:
     return {"regions": regions, "sections": list(sections.items()), "kubun_groups": _kubun_groups(con), "ftypes": FTYPES}
 
 
+def _hosp_counts(con) -> dict[str, int]:
+    """条件表の病床機能・設備のチェックボックスに添える件数（その病床・設備がある病院の数）。"""
+    try:
+        cols = [col for _, col, _ in H_FUNCS] + [col for _, col, _ in H_EQUIP]
+        r = con.execute("SELECT " + ", ".join(f"SUM({c} > 0) AS {c}" for c in cols) + ", COUNT(*) AS n FROM hstats").fetchone()
+    except sqlite3.OperationalError:
+        return {}
+    return {k: r[k] or 0 for k in r.keys()}
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     cond = Cond.from_request(request)   # 検索結果の「条件を変更する」から来た時は、選んだ条件を入れた状態で開く
@@ -445,7 +567,8 @@ def index(request: Request):
         ctx = _cond_table_ctx(con)
         examples = _examples(con)
         type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
-    return render(request, "index.html", cond=cond, examples=examples, type_counts=type_counts,
+        hosp_counts = _hosp_counts(con)
+    return render(request, "index.html", cond=cond, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
                   sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
 
 
@@ -560,6 +683,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
         ).fetchall()
         ids = [r["id"] for r in rows]
         sel_cols, marks = _sel_columns(con, c, where, params, ids)
+        hosp_cols, hosp_vals = _hosp_cols(c), _hosp_values(con, ids) if c.has_hosp else {}
         hits: dict[str, list[str]] = {}
         if kwhere and ids:
             for h in con.execute(
@@ -587,7 +711,8 @@ def search(request: Request, page: int = Query(1, ge=1)):
     pref_name = "・".join(p["name"] for p in ctx["prefs"] if p["code"] in c.prefs)
     return render(
         request, "search.html",
-        rows=rows, hits=hits, sel_cols=sel_cols, marks=marks, total=total, page=page, pages=pages,
+        rows=rows, hits=hits, sel_cols=sel_cols, marks=marks, total=total,
+        hosp_cols=hosp_cols, hosp_vals=hosp_vals, hosp_fmt=_hosp_fmt, page=page, pages=pages,
         pref_name=pref_name, cond=c, matched_kijun=matched_kijun, matched_kubun=matched_kubun,
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
@@ -605,7 +730,7 @@ FILING_COLS = ["受理届出名称", "受理記号", "受理番号", "算定開�
                "病棟数", "病床数", "区分", "内訳その他", "区分（参考：病床機能報告）"]
 
 
-def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
+def _csv_response(header: list[str], rows, filename: str, hosp_years: dict | None = None) -> StreamingResponse:
     def gen():
         buf = io.StringIO()
         w = csv.writer(buf)
@@ -626,6 +751,12 @@ def _csv_response(header: list[str], rows, filename: str) -> StreamingResponse:
             w.writerow(["区分の列：○は厚生局が公表している区分。○（参考）は区分が公表されていない届出（北海道など）"
                         "について、厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
                         "区分が分からない届出（北海道の精神病棟・結核病棟・有床診療所など）は結果に含まれません"])
+        if hosp_years:
+            by, dy, gy = (hosp_years.get(f"hstats_{k}_year", "") for k in ("byosho", "dpc", "gairai"))
+            w.writerow([f"病床・設備・救急車の受入件数：厚生労働省「病床機能報告」（{reiwa(int(by)) if by else ''}）、"
+                        f"DPC：厚生労働省「{dpc_source(int(dy)) if dy else 'DPC退院患者調査'}」、"
+                        f"紹介率：厚生労働省「外来機能報告」（{reiwa(int(gy)) if gy else ''}）を加工して作成。"
+                        "病床機能報告に載っていない医療機関（多くの診療所）は、これらの条件では結果に含まれません"])
         w.writerow(["出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（MedilenZ）。"
                     f"各厚生局のページのURLと利用した日は {SITE_URL}/about#sources"])
         yield buf.getvalue()
@@ -672,7 +803,28 @@ def search_csv(request: Request):
         header = FACILITY_COLS + ["届出している施設基準の数"]
         rows = ([*r][1:] for r in con.execute(fac_sql, params))
         name = c.q or "医療機関一覧"
-    return _csv_response(header, rows, f"施設基準届出_{name}.csv")
+    if c.has_hosp:
+        # 病床・設備・実績の条件に使った値を列に足す（医療機関ごとの行の時）
+        hcols = _hosp_cols(c)
+        hv = _hosp_values(con, None, where, params)
+        ids_sql = f"SELECT f.id FROM facilities f WHERE {where} ORDER BY f.pref_code, f.name"
+        if c.items or c.kubuns or not kwhere:
+            ids = [r[0] for r in con.execute(ids_sql, params)]
+            header = header + [f"{h['label']}（{h['unit']}）" for h in hcols]
+            rows = ([*r] + [_csv_num(hv.get(fid), h["col"]) for h in hcols] for fid, r in zip(ids, rows))
+    return _csv_response(header, rows, f"施設基準届出_{name}.csv", hosp_years=_hosp_years(con) if c.has_hosp else None)
+
+
+def _csv_num(r, col):
+    if r is None or r[col] is None:
+        return ""
+    v = r[col]
+    return round(v, 1) if col == "referral" else int(v)
+
+
+def _hosp_years(con) -> dict[str, str]:
+    m = {r[0]: r[1] for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'hstats_%'")}
+    return {k: v for k, v in m.items()}
 
 
 # ── 医療機関ページ ───────────────────────────────────────────
@@ -841,6 +993,9 @@ def dpc_source(year: int) -> str:
     """調査名は令和6年度から「DPCの評価・検証等に係る調査」に変わった（公表資料の名称どおりに書く）。"""
     name = "DPCの評価・検証等に係る調査" if year >= 2024 else "DPC導入の影響評価に係る調査"
     return f"{reiwa(year)}{name}「退院患者調査」"
+
+
+templates.env.globals.update(reiwa=reiwa, dpc_source=dpc_source, fmt_num=_fmt_num, h_funcs=H_FUNCS, h_equip=H_EQUIP, h_nums=H_NUMS)
 
 
 def _dpc_kind(t: str | None) -> str:

@@ -365,3 +365,11 @@ table.mdc .bar-col { width: 30%; min-width: 80px; vertical-align: middle; }
 table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; background: var(--brand); min-width: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 640px) { table.mdc .bar-col { display: none; } }
+
+/* トップ：病床・設備・実績（病院） */
+.ct-range { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.ct-range input, .ct-nums input { width: 7em; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--card); text-align: right; }
+.ct-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 16px; }
+.ct-nums em, .ct-range { font-style: normal; white-space: nowrap; }
+.ct-nums label { display: flex; align-items: center; gap: 6px; }
+.ct-nums label span { min-width: 9.5em; }

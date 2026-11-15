@@ -547,6 +547,39 @@ def _build_gairai(con) -> int:
     return len(a)
 
 
+def _build_hstats(con) -> int:
+    """トップの条件表の「病床・設備・実績」で絞り込むための、医療機関ごとの最新の数字。
+    病床機能報告・DPC・外来機能報告それぞれの最新年度の値だけを持つ（年度は meta に残し、画面に書く）。"""
+    have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "byosho_hosp" not in have:
+        return 0
+    by = con.execute("SELECT MAX(year) FROM byosho_hosp").fetchone()[0]
+    dy = con.execute("SELECT MAX(year) FROM dpc_hosp").fetchone()[0] if "dpc_hosp" in have else None
+    gy = con.execute("SELECT MAX(year) FROM gairai WHERE n_first > 0").fetchone()[0] if "gairai" in have else None
+    con.execute(f"""
+        CREATE TABLE hstats AS
+        SELECT f.id AS facility_id,
+               b."合計_許可病床数" AS beds,
+               b."高度急性期_許可病床数" AS b_hk, b."急性期_許可病床数" AS b_ak,
+               b."回復期_許可病床数" AS b_kf, b."慢性期_許可病床数" AS b_mk,
+               b."CT台数" AS ct, b."CT_64列以上" AS ct64, b."MRI台数" AS mri, b."MRI_3T以上" AS mri3t,
+               COALESCE(b."PET台数", 0) + COALESCE(b."PETCT台数", 0) + COALESCE(b."PETMRI台数", 0) AS pet,
+               b."血管連続撮影装置台数" AS angio, b."内視鏡手術支援機器台数" AS robot, b."IMRT台数" AS imrt,
+               b."救急搬送件数" AS amb,
+               d."件数_総数" AS dpc_total, d."件数_手術有" AS dpc_surg,
+               g.referral_rate AS referral
+        FROM facilities f
+        JOIN byosho_hosp b ON b.code = substr('0000000000' || f.byosho_code, -10) AND b.year = ?
+        LEFT JOIN dpc_hosp d ON d.code = b.code AND d.year = ?
+        LEFT JOIN gairai g ON g.facility_id = f.id AND g.year = ? AND g.n_first > 0
+        WHERE f.byosho_code IS NOT NULL""", (by, dy, gy))
+    con.execute("CREATE UNIQUE INDEX ix_hs ON hstats(facility_id)")
+    con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",
+                    [("hstats_byosho_year", str(by or "")), ("hstats_dpc_year", str(dy or "")),
+                     ("hstats_gairai_year", str(gy or ""))])
+    return con.execute("SELECT COUNT(*) FROM hstats").fetchone()[0]
+
+
 _JIS_PREFS = (
     "北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 "
     "新潟県 富山県 石川県 福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 "
@@ -746,6 +779,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_byosho_rows = _build_byosho(con)
     n_dpc_rows = _build_dpc(con)
     n_gairai_rows = _build_gairai(con)
+    n_hstats = _build_hstats(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -762,6 +796,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_byosho_rows": str(n_byosho_rows),
         "n_dpc_rows": str(n_dpc_rows),
         "n_gairai_rows": str(n_gairai_rows),
+        "n_hstats": str(n_hstats),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),
