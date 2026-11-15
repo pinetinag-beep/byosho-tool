@@ -336,3 +336,11 @@ def test_hospital_conditions_filter_and_show_values():
     # トップに条件を入れた状態で戻れる
     top = _get("/?pref=39&bmin=200&eq=robot&amb=1000")
     assert 'name="bmin" min="0" step="1" inputmode="numeric" value="200"' in top and 'value="robot" checked' in top
+
+
+def test_analytics_page_groups_and_events():
+    # 経路データ探索で medilenz.jp での動きが分かるよう、ページの種類とサイト独自のイベントを送る
+    assert 'content_group: "\\u30c8\\u30c3\\u30d7"' in _get("/")
+    assert 'gtag("event", "search"' in _get("/search?pref=39")
+    assert 'gtag("event", "view_facility"' in _get("/facility/390110406")
+    assert 'data-ga="suggest"' in _get("/")

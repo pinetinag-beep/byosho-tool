@@ -2,6 +2,9 @@
 {% block title %}{{ kj.name }}を届け出ている{{ pref.name }}の医療機関一覧（{{ "{:,}".format(total) }}件）{% endblock %}
 {% block description %}{{ pref.name }}で施設基準「{{ kj.name }}」を届け出ている病院・診療所{{ "{:,}".format(total) }}件の一覧。算定開始日・区分つきで、CSVも無料でダウンロードできます。{% endblock %}
 {% block canonical %}{{ request.url.path }}{% if page > 1 %}?page={{ page }}{% endif %}{% endblock %}
+{% block ga_events %}
+  gtag("event", "view_kijun", { kijun_name: {{ kj.name|tojson }}, prefecture: {{ pref.name|tojson }} });
+{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="/kijun">施設基準の一覧</a> › <a href="{{ kijun_url(kj.name) }}">{{ kj.name }}</a> › {{ pref.name }}</p>
 <h1>{{ kj.name }}<br><span style="font-size:0.75em">{{ pref.name }}の届出医療機関</span></h1>

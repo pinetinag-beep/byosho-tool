@@ -2,6 +2,12 @@
 {% block title %}{% if sel_cols %}{{ sel_cols|map(attribute='head')|join('・') }}{% elif cond.kx %}{{ cond.kx }}{% elif cond.k %}「{{ cond.k }}」{% endif %}{% if cond.q %} {{ cond.q }}{% endif %}{% if pref_name %} {{ pref_name }}{% endif %} の検索結果{% endblock %}
 {% block robots %}<meta name="robots" content="noindex,follow">{% endblock %}
 {% block canonical %}/search{% endblock %}
+{% block ga_events %}
+  gtag("event", "search", {
+    search_term: {{ [pref_name or "全国", cond.ftypes|join("・"), sel_cols|map(attribute="head")|join("・"), cond.k, cond.q, cond.hosp_labels|join("・")]|select|join(" ")|tojson }},
+    results: {{ total }}, n_items: {{ sel_cols|length }}, hosp_conditions: {{ cond.hosp_labels|length }}
+  });
+{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › 検索結果</p>
 <h1>検索結果</h1>

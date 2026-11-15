@@ -137,9 +137,18 @@ templates.env.globals.update(
 )
 
 
+# Googleアナリティクスのコンテンツグループ（ページの種類）。経路データ探索で「トップ→検索結果→医療機関」のように見るため
+GA_PAGE = {
+    "index.html": "トップ", "search.html": "検索結果", "facility.html": "医療機関",
+    "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
+    "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
+}
+
+
 def render(request: Request, template: str, status_code: int = 200, **ctx) -> HTMLResponse:
     with db() as con:
         ctx.setdefault("meta", _meta(con))
+    ctx.setdefault("ga_page", GA_PAGE.get(template, "その他"))
     return templates.TemplateResponse(request, template, ctx, status_code=status_code)
 
 

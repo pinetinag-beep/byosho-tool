@@ -22,13 +22,18 @@ if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
   window.dataLayer = window.dataLayer || [];
   window.gtag = function () { dataLayer.push(arguments); };
   gtag("js", new Date());
-  gtag("config", "{{ ga_id }}");
-  // CSVのダウンロードを数える（どの検索・どのページから落とされたか）
+  // ページの種類（トップ・検索結果・医療機関ページなど）をコンテンツグループとして送る
+  gtag("config", "{{ ga_id }}", { content_group: {{ ga_page|tojson }} });
+  {% block ga_events %}{% endblock %}
   document.addEventListener("click", (e) => {
     const a = e.target.closest("a[href]");
-    if (a && /\.csv(\?|$)/.test(a.getAttribute("href"))) {
-      gtag("event", "csv_download", { link_url: a.href, page_path: location.pathname });
+    if (!a) return;
+    // CSVのダウンロードを数える（どの種類のページから落とされたか）
+    if (/\.csv(\?|$)/.test(a.getAttribute("href"))) {
+      gtag("event", "csv_download", { link_url: a.href, page_path: location.pathname, content_group: {{ ga_page|tojson }} });
     }
+    // 名前の入力候補から医療機関ページへ進んだ
+    if (a.dataset.ga === "suggest") gtag("event", "select_suggestion", { link_url: a.href });
   });
 }
 </script>{% endif %}

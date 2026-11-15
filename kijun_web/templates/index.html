@@ -264,7 +264,7 @@
     const cand = res.ok ? await res.json() : [];
     active = -1;
     sug.innerHTML = cand.length
-      ? cand.map((r) => `<li role="option"><a href="${r.url}"><span class="nm">${esc(r.name)}<small>${esc(r.where)}</small></span>
+      ? cand.map((r) => `<li role="option"><a data-ga="suggest" href="${r.url}"><span class="nm">${esc(r.name)}<small>${esc(r.where)}</small></span>
           <span class="sy">${esc(r.ftype)}</span><span class="ct">届出 ${r.n.toLocaleString()}</span></a></li>`).join("")
       : `<li class="none">名前の候補はありません。「リストを抽出する」で住所からも探せます</li>`;
     sug.hidden = false;
@@ -278,7 +278,7 @@
       active = (active + (e.key === "ArrowDown" ? 1 : as.length - 1)) % as.length;
       as.forEach((a, i) => a.parentElement.classList.toggle("on", i === active));
     } else if (e.key === "Enter" && active >= 0 && !sug.hidden) {
-      e.preventDefault(); location.href = as[active].href;
+      e.preventDefault(); if (window.gtag) gtag("event", "select_suggestion", { link_url: as[active].href }); location.href = as[active].href;
     }
   });
   q.addEventListener("blur", () => setTimeout(() => { sug.hidden = true; q.setAttribute("aria-expanded", "false"); }, 150));

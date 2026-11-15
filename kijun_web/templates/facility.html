@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ f.name }}（{{ f.pref_name }}）の施設基準届出一覧{% endblock %}
 {% block description %}{{ f.pref_name }}の{{ f.ftype }}「{{ f.name }}」が地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。CSVで無料ダウンロードできます。{% endblock %}
+{% block ga_events %}
+  gtag("event", "view_facility", {
+    facility_type: {{ f.ftype|tojson }}, prefecture: {{ f.pref_name|tojson }},
+    has_byosho: {{ 'true' if byosho else 'false' }}, has_dpc: {{ 'true' if dpc else 'false' }}
+  });
+{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ f.pref_name }}">{{ f.pref_name }}</a> › {{ f.name }}</p>
 <h1>{{ f.name }}</h1>
