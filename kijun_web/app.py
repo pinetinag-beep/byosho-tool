@@ -758,9 +758,9 @@ def _csv_response(header: list[str], rows, filename: str, hosp_years: dict | Non
                         "厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
                         "届出の時点とは異なり、診療報酬改定等で変わっている場合があります"])
         if any(h.startswith("区分：") for h in header):
-            w.writerow(["区分の列：○は厚生局が公表している区分。○（参考）は区分が公表されていない届出（北海道など）"
+            w.writerow(["区分の列：○は厚生局が公表している区分。○（参考）は区分が公表されていない一部の届出"
                         "について、厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
-                        "区分が分からない届出（北海道の精神病棟・結核病棟・有床診療所など）は結果に含まれません"])
+                        "区分が分からない届出は結果に含まれません"])
         if hosp_years:
             by, dy, gy = (hosp_years.get(f"hstats_{k}_year", "") for k in ("byosho", "dpc", "gairai"))
             w.writerow([f"病床・設備・救急車の受入件数：厚生労働省「病床機能報告」（{reiwa(int(by)) if by else ''}）、"

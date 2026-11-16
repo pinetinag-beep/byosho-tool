@@ -75,7 +75,7 @@ def test_kubun_ref_fills_only_blank_kubun():
     assert con.execute("SELECT COUNT(*) FROM filings WHERE kubun != '' AND kubun_ref != ''").fetchone()[0] == 0
     fid = con.execute(
         """SELECT x.facility_id FROM filings x JOIN facilities f ON f.id = x.facility_id
-           WHERE f.pref_code = '01' AND x.kubun_ref != '' LIMIT 1"""
+           WHERE x.kubun_ref != '' LIMIT 1"""
     ).fetchone()[0]
     r = client.get(f"/facility/{fid}")
     assert "参考" in r.text and "病床機能報告" in r.text
@@ -166,9 +166,16 @@ def test_kubun_search_official_and_reference():
     # 高知県（四国厚生局：区分を公表）→ 公式の○
     html = client.get("/search", params={"pref": "39", "kb": kb}).text
     assert _count(html) > 0 and '<span class="ok" title' in html and "急性期一般入院料１" in html
-    # 北海道（区分を公表していない）→ 参考値の○と注意書き
-    # （関東信越・近畿は2026年11月から届出項目別の名簿で公式の区分が入るようになった）
+    # 北海道も2026年11月から届出項目別の名簿で公式の区分が入る
     html = client.get("/search", params={"pref": "01", "kb": kb}).text
+    assert _count(html) > 0 and '<span class="ok" title' in html
+    # 区分が公表されていない届出（参考値）→ 参考の○と注意書き
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    row = con.execute(
+        """SELECT f.pref_code, k.name, x.kubun_ref FROM filings x JOIN facilities f ON f.id = x.facility_id
+           JOIN kijun k ON k.id = x.kijun_id WHERE x.kubun_ref != '' LIMIT 1""").fetchone()
+    html = client.get("/search", params={"pref": row[0], "kb": _kubun_id(row[1], row[2])}).text
     assert _count(html) > 0 and 'class="ok ref"' in html and "区分について" in html
 
 

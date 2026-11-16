@@ -45,7 +45,8 @@ KUBUN_DIR = bk.KUBUN_DIR
 
 # 厚生局ごとの、名簿のExcel/ZIPが並んでいるページ
 PAGES = {
-    "北海道": ["/hokkaido/gyomu/gyomu/hoken_kikan/todokede_juri_ichiran.html"],
+    "北海道": ["/hokkaido/gyomu/gyomu/hoken_kikan/todokede_juri_ichiran.html",
+               "/hokkaido/gyomu/gyomu/hoken_kikan/todokede_komokubetsu.html"],
     "東北": ["/tohoku/gyomu/gyomu/hoken_kikan/documents/201805koushin.html"],
     "関東信越": ["/kantoshinetsu/chousa/kijyun.html"],
     "東海北陸": ["/tokaihokuriku/newpage_00349.html"],
