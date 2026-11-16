@@ -541,9 +541,11 @@ def main() -> None:
         sys.exit(1)
 
     out = pd.concat(dfs, ignore_index=True)
+    # 名簿（今月の公表）で先に埋め、前回のparquetからの引き継ぎは名簿で埋まらなかった所だけにする。
+    # 逆の順だと、受理番号が同じまま区分が変わった届出に先月の区分が残り、名簿の新しい値で直らない
+    out = _apply_kubun_supplement(out)
     if out_path.exists():
         out = _carry_over_details(out, out_path)
-    out = _apply_kubun_supplement(out)
     out["施設種別"] = _classify_facility_types(out)
     _save(out, out_path)
 
