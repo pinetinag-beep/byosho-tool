@@ -874,7 +874,34 @@ def facility(request: Request, fid: str):
         byosho = _byosho_ctx(con, f["byosho_code"])
         dpc = _dpc_ctx(con, f["byosho_code"])
         gairai = _gairai_ctx(con, fid)
-    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai)
+        near = _nearby(con, f)
+    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai,
+                  near=near)
+
+
+def _nearby(con, f) -> dict:
+    """医療機関ページの下に出す「同じ市区町村の医療機関」「同じ二次医療圏の病院」。
+    見る人が近くの医療機関へ進めるようにし、検索エンジンが13万ページをたどれるようにする（内部リンク）。
+    病院を先に、その中は許可病床数（病床機能報告）の多い順。"""
+    cols = """f.id, f.name, f.ftype, f.n_kijun, h.beds FROM facilities f
+              LEFT JOIN hstats h ON h.facility_id = f.id"""
+    order = "ORDER BY (f.ftype = '病院') DESC, COALESCE(h.beds, 0) DESC, f.n_kijun DESC, f.id"
+    city, area = f["city"], f["area"]
+    out = {"city": city, "area": area if area and not area.startswith("（") else None,
+           "city_rows": [], "city_n": 0, "area_rows": [], "area_n": 0}
+    if city:
+        args = (f["pref_code"], city, f["id"])
+        out["city_rows"] = con.execute(
+            f"SELECT {cols} WHERE f.pref_code = ? AND f.city = ? AND f.id <> ? {order} LIMIT 20", args).fetchall()
+        out["city_n"] = con.execute(
+            "SELECT COUNT(*) FROM facilities WHERE pref_code = ? AND city = ? AND id <> ?", args).fetchone()[0]
+    if out["area"]:
+        args = (f["pref_code"], area, city or "", f["id"])
+        where = "WHERE f.pref_code = ? AND f.area = ? AND f.city <> ? AND f.id <> ? AND f.ftype = '病院'"
+        out["area_rows"] = con.execute(f"SELECT {cols} {where} {order} LIMIT 15", args).fetchall()
+        out["area_n"] = con.execute(
+            "SELECT COUNT(*) FROM facilities f " + where, args).fetchone()[0]
+    return out
 
 
 # ── 病床機能報告（厚生労働省）。病院ページに出す ─────────────────────

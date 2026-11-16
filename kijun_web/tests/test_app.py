@@ -351,3 +351,26 @@ def test_analytics_page_groups_and_events():
     assert 'gtag("event", "search"' in _get("/search?pref=39")
     assert 'gtag("event", "view_facility"' in _get("/facility/390110406")
     assert 'data-ga="suggest"' in _get("/")
+
+
+def test_facility_seo_title_jsonld_and_nearby():
+    import json
+    import re
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    # 病床機能報告とつながる病院：タイトルに病床数、構造化データは Hospital、近くの医療機関へのリンク
+    fid = con.execute(
+        """SELECT f.id FROM facilities f JOIN hstats h ON h.facility_id = f.id
+           WHERE f.ftype = '病院' AND h.beds > 0 AND f.area NOT LIKE '（%' LIMIT 1""").fetchone()[0]
+    html = client.get(f"/facility/{fid}").text
+    assert re.search(r"<title>[^<]*の病床数・施設基準", html)
+    ld = json.loads(re.search(r'application/ld\+json">(.*?)</script>', html, re.S).group(1))
+    org, crumbs = ld["@graph"]
+    assert org["@type"] == "Hospital" and org["address"]["addressRegion"]
+    assert [x["position"] for x in crumbs["itemListElement"]] == [1, 2, 3]
+    assert "近くの医療機関" in html and html.count('href="/facility/') > 1
+    assert f'href="/facility/{fid}"' not in html.split("近くの医療機関")[1]   # 自分自身は出さない
+    # 病床機能報告と結びつかない診療所：従来のタイトル、MedicalClinic
+    cid = con.execute("SELECT id FROM facilities WHERE ftype = '無床診療所' LIMIT 1").fetchone()[0]
+    html = client.get(f"/facility/{cid}").text
+    assert "の施設基準届出一覧｜MedilenZ</title>" in html and '"MedicalClinic"' in html

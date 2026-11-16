@@ -1,6 +1,30 @@
 {% extends "base.html" %}
-{% block title %}{{ f.name }}（{{ f.pref_name }}）の施設基準届出一覧{% endblock %}
-{% block description %}{{ f.pref_name }}の{{ f.ftype }}「{{ f.name }}」が地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。CSVで無料ダウンロードできます。{% endblock %}
+{%- set place = f.pref_name ~ (f.city or "") -%}
+{% block title %}{% if byosho %}{{ f.name }}（{{ f.pref_name }}）の病床数・施設基準{% if dpc %}・DPC実績{% endif %}{% else %}{{ f.name }}（{{ f.pref_name }}）の施設基準届出一覧{% endif %}{% endblock %}
+{% block description %}{% if byosho %}{{ place }}の{{ f.ftype }}「{{ f.name }}」の許可病床数{{ "{:,}".format(byosho.total) }}床と病床機能の内訳、届け出ている施設基準{{ f.n_kijun }}種類（区分・算定開始日）{% if dpc and dpc.total %}、DPCの退院患者数（年間{{ "{:,}".format(dpc.total) }}件）{% endif %}。厚生労働省・地方厚生局の公表データから無料で調べられます。{% else %}{{ place }}の{{ f.ftype }}「{{ f.name }}」が地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。CSVで無料ダウンロードできます。{% endif %}{% endblock %}
+{% block head_extra %}
+<script type="application/ld+json">{{ {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Hospital" if f.ftype == "病院" else "MedicalClinic",
+      "@id": site_url ~ facility_url(f.id) ~ "#org",
+      "name": f.name,
+      "url": site_url ~ facility_url(f.id),
+      "address": {"@type": "PostalAddress", "addressCountry": "JP", "addressRegion": f.pref_name,
+                  "addressLocality": f.city or "", "streetAddress": (f.address[f.city|length:] if f.city and f.address and f.address.startswith(f.city) else f.address or "")},
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {"@type": "ListItem", "position": 1, "name": "トップ", "item": site_url ~ "/"},
+        {"@type": "ListItem", "position": 2, "name": f.pref_name, "item": site_url ~ "/pref/" ~ f.pref_name},
+        {"@type": "ListItem", "position": 3, "name": f.name, "item": site_url ~ facility_url(f.id)},
+      ],
+    },
+  ],
+}|tojson }}</script>
+{% endblock %}
 {% block ga_events %}
   gtag("event", "view_facility", {
     facility_type: {{ f.ftype|tojson }}, prefecture: {{ f.pref_name|tojson }},
@@ -158,6 +182,25 @@
 </table>
 </div>
 {% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
+
+{% if near.city_rows or near.area_rows %}
+<h2>近くの医療機関</h2>
+{% if near.city_rows %}
+<h3>{{ f.pref_name }}{{ near.city }}の医療機関（ほか{{ "{:,}".format(near.city_n) }}件{% if near.city_n > near.city_rows|length %}のうち{{ near.city_rows|length }}件{% endif %}）</h3>
+<div class="table-wrap"><table class="near">
+  <thead><tr><th>医療機関名</th><th>種類</th><th class="num">許可病床数</th><th class="num">施設基準の届出</th></tr></thead>
+  <tbody>{% for r in near.city_rows %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td><td class="nowrap">{{ r.ftype }}</td><td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+{% if near.area_rows %}
+<h3>同じ二次医療圏（{{ near.area }}）のほかの市区町村の病院（{{ "{:,}".format(near.area_n) }}件{% if near.area_n > near.area_rows|length %}のうち病床数の多い{{ near.area_rows|length }}件{% endif %}）</h3>
+<div class="table-wrap"><table class="near">
+  <thead><tr><th>病院名</th><th class="num">許可病床数</th><th class="num">施設基準の届出</th></tr></thead>
+  <tbody>{% for r in near.area_rows %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td><td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+<p class="muted small">許可病床数は厚生労働省「病床機能報告」（{{ meta.hstats_byosho_year and reiwa(meta.hstats_byosho_year|int) }}）による。病床機能報告と結びつけられなかった医療機関は「—」。病院を先に、病床数の多い順に並べています。</p>
+{% endif %}
 {% include "_ad.html" %}
 <p class="note small">区分・病棟の内訳は、一部の届出で公表されていない場合があります。その場合、一般病棟・療養病棟・障害者施設等などの入院基本料に限り、厚生労働省「病床機能報告」（{{ meta.kubun_ref_label }}の病棟の入院基本料）を加工して<span class="tag ref">参考</span>として補っています。算定開始日がそれより前の届出（出し直されていないもの）はほぼ一致しますが、その後に出し直された届出は区分が変わっている場合があります。最新の届出状況は各地方厚生局の公表資料でご確認ください。</p>
 {% endblock %}
