@@ -96,6 +96,16 @@ def facility_url(fid: str) -> str:
     return f"/facility/{fid}"
 
 
+def city_url(pref_name: str, city: str) -> str:
+    """市区町村の医療機関一覧（/city/京都府/舞鶴市）。政令市は区まで（facilities.city と同じ）。"""
+    return f"/city/{quote(pref_name, safe='')}/{quote(city, safe='')}"
+
+
+def area_url(pref_name: str, area: str) -> str:
+    """二次医療圏の病院一覧（/area/京都府/中丹）。"""
+    return f"/area/{quote(pref_name, safe='')}/{quote(area, safe='')}"
+
+
 def streamlit_url(byosho_name: str | None) -> str | None:
     return f"{STREAMLIT_URL}/?hospital={quote(byosho_name)}" if byosho_name else None
 
@@ -130,7 +140,7 @@ templates.env.filters["jdate"] = jdate
 # CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
 templates.env.globals["css_version"] = int((HERE / "static" / "style.css").stat().st_mtime)
 templates.env.globals.update(
-    kijun_url=kijun_url, facility_url=facility_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
+    kijun_url=kijun_url, facility_url=facility_url, city_url=city_url, area_url=area_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
     mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
     adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL, operator_name=OPERATOR_NAME, ga_id=GA_MEASUREMENT_ID,
@@ -143,6 +153,7 @@ GA_PAGE = {
     "index.html": "トップ", "search.html": "検索結果", "facility.html": "医療機関",
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
+    "city.html": "市区町村", "area.html": "二次医療圏",
 }
 
 
@@ -1173,8 +1184,76 @@ def pref_page(request: Request, pref_name: str):
             "SELECT id, name, n_kijun FROM facilities WHERE pref_code = ? AND ftype = '病院' ORDER BY name",
             (pref["code"],),
         ).fetchall()
+        areas = _pref_areas(con, pref["code"])
     return render(request, "pref.html", pref=pref, types={r["ftype"]: r["n"] for r in types}, top=top,
-                  hospitals=hospitals)
+                  hospitals=hospitals, areas=areas)
+
+
+# ── 市区町村・二次医療圏の一覧（「〇〇市 病院」「〇〇医療圏 病院」の検索に答えるページ）──
+_HOSP_COLS = """f.id, f.name, f.ftype, f.city, f.area, f.n_kijun,
+                h.beds, h.b_hk, h.b_ak, h.b_kf, h.b_mk, h.dpc_total
+                FROM facilities f LEFT JOIN hstats h ON h.facility_id = f.id"""
+
+
+def _valid_area(area: str | None) -> bool:
+    return bool(area) and not area.startswith("（")
+
+
+@app.get("/city/{pref_name}/{city}", response_class=HTMLResponse)
+def city_page(request: Request, pref_name: str, city: str):
+    with db() as con:
+        pref = _pref_by_name(con, pref_name)
+        if not pref:
+            raise HTTPException(404)
+        rows = con.execute(
+            f"""SELECT {_HOSP_COLS} WHERE f.pref_code = ? AND f.city = ?
+                ORDER BY (f.ftype = '病院') DESC, COALESCE(h.beds, 0) DESC, f.n_kijun DESC, f.name""",
+            (pref["code"], city)).fetchall()
+        if not rows:
+            raise HTTPException(404)
+        areas = sorted({r["area"] for r in rows if _valid_area(r["area"])})
+        # 同じ二次医療圏のほかの市区町村（一覧へのリンク）
+        others = con.execute(
+            """SELECT city, SUM(n) AS n FROM areas WHERE pref_code = ? AND area IN ({}) AND city <> ?
+               GROUP BY city ORDER BY MIN(city_order)""".format(",".join("?" * len(areas))),
+            (pref["code"], *areas, city)).fetchall() if areas else []
+    hosp = [r for r in rows if r["ftype"] == "病院"]
+    clinics = [r for r in rows if r["ftype"] != "病院"]
+    return render(request, "city.html", pref=pref, city=city, hosp=hosp, clinics=clinics, areas=areas, others=others)
+
+
+@app.get("/area/{pref_name}/{area}", response_class=HTMLResponse)
+def area_page(request: Request, pref_name: str, area: str):
+    with db() as con:
+        pref = _pref_by_name(con, pref_name)
+        if not pref or not _valid_area(area):
+            raise HTTPException(404)
+        cities = con.execute(
+            """SELECT f.city, COUNT(*) AS n, SUM(f.ftype = '病院') AS n_hosp FROM facilities f
+               JOIN (SELECT city, MIN(city_order) AS o FROM areas WHERE pref_code = ? AND area = ? GROUP BY city) a
+                 ON a.city = f.city
+               WHERE f.pref_code = ? AND f.area = ? GROUP BY f.city ORDER BY MIN(a.o)""",
+            (pref["code"], area, pref["code"], area)).fetchall()
+        if not cities:
+            raise HTTPException(404)
+        hosp = con.execute(
+            f"""SELECT {_HOSP_COLS} WHERE f.pref_code = ? AND f.area = ? AND f.ftype = '病院'
+                ORDER BY COALESCE(h.beds, 0) DESC, f.n_kijun DESC, f.name""",
+            (pref["code"], area)).fetchall()
+        n_all = sum(c["n"] for c in cities)
+    return render(request, "area.html", pref=pref, area=area, cities=cities, hosp=hosp, n_all=n_all)
+
+
+def _pref_areas(con, pref_code: str) -> list[dict]:
+    """都道府県ページの「二次医療圏・市区町村から探す」。二次医療圏ごとに市区町村と医療機関数。"""
+    out: dict[str, dict] = {}
+    for r in con.execute(
+        """SELECT area, city, SUM(n) AS n FROM areas WHERE pref_code = ?
+           GROUP BY area, city ORDER BY MIN(area_order), MIN(city_order)""", (pref_code,)):
+        if not _valid_area(r["area"]):
+            continue
+        out.setdefault(r["area"], {"area": r["area"], "cities": []})["cities"].append({"city": r["city"], "n": r["n"]})
+    return list(out.values())
 
 
 @app.get("/about", response_class=HTMLResponse)
@@ -1255,6 +1334,16 @@ def sitemap_part(part: str):
     with db() as con:
         if part == "static":
             paths = ["/", "/guide", "/kijun", "/about", "/operator", "/contact", "/privacy"] + [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
+            for r in con.execute(
+                """SELECT DISTINCT p.name AS pref, f.area, f.city FROM facilities f
+                   JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area, f.city"""):
+                if r["city"]:
+                    paths.append(city_url(r["pref"], r["city"]))
+            for r in con.execute(
+                """SELECT DISTINCT p.name AS pref, f.area FROM facilities f
+                   JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area"""):
+                if _valid_area(r["area"]):
+                    paths.append(area_url(r["pref"], r["area"]))
         elif part == "kijun":
             paths = [kijun_url(r["name"]) for r in con.execute("SELECT name FROM kijun")]
             paths += [

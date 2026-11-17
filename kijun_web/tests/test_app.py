@@ -367,10 +367,30 @@ def test_facility_seo_title_jsonld_and_nearby():
     ld = json.loads(re.search(r'application/ld\+json">(.*?)</script>', html, re.S).group(1))
     org, crumbs = ld["@graph"]
     assert org["@type"] == "Hospital" and org["address"]["addressRegion"]
-    assert [x["position"] for x in crumbs["itemListElement"]] == [1, 2, 3]
+    assert [x["position"] for x in crumbs["itemListElement"]] == [1, 2, 3, 4]   # トップ・県・市区町村・医療機関
     assert "近くの医療機関" in html and html.count('href="/facility/') > 1
     assert f'href="/facility/{fid}"' not in html.split("近くの医療機関")[1]   # 自分自身は出さない
     # 病床機能報告と結びつかない診療所：従来のタイトル、MedicalClinic
     cid = con.execute("SELECT id FROM facilities WHERE ftype = '無床診療所' LIMIT 1").fetchone()[0]
     html = client.get(f"/facility/{cid}").text
     assert "の施設基準届出一覧｜MedilenZ</title>" in html and '"MedicalClinic"' in html
+
+
+def test_city_and_area_pages():
+    import sqlite3
+    from urllib.parse import quote
+    con = sqlite3.connect(appmod.DB_PATH)
+    pref, city, area = con.execute(
+        """SELECT p.name, f.city, f.area FROM facilities f JOIN prefs p ON p.code = f.pref_code
+           WHERE f.ftype = '病院' AND f.area NOT LIKE '（%' LIMIT 1""").fetchone()
+    r = client.get(f"/city/{quote(pref)}/{quote(city)}")
+    assert r.status_code == 200 and f"<title>{pref}{city}の病院・診療所一覧" in r.text
+    assert f'href="/area/{quote(pref)}/{quote(area)}"' in r.text   # パンくずから二次医療圏へ
+    r = client.get(f"/area/{quote(pref)}/{quote(area)}")
+    assert r.status_code == 200 and f"{area}医療圏（{pref}）の病院" in r.text
+    assert f'href="/city/{quote(pref)}/{quote(city)}"' in r.text
+    assert client.get(f"/city/{quote(pref)}/{quote('存在しない市')}").status_code == 404
+    assert client.get(f"/area/{quote(pref)}/{quote('（二次医療圏不明）')}").status_code == 404
+    # 都道府県ページから二次医療圏・市区町村へ、サイトマップにも載る
+    assert f'href="/area/{quote(pref)}/{quote(area)}"' in client.get(f"/pref/{quote(pref)}").text
+    assert f"/city/{quote(pref)}/{quote(city)}<" in client.get("/sitemap-static.xml").text

@@ -1,0 +1,13 @@
+{# 病院の一覧表（市区町村・二次医療圏のページ）。rows: _HOSP_COLS の行、show_city: 市区町村の列を出すか #}
+<div class="table-wrap"><table class="near">
+  <thead><tr><th>病院名</th>{% if show_city %}<th>市区町村</th>{% endif %}<th class="num">許可病床数</th><th>病床機能（床）</th><th class="num">施設基準の届出</th><th class="num">DPC退院患者数</th></tr></thead>
+  <tbody>{% for r in rows %}<tr>
+    <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
+    {% if show_city %}<td class="nowrap">{% if r.city %}<a href="{{ city_url(pref.name, r.city) }}">{{ r.city }}</a>{% endif %}</td>{% endif %}
+    <td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td>
+    <td class="small">{% if r.beds %}{% for col, label in [("b_hk", "高度急性期"), ("b_ak", "急性期"), ("b_kf", "回復期"), ("b_mk", "慢性期")] %}{% if r[col] %}<span class="nowrap">{{ label }} {{ "{:,}".format(r[col]) }}</span>{% if not loop.last %} {% endif %}{% endif %}{% endfor %}{% endif %}</td>
+    <td class="num">{{ r.n_kijun }}種類</td>
+    <td class="num">{% if r.dpc_total %}{{ "{:,}".format(r.dpc_total|int) }}件{% else %}—{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+<p class="muted small">許可病床数・病床機能は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) if meta.hstats_byosho_year }}）、DPC退院患者数はDPC調査「退院患者調査」（{{ reiwa(meta.hstats_dpc_year|int) if meta.hstats_dpc_year }}、年間）を加工して作成。結びつけられなかった病院は「—」。病床数の多い順。</p>

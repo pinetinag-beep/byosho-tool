@@ -19,7 +19,8 @@
       "itemListElement": [
         {"@type": "ListItem", "position": 1, "name": "トップ", "item": site_url ~ "/"},
         {"@type": "ListItem", "position": 2, "name": f.pref_name, "item": site_url ~ "/pref/" ~ f.pref_name},
-        {"@type": "ListItem", "position": 3, "name": f.name, "item": site_url ~ facility_url(f.id)},
+      ] + ([{"@type": "ListItem", "position": 3, "name": f.city, "item": site_url ~ city_url(f.pref_name, f.city)}] if f.city else []) + [
+        {"@type": "ListItem", "position": 4 if f.city else 3, "name": f.name, "item": site_url ~ facility_url(f.id)},
       ],
     },
   ],
@@ -32,7 +33,7 @@
   });
 {% endblock %}
 {% block content %}
-<p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ f.pref_name }}">{{ f.pref_name }}</a> › {{ f.name }}</p>
+<p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ f.pref_name }}">{{ f.pref_name }}</a>{% if f.city %} › <a href="{{ city_url(f.pref_name, f.city) }}">{{ f.city }}</a>{% endif %} › {{ f.name }}</p>
 <h1>{{ f.name }}</h1>
 <p class="lead"><span class="tag {% if f.ftype == '病院' %}hosp{% endif %}">{{ f.ftype }}</span>　{{ f.pref_name }}{{ f.address }}{% if f.area and f.area != '（二次医療圏不明）' %}<span class="muted small">（二次医療圏：{{ f.area }}）</span>{% endif %}</p>
 
@@ -186,14 +187,14 @@
 {% if near.city_rows or near.area_rows %}
 <h2>近くの医療機関</h2>
 {% if near.city_rows %}
-<h3>{{ f.pref_name }}{{ near.city }}の医療機関（ほか{{ "{:,}".format(near.city_n) }}件{% if near.city_n > near.city_rows|length %}のうち{{ near.city_rows|length }}件{% endif %}）</h3>
+<h3><a href="{{ city_url(f.pref_name, near.city) }}">{{ f.pref_name }}{{ near.city }}の医療機関</a>（ほか{{ "{:,}".format(near.city_n) }}件{% if near.city_n > near.city_rows|length %}のうち{{ near.city_rows|length }}件{% endif %}）</h3>
 <div class="table-wrap"><table class="near">
   <thead><tr><th>医療機関名</th><th>種類</th><th class="num">許可病床数</th><th class="num">施設基準の届出</th></tr></thead>
   <tbody>{% for r in near.city_rows %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td><td class="nowrap">{{ r.ftype }}</td><td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}
 {% if near.area_rows %}
-<h3>同じ二次医療圏（{{ near.area }}）のほかの市区町村の病院（{{ "{:,}".format(near.area_n) }}件{% if near.area_n > near.area_rows|length %}のうち病床数の多い{{ near.area_rows|length }}件{% endif %}）</h3>
+<h3>同じ二次医療圏（<a href="{{ area_url(f.pref_name, near.area) }}">{{ near.area }}</a>）のほかの市区町村の病院（{{ "{:,}".format(near.area_n) }}件{% if near.area_n > near.area_rows|length %}のうち病床数の多い{{ near.area_rows|length }}件{% endif %}）</h3>
 <div class="table-wrap"><table class="near">
   <thead><tr><th>病院名</th><th class="num">許可病床数</th><th class="num">施設基準の届出</th></tr></thead>
   <tbody>{% for r in near.area_rows %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td><td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>

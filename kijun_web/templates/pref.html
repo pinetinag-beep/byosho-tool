@@ -11,6 +11,15 @@
 </div>
 <p><a class="btn" href="/search?pref={{ pref.code }}">{{ pref.name }}の医療機関を検索する</a></p>
 
+{% if areas %}
+<h2>二次医療圏・市区町村から探す</h2>
+<div class="table-wrap"><table class="near">
+  <thead><tr><th>二次医療圏</th><th>市区町村（医療機関の数）</th></tr></thead>
+  <tbody>{% for a in areas %}<tr><td class="nowrap"><a href="{{ area_url(pref.name, a.area) }}">{{ a.area }}</a></td>
+    <td>{% for c in a.cities %}<a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a><span class="muted small">（{{ "{:,}".format(c.n) }}）</span>{% if not loop.last %}　{% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+
 <h2>{{ pref.name }}でよく届け出られている施設基準</h2>
 <ul class="chips">
   {% for r in top %}<li><a href="{{ kijun_url(r.name, pref.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n) }}</span></a></li>{% endfor %}

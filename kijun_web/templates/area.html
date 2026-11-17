@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ area }}医療圏（{{ pref.name }}）の病院一覧（病床数・病床機能）{% endblock %}
+{% block description %}{{ pref.name }}の二次医療圏「{{ area }}」の病院{{ hosp|length }}件を許可病床数の多い順に一覧。病床機能（病床機能報告）、DPCの退院患者数、届け出ている施設基準の数と、圏内の市区町村ごとの医療機関一覧を無料で確認できます。{% endblock %}
+{% block head_extra %}
+<script type="application/ld+json">{{ {
+  "@context": "https://schema.org", "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "トップ", "item": site_url ~ "/"},
+    {"@type": "ListItem", "position": 2, "name": pref.name, "item": site_url ~ "/pref/" ~ pref.name},
+    {"@type": "ListItem", "position": 3, "name": area ~ "医療圏", "item": site_url ~ area_url(pref.name, area)},
+  ],
+}|tojson }}</script>
+{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ pref.name }}">{{ pref.name }}</a> › {{ area }}医療圏</p>
+<h1>{{ area }}医療圏（{{ pref.name }}）の病院</h1>
+{% set beds = hosp|selectattr("beds")|map(attribute="beds")|sum %}
+<div class="facts">
+  <div class="fact"><div class="k">病院</div><div class="v">{{ hosp|length }} <small>件</small></div></div>
+  <div class="fact"><div class="k">許可病床数（病床機能報告の合計）</div><div class="v">{{ "{:,}".format(beds) }} <small>床</small></div></div>
+  <div class="fact"><div class="k">医療機関（診療所を含む）</div><div class="v">{{ "{:,}".format(n_all) }} <small>件</small></div></div>
+</div>
+<p class="small muted">二次医療圏は、都道府県が入院医療の提供体制を考える単位として定めた地域です。圏内の市区町村：{% for c in cities %}<a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</p>
+
+{% if hosp %}
+<h2>{{ area }}医療圏の病院（{{ hosp|length }}件）</h2>
+{% with rows = hosp, show_city = true %}{% include "_hosp_table.html" %}{% endwith %}
+{% endif %}
+
+<h2>市区町村ごとの医療機関</h2>
+<div class="table-wrap"><table class="near">
+  <thead><tr><th>市区町村</th><th class="num">病院</th><th class="num">医療機関（診療所を含む）</th></tr></thead>
+  <tbody>{% for c in cities %}<tr><td><a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a></td><td class="num">{{ c.n_hosp }}件</td><td class="num">{{ "{:,}".format(c.n) }}件</td></tr>{% endfor %}</tbody>
+</table></div>
+{% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
+{% include "_ad.html" %}
+{% endblock %}
