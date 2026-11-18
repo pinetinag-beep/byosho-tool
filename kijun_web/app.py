@@ -1125,9 +1125,21 @@ def kijun_detail(request: Request, name: str):
                WHERE x.kijun_id = ? AND x.kubun != '' GROUP BY x.kubun ORDER BY n DESC LIMIT 20""",
             (kj["id"],),
         ).fetchall()
+        # 届け出ている病院（許可病床数の多い順）。医療機関ページへのリンクを兼ねる
+        hosp = con.execute(
+            """SELECT f.id, f.name, f.city, f.n_kijun, p.name AS pref_name, h.beds, h.dpc_total
+               FROM facilities f JOIN prefs p ON p.code = f.pref_code
+               LEFT JOIN hstats h ON h.facility_id = f.id
+               WHERE f.ftype = '病院' AND f.id IN (SELECT facility_id FROM filings WHERE kijun_id = ?)
+               ORDER BY COALESCE(h.beds, 0) DESC, f.n_kijun DESC LIMIT 30""",
+            (kj["id"],)).fetchall()
+        rel = con.execute(
+            """SELECT k.name, r.n, k.n_facilities FROM kijun_rel r JOIN kijun k ON k.id = r.rel_id
+               WHERE r.kijun_id = ? ORDER BY r.rk""", (kj["id"],)).fetchall()
     type_counts = {r["ftype"]: r["n"] for r in by_type}
     return render(request, "kijun.html", kj=kj, by_pref=by_pref, type_counts=type_counts, kubun=kubun,
-                  csv_url=_url("/search.csv", kx=name))
+                  hosp=hosp, rel=rel, csv_url=_url("/search.csv", kx=name))
+
 
 
 @app.get("/kijun/{name}/{pref_name}", response_class=HTMLResponse)

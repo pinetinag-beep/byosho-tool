@@ -632,6 +632,32 @@ def _build_dpc(con) -> int:
     return len(h)
 
 
+def _build_kijun_rel(con, top: int = 12) -> int:
+    """施設基準ページの「一緒に届け出られていることが多い施設基準」。施設基準Aを届け出ている医療機関のうち、
+    施設基準Bも届け出ている医療機関の数（両方を届け出ている数）を数え、
+    両方の届出数で割った値（n / √(Aの数×Bの数)）の大きい順に上位を残す。どの医療機関も届け出る
+    ベースアップ評価料のような項目ばかりが並ばないようにするため（並べ方だけに使い、画面には件数を出す。
+    SQLiteに平方根が無い環境もあるので、同じ順になる n² / (Aの数×Bの数) で並べる）。"""
+    con.execute("CREATE TEMP TABLE fk AS SELECT DISTINCT facility_id, kijun_id FROM filings")
+    con.execute("CREATE INDEX t_fk ON fk(facility_id, kijun_id)")
+    con.execute(
+        """CREATE TEMP TABLE pairs AS
+           SELECT a.kijun_id AS k, b.kijun_id AS r, COUNT(*) AS n FROM fk a
+           JOIN fk b ON a.facility_id = b.facility_id AND a.kijun_id <> b.kijun_id GROUP BY 1, 2""")
+    con.execute(
+        f"""CREATE TABLE kijun_rel AS
+            SELECT k AS kijun_id, r AS rel_id, n, rk FROM (
+              SELECT p.k, p.r, p.n, ROW_NUMBER() OVER (
+                PARTITION BY p.k ORDER BY p.n * p.n * 1.0 / (ka.n_facilities * kb.n_facilities) DESC, p.n DESC) AS rk
+              FROM pairs p JOIN kijun ka ON ka.id = p.k JOIN kijun kb ON kb.id = p.r
+              WHERE p.n >= 3)
+            WHERE rk <= {top}""")
+    con.execute("CREATE INDEX ix_kr ON kijun_rel(kijun_id)")
+    con.execute("DROP TABLE pairs")
+    con.execute("DROP TABLE fk")
+    return con.execute("SELECT COUNT(*) FROM kijun_rel").fetchone()[0]
+
+
 def _with_sources(prefs: pd.DataFrame) -> pd.DataFrame:
     """都道府県ごとに、出典に書く厚生局・名簿のページ・URL・利用した日（名簿を取った日）を付ける。"""
     fetched = json.loads(FETCHED.read_text(encoding="utf-8")) if FETCHED.exists() else {}
@@ -780,6 +806,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_dpc_rows = _build_dpc(con)
     n_gairai_rows = _build_gairai(con)
     n_hstats = _build_hstats(con)
+    n_kijun_rel = _build_kijun_rel(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -797,6 +824,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_dpc_rows": str(n_dpc_rows),
         "n_gairai_rows": str(n_gairai_rows),
         "n_hstats": str(n_hstats),
+        "n_kijun_rel": str(n_kijun_rel),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),

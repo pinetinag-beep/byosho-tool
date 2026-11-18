@@ -394,3 +394,19 @@ def test_city_and_area_pages():
     # 都道府県ページから二次医療圏・市区町村へ、サイトマップにも載る
     assert f'href="/area/{quote(pref)}/{quote(area)}"' in client.get(f"/pref/{quote(pref)}").text
     assert f"/city/{quote(pref)}/{quote(city)}<" in client.get("/sitemap-static.xml").text
+
+
+def test_kijun_page_hospitals_and_related():
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    name = con.execute(
+        """SELECT k.name FROM kijun k WHERE EXISTS (SELECT 1 FROM kijun_rel r WHERE r.kijun_id = k.id)
+           AND EXISTS (SELECT 1 FROM filings x JOIN facilities f ON f.id = x.facility_id
+                       WHERE x.kijun_id = k.id AND f.ftype = '病院')
+           ORDER BY k.n_facilities DESC LIMIT 1""").fetchone()[0]
+    html = client.get(appmod.kijun_url(name)).text
+    assert "届け出ている主な病院（許可病床数の多い順）" in html and 'href="/facility/' in html
+    assert "一緒に届け出られていることが多い施設基準" in html
+    # 関連の施設基準は自分自身を含まず、上位12件まで
+    assert con.execute("SELECT COUNT(*) FROM kijun_rel WHERE kijun_id = rel_id").fetchone()[0] == 0
+    assert con.execute("SELECT MAX(c) FROM (SELECT COUNT(*) c FROM kijun_rel GROUP BY kijun_id)").fetchone()[0] <= 12

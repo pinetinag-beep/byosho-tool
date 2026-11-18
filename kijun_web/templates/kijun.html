@@ -38,7 +38,7 @@
 
 {% if kubun %}
 <h2>区分の内訳</h2>
-<p class="small muted">区分を公表している厚生局（東北・東海北陸・中国四国・九州など）の届出のみの集計です。病床機能報告から補った参考値は含めていません。</p>
+<p class="small muted">厚生局が公表している区分による集計です（区分が公表されていない一部の届出と、病床機能報告から補った参考値は含めていません）。</p>
 <div class="table-wrap">
 <table>
   <thead><tr><th>区分</th><th class="num">医療機関数</th></tr></thead>
@@ -46,6 +46,23 @@
 </table>
 </div>
 {% endif %}
+{% if hosp %}
+<h2>届け出ている主な病院（許可病床数の多い順）</h2>
+<div class="table-wrap"><table class="near">
+  <thead><tr><th>病院名</th><th>所在地</th><th class="num">許可病床数</th><th class="num">施設基準の届出</th></tr></thead>
+  <tbody>{% for r in hosp %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
+    <td class="nowrap"><a href="/pref/{{ r.pref_name }}">{{ r.pref_name }}</a>{% if r.city %} <a href="{{ city_url(r.pref_name, r.city) }}">{{ r.city }}</a>{% endif %}</td>
+    <td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="muted small">{% if type_counts.get('病院', 0) > hosp|length %}届け出ている病院{{ "{:,}".format(type_counts['病院']) }}件のうち、{% endif %}許可病床数（厚生労働省「病床機能報告」{{ reiwa(meta.hstats_byosho_year|int) if meta.hstats_byosho_year }}を加工して作成）の多い{{ hosp|length }}件。すべての医療機関は都道府県別の一覧か<a href="/search?k={{ kj.name|urlencode }}">検索</a>で見られます。</p>
+{% endif %}
+
+{% if rel %}
+<h2>一緒に届け出られていることが多い施設基準</h2>
+<p class="small muted">「{{ kj.name }}」を届け出ている医療機関が、ほかに届け出ていることが多い施設基準です。（ ）内は両方を届け出ている医療機関の数。</p>
+<ul class="chips">{% for r in rel %}<li><a href="{{ kijun_url(r.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n) }}</span></a></li>{% endfor %}</ul>
+{% endif %}
+
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（各厚生局のページと利用した日は<a href="/about#sources">データについて</a>）</p>
 {% include "_ad.html" %}
 {% endblock %}
