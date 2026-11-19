@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ kj.name }}の届出医療機関（全国{{ "{:,}".format(kj.n_facilities) }}件・都道府県別）{% endblock %}
+{% block title %}{{ kj.name }}を届け出ている病院・診療所一覧（全国{{ "{:,}".format(kj.n_facilities) }}件・都道府県別）{% endblock %}
 {% block description %}施設基準「{{ kj.name }}」を届け出ている医療機関は全国で{{ "{:,}".format(kj.n_facilities) }}件。都道府県別の届出数と医療機関の一覧を無料で確認・CSVダウンロードできます。{% endblock %}
 {% block ga_events %}
   gtag("event", "view_kijun", { kijun_name: {{ kj.name|tojson }} });

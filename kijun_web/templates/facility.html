@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {%- set place = f.pref_name ~ (f.city or "") -%}
+{#- 保険請求などで使う10桁の医療機関コード＝都道府県番号2桁＋点数表番号（医科＝1）＋医療機関番号7桁 -#}
+{%- set code10 = f.pref_code ~ "1" ~ f.code -%}
 {% block title %}{% if byosho %}{{ f.name }}（{{ f.pref_name }}）の病床数・施設基準{% if dpc %}・DPC実績{% endif %}{% else %}{{ f.name }}（{{ f.pref_name }}）の施設基準届出一覧{% endif %}{% endblock %}
-{% block description %}{% if byosho %}{{ place }}の{{ f.ftype }}「{{ f.name }}」の許可病床数{{ "{:,}".format(byosho.total) }}床と病床機能の内訳、届け出ている施設基準{{ f.n_kijun }}種類（区分・算定開始日）{% if dpc and dpc.total %}、DPCの退院患者数（年間{{ "{:,}".format(dpc.total) }}件）{% endif %}。厚生労働省・地方厚生局の公表データから無料で調べられます。{% else %}{{ place }}の{{ f.ftype }}「{{ f.name }}」が地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。CSVで無料ダウンロードできます。{% endif %}{% endblock %}
+{% block description %}{% if byosho %}{{ place }}の{{ f.ftype }}「{{ f.name }}」の許可病床数{{ "{:,}".format(byosho.total) }}床と病床機能の内訳、届け出ている施設基準{{ f.n_kijun }}種類（区分・算定開始日）{% if dpc and dpc.total %}、DPCの退院患者数（年間{{ "{:,}".format(dpc.total) }}件）{% endif %}。医療機関コード{{ code10 }}。厚生労働省・地方厚生局の公表データから無料で調べられます。{% else %}{{ place }}の{{ f.ftype }}「{{ f.name }}」が地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。医療機関コード{{ code10 }}。CSVで無料ダウンロードできます。{% endif %}{% endblock %}
 {% block head_extra %}
 <script type="application/ld+json">{{ {
   "@context": "https://schema.org",
@@ -10,6 +12,7 @@
       "@type": "Hospital" if f.ftype == "病院" else "MedicalClinic",
       "@id": site_url ~ facility_url(f.id) ~ "#org",
       "name": f.name,
+      "identifier": {"@type": "PropertyValue", "name": "医療機関コード", "value": code10},
       "url": site_url ~ facility_url(f.id),
       "address": {"@type": "PostalAddress", "addressCountry": "JP", "addressRegion": f.pref_name,
                   "addressLocality": f.city or "", "streetAddress": (f.address[f.city|length:] if f.city and f.address and f.address.startswith(f.city) else f.address or "")},
@@ -39,6 +42,7 @@
 
 <div class="facts">
   <div class="fact"><div class="k">届け出ている施設基準</div><div class="v">{{ f.n_kijun }} 種類</div></div>
+  <div class="fact"><div class="k">医療機関コード（10桁）</div><div class="v">{{ code10 }}</div></div>
   <div class="fact"><div class="k">医療機関番号（{{ f.pref_name }}）</div><div class="v">{{ f.code }}</div></div>
   <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
 </div>
