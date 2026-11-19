@@ -35,6 +35,11 @@ if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
     }
     // 名前の入力候補から医療機関ページへ進んだ
     if (a.dataset.ga === "suggest") gtag("event", "select_suggestion", { link_url: a.href });
+    // ページ内のどの一覧から次のページへ進んだか（近くの医療機関・関連する施設基準など）
+    const sec = a.closest("[data-ga-sec]");
+    if (sec && a.host === location.host) {
+      gtag("event", "internal_link", { link_section: sec.dataset.gaSec, link_url: a.href, content_group: {{ ga_page|tojson }} });
+    }
   });
 }
 </script>{% endif %}

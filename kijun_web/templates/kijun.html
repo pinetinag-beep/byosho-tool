@@ -48,7 +48,7 @@
 {% endif %}
 {% if hosp %}
 <h2>届け出ている主な病院（許可病床数の多い順）</h2>
-<div class="table-wrap"><table class="near">
+<div class="table-wrap" data-ga-sec="kijun_hospitals"><table class="near">
   <thead><tr><th>病院名</th><th>所在地</th><th class="num">許可病床数</th><th class="num">施設基準の届出</th></tr></thead>
   <tbody>{% for r in hosp %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
     <td class="nowrap"><a href="/pref/{{ r.pref_name }}">{{ r.pref_name }}</a>{% if r.city %} <a href="{{ city_url(r.pref_name, r.city) }}">{{ r.city }}</a>{% endif %}</td>
@@ -60,7 +60,7 @@
 {% if rel %}
 <h2>一緒に届け出られていることが多い施設基準</h2>
 <p class="small muted">「{{ kj.name }}」を届け出ている医療機関が、ほかに届け出ていることが多い施設基準です。（ ）内は両方を届け出ている医療機関の数。</p>
-<ul class="chips">{% for r in rel %}<li><a href="{{ kijun_url(r.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n) }}</span></a></li>{% endfor %}</ul>
+<ul class="chips" data-ga-sec="kijun_related">{% for r in rel %}<li><a href="{{ kijun_url(r.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n) }}</span></a></li>{% endfor %}</ul>
 {% endif %}
 
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（各厚生局のページと利用した日は<a href="/about#sources">データについて</a>）</p>

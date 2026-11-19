@@ -23,12 +23,12 @@
 
 {% if hosp %}
 <h2>{{ city }}の病院（{{ hosp|length }}件）</h2>
-{% with rows = hosp, show_city = false %}{% include "_hosp_table.html" %}{% endwith %}
+{% with rows = hosp, show_city = false, ga_sec = "city_hospitals" %}{% include "_hosp_table.html" %}{% endwith %}
 {% endif %}
 
 {% if clinics %}
 <h2>{{ city }}の診療所（{{ "{:,}".format(clinics|length) }}件）</h2>
-<div class="table-wrap"><table class="near">
+<div class="table-wrap" data-ga-sec="city_clinics"><table class="near">
   <thead><tr><th>診療所名</th><th>種類</th><th class="num">施設基準の届出</th></tr></thead>
   <tbody>{% for r in clinics %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td><td class="nowrap">{{ r.ftype }}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>
 </table></div>
@@ -37,7 +37,7 @@
 
 {% if others %}
 <h2>{% for a in areas %}{{ a }}{% if not loop.last %}・{% endif %}{% endfor %}医療圏のほかの市区町村</h2>
-<ul class="chips">{% for o in others %}<li><a href="{{ city_url(pref.name, o.city) }}">{{ o.city }}<span class="n">{{ "{:,}".format(o.n) }}</span></a></li>{% endfor %}</ul>
+<ul class="chips" data-ga-sec="city_other_cities">{% for o in others %}<li><a href="{{ city_url(pref.name, o.city) }}">{{ o.city }}<span class="n">{{ "{:,}".format(o.n) }}</span></a></li>{% endfor %}</ul>
 {% endif %}
 {% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
 {% include "_ad.html" %}

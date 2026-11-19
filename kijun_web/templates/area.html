@@ -24,11 +24,11 @@
 
 {% if hosp %}
 <h2>{{ area }}医療圏の病院（{{ hosp|length }}件）</h2>
-{% with rows = hosp, show_city = true %}{% include "_hosp_table.html" %}{% endwith %}
+{% with rows = hosp, show_city = true, ga_sec = "area_hospitals" %}{% include "_hosp_table.html" %}{% endwith %}
 {% endif %}
 
 <h2>市区町村ごとの医療機関</h2>
-<div class="table-wrap"><table class="near">
+<div class="table-wrap" data-ga-sec="area_cities"><table class="near">
   <thead><tr><th>市区町村</th><th class="num">病院</th><th class="num">医療機関（診療所を含む）</th></tr></thead>
   <tbody>{% for c in cities %}<tr><td><a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a></td><td class="num">{{ c.n_hosp }}件</td><td class="num">{{ "{:,}".format(c.n) }}件</td></tr>{% endfor %}</tbody>
 </table></div>

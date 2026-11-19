@@ -1,5 +1,5 @@
 {# 病院の一覧表（市区町村・二次医療圏のページ）。rows: _HOSP_COLS の行、show_city: 市区町村の列を出すか #}
-<div class="table-wrap"><table class="near">
+<div class="table-wrap" data-ga-sec="{{ ga_sec or 'hospital_list' }}"><table class="near">
   <thead><tr><th>病院名</th>{% if show_city %}<th>市区町村</th>{% endif %}<th class="num">許可病床数</th><th>病床機能（床）</th><th class="num">施設基準の届出</th><th class="num">DPC退院患者数</th></tr></thead>
   <tbody>{% for r in rows %}<tr>
     <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
