@@ -28,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 
 from .build_db import OUT as DEFAULT_DB, search_key
 from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
+from .specialties import build as build_specialties
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -153,7 +154,7 @@ GA_PAGE = {
     "index.html": "トップ", "search.html": "検索結果", "facility.html": "医療機関",
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
-    "city.html": "市区町村", "area.html": "二次医療圏",
+    "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
 }
 
 
@@ -218,7 +219,8 @@ class Cond:
     @classmethod
     def from_request(cls, request: Request) -> "Cond":
         qp = request.query_params
-        items = [int(v) for v in qp.getlist("item") if v.isdigit()]
+        # item=12.13.14 のように「.」でまとめた値も受け付ける（「診療科から探す」の1行＝複数の届出項目）
+        items = [int(x) for v in qp.getlist("item") for x in v.split(".") if x.isdigit()]
         kubuns = [int(v) for v in qp.getlist("kb") if v.isdigit()]
         return cls(
             prefs=[v.strip() for v in qp.getlist("pref") if v.strip()],
@@ -1268,6 +1270,41 @@ def _pref_areas(con, pref_code: str) -> list[dict]:
     return list(out.values())
 
 
+_SPEC_CACHE: dict = {}
+
+
+def _specialties(con) -> list[dict]:
+    """診療科ごとの届出（specialties.py）。DBはビルドのたびに置き換わりサイトも再起動するので、プロセス内で1回だけ作る。"""
+    key = DB_PATH.stat().st_mtime if DB_PATH.exists() else 0
+    if _SPEC_CACHE.get("key") != key:
+        _SPEC_CACHE.update(key=key, data=build_specialties(con))
+    return _SPEC_CACHE["data"]
+
+
+@app.on_event("startup")
+def _warm_specialties():
+    """「診療科から探す」の表（作るのに数秒かかる）を、起動直後に裏で作っておく。"""
+    import threading
+
+    def run():
+        try:
+            with db() as con:
+                _specialties(con)
+        except Exception:
+            pass
+    if DB_PATH.exists():
+        threading.Thread(target=run, daemon=True).start()
+
+
+@app.get("/specialty", response_class=HTMLResponse)
+def specialty(request: Request):
+    """診療科から探す：診療科ごとの届出を説明つきで並べ、チェックした届出を「いずれか」で検索する。"""
+    with db() as con:
+        specs = _specialties(con)
+        prefs = _prefs(con)
+    return render(request, "specialty.html", specs=specs, prefs=prefs)
+
+
 @app.get("/about", response_class=HTMLResponse)
 def about(request: Request):
     with db() as con:
@@ -1345,7 +1382,7 @@ def sitemap_index():
 def sitemap_part(part: str):
     with db() as con:
         if part == "static":
-            paths = ["/", "/guide", "/kijun", "/about", "/operator", "/contact", "/privacy"] + [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
+            paths = ["/", "/guide", "/kijun", "/specialty", "/about", "/operator", "/contact", "/privacy"] + [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
             for r in con.execute(
                 """SELECT DISTINCT p.name AS pref, f.area, f.city FROM facilities f
                    JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area, f.city"""):

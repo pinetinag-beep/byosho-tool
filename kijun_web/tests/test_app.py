@@ -419,3 +419,22 @@ def test_facility_summary_sentence():
     fid = con.execute("SELECT facility_id FROM hstats WHERE beds > 0 AND dpc_total > 0 LIMIT 1").fetchone()[0]
     m = re.search(r'<p class="summary">(.*?)</p>', client.get(f"/facility/{fid}").text, re.S)
     assert m and "許可病床数は" in m.group(1) and "種類の施設基準を届け出ています" in m.group(1) and "退院患者数は年間" in m.group(1)
+
+
+def test_specialty_page_and_grouped_items():
+    """診療科から探す：説明つきの届出を選んで検索。1行の複数の届出項目は item=1.2.3 でまとめて送る。"""
+    r = client.get("/specialty")
+    assert r.status_code == 200
+    assert "循環器内科" in r.text and "どんなものか" in r.text and "MedilenZが作ったもの" in r.text
+    vals = re.findall(r'name="item" value="([\d.]+)"', r.text)
+    assert len(vals) > 250 and any("." in v for v in vals)
+    grouped = next(v for v in vals if "." in v)
+    ids = grouped.split(".")
+    # まとめた値と、1つずつ送った値は同じ検索になる
+    a = client.get(f"/search?item={grouped}&mode=or&ftype=病院")
+    b = client.get("/search?" + "&".join(f"item={i}" for i in ids) + "&mode=or&ftype=病院")
+    assert a.status_code == b.status_code == 200
+    count = lambda html: re.search(r"([\d,]+)\s*件（", html).group(1)
+    assert count(a.text) == count(b.text)
+    assert "/specialty<" in client.get("/sitemap-static.xml").text
+    assert 'href="/specialty"' in client.get("/").text

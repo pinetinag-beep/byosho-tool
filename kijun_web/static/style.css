@@ -376,3 +376,36 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 
 /* 医療機関ページ冒頭の要約文 */
 .summary { margin: 4px 0 16px; line-height: 1.8; }
+
+/* 診療科から探す（/specialty） */
+.sp-opts { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; margin: 18px 0 10px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.sp-select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.sp-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.sp-toc a { font-size: 0.82rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); text-decoration: none; color: var(--ink); }
+.sp-toc a:hover { border-color: var(--brand); color: var(--brand-dark); }
+.sp-sec { scroll-margin-top: 12px; }
+.sp-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.sp-all { font-size: 0.85rem; color: var(--ink-muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.sp-table td { vertical-align: top; }
+.sp-table .sp-cb { width: 2.2em; text-align: center; }
+.sp-table .sp-cb input { width: 18px; height: 18px; margin-top: 3px; cursor: pointer; }
+#sp input[type=checkbox], #sp input[type=radio] { accent-color: var(--brand); }
+.ct-bar .btn { white-space: nowrap; }
+.sp-table .sp-name { min-width: 12em; max-width: 22em; font-weight: 700; }
+.sp-table .sp-name label { cursor: pointer; }
+.sp-table .sp-desc { font-size: 0.84rem; color: var(--ink-muted); line-height: 1.65; min-width: 16em; }
+.sp-table tr:has(input:checked) td { background: var(--brand-soft); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.ct-bar .btn:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 760px) {
+  .sp-table thead { display: none; }
+  .sp-table tr { display: grid; grid-template-columns: 2.6em 1fr auto; }
+  .sp-table .sp-cb { padding: 10px 0 0 10px; text-align: left; }
+  .sp-table td { border-bottom: 0; }
+  .sp-table tr { border-bottom: 1px solid var(--line); }
+  .sp-table .sp-name { max-width: none; min-width: 0; padding-left: 4px; }
+  .sp-table .sp-desc { grid-column: 2 / 4; min-width: 0; padding-top: 0; padding-left: 4px; }
+  .sp-table td.num { grid-row: 1; grid-column: 3; }
+  .sp-table tr:has(input:checked) { background: var(--brand-soft); }
+  .sp-table tr:has(input:checked) td { background: transparent; }
+}

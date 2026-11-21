@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}診療科から探す（届出から病院・診療所のリストを作る）{% endblock %}
+{% block description %}循環器内科・消化器外科・眼科など33の診療科・分野ごとに、その診療科の特徴を示す施設基準の届出を、どんな手術・検査・治療かの説明つきで一覧にしました。チェックした届出を届け出ている病院・診療所のリストを作れます。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › 診療科から探す</p>
+<h1>診療科から探す</h1>
+<p class="lead">診療科ごとに、その診療科の特徴を示す施設基準の届出を並べています。説明を見ながらチェックを入れ、「リストを抽出する」を押すと、チェックした届出を届け出ている医療機関のリストを作れます。</p>
+<div class="note small">診療科への分け方と説明は、届出名称をもとに<strong>MedilenZが作ったもの</strong>です（公式の分類ではありません）。説明は、どんな手技・検査・治療・体制かを短くまとめたもので、届出の要件（施設基準）そのものではありません。届出が要らない手術・治療（ふつうのカテーテル治療・胃の内視鏡切除など）は名簿に載らないため、ここにもありません。届出があっても、診療の量（件数）は分かりません。</div>
+
+<form id="sp" action="/search" method="get" autocomplete="off">
+  <div class="sp-opts">
+    <label class="sx-field"><span class="sx-flabel">都道府県</span>
+      <select name="pref" class="sp-select"><option value="">全国</option>
+        {% for p in prefs %}<option value="{{ p.code }}">{{ p.name }}</option>{% endfor %}</select></label>
+    <div class="sx-field"><span class="sx-flabel">施設の種類</span>
+      <div class="ct-checks">{% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t == "病院" %}checked{% endif %}>{{ t }}</label>{% endfor %}</div></div>
+    <div class="sx-field"><span class="sx-flabel">チェックした届出を</span>
+      <div class="ct-checks"><label><input type="radio" name="mode" value="or" checked>いずれか届け出ている</label><label><input type="radio" name="mode" value="and">すべて届け出ている</label></div></div>
+  </div>
+
+  <nav class="sp-toc" aria-label="診療科の一覧">{% for s in specs %}<a href="#{{ s.key }}">{{ s.name }}</a>{% endfor %}</nav>
+
+  {% for s in specs %}
+  <section class="sp-sec" id="{{ s.key }}">
+    <div class="sp-head">
+      <h2>{{ s.name }}</h2>
+      <label class="sp-all"><input type="checkbox" class="sp-allbox" data-sec="{{ s.key }}">この診療科の届出をすべて選ぶ</label>
+    </div>
+    <p class="small muted">いずれかを届け出ている医療機関：{{ "{:,}".format(s.n) }}件（うち病院 {{ "{:,}".format(s.n_hosp) }}件、全国）</p>
+    <div class="table-wrap"><table class="sp-table">
+      <thead><tr><th class="sp-cb"><span class="sr">選ぶ</span></th><th>届出</th><th>どんなものか</th><th class="num">届け出ている医療機関</th></tr></thead>
+      <tbody>{% for r in s.rows %}<tr>
+        <td class="sp-cb"><input type="checkbox" name="item" value="{{ r['items']|join('.') }}" data-sec="{{ s.key }}" id="sp-{{ s.key }}-{{ loop.index }}"></td>
+        <td class="sp-name"><label for="sp-{{ s.key }}-{{ loop.index }}">{{ r.name }}{% if r.variants > 1 %}<span class="muted small">（{{ r.variants }}種類）</span>{% endif %}</label></td>
+        <td class="sp-desc">{{ r.desc }}</td>
+        <td class="num">{{ "{:,}".format(r.n) }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  {% endfor %}
+
+  <div class="ct-bar">
+    <span class="ct-count" id="sp-count">届出を選んでください</span>
+    <button type="submit" class="btn" id="sp-submit" disabled>リストを抽出する</button>
+  </div>
+</form>
+<p class="muted small">届け出ている医療機関の数は全国の数で、名前の似た届出（１〜３などの区分、手術支援ロボットを使うものなど）はまとめて数えています。出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」を加工して作成（<a href="/about#sources">データの出典と利用条件</a>）。</p>
+
+<script>
+(() => {
+  const form = document.getElementById("sp");
+  const boxes = [...form.querySelectorAll('input[name="item"]')];
+  const count = document.getElementById("sp-count"), submit = document.getElementById("sp-submit");
+  const update = () => {
+    const n = boxes.filter(b => b.checked).length;
+    count.textContent = n ? `${n}件を選択中` : "届出を選んでください";
+    submit.disabled = !n;
+    form.querySelectorAll(".sp-allbox").forEach(a => {
+      const sec = boxes.filter(b => b.dataset.sec === a.dataset.sec);
+      a.checked = sec.every(b => b.checked);
+      a.indeterminate = !a.checked && sec.some(b => b.checked);
+    });
+  };
+  form.addEventListener("change", (e) => {
+    if (e.target.classList.contains("sp-allbox")) {
+      boxes.filter(b => b.dataset.sec === e.target.dataset.sec).forEach(b => { b.checked = e.target.checked; });
+    }
+    update();
+  });
+  // 全国を選んだ時は pref を送らない（空の値をURLに残さない）
+  form.addEventListener("submit", () => {
+    const sel = form.querySelector('select[name="pref"]');
+    if (!sel.value) sel.disabled = true;
+    setTimeout(() => { sel.disabled = false; }, 0);
+  });
+  update();
+})();
+</script>
+{% endblock %}

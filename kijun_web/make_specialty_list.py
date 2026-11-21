@@ -10,8 +10,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from specialties import SPECIALTIES, matches  # noqa: E402
-from specialty_desc import DESC, DISPLAY  # noqa: E402
+from specialties import SPECIALTIES, build  # noqa: E402
+from specialty_desc import DESC  # noqa: E402
 
 DB = HERE / "data" / "kijun.sqlite"
 OUT = HERE / "specialties.md"
@@ -44,30 +44,14 @@ def main() -> int:
         "",
     ]
     body: list[str] = []
-    for s in SPECIALTIES:
-        all_ids: set[int] = set()
-        rows = []
-        for p in s["items"]:
-            m = matches(con, p)
-            ids = [kid for kid, _, _ in m]
-            all_ids.update(ids)
-            n = con.execute(
-                f"SELECT COUNT(DISTINCT facility_id) FROM filings WHERE kijun_id IN ({','.join('?' * len(ids))})",
-                ids).fetchone()[0]
-            name = DISPLAY.get(p) or (m[0][1] if len(m) == 1 else p.rstrip("%"))
-            if len(m) > 1:
-                name += f"（{len(m)}種類）"
-            rows.append((name, DESC[p], n))
-        q = ",".join("?" * len(all_ids))
-        nf, nh = con.execute(
-            f"""SELECT COUNT(DISTINCT f.id), COUNT(DISTINCT CASE WHEN f.ftype = '病院' THEN f.id END)
-                FROM filings fl JOIN facilities f ON f.id = fl.facility_id WHERE fl.kijun_id IN ({q})""",
-            list(all_ids)).fetchone()
-        head.append(f"- [{s['name']}](#{s['name']})（{len(rows)}項目）")
+    for s in build(con):
+        head.append(f"- [{s['name']}](#{s['name']})（{len(s['rows'])}項目）")
         body += ["", f"## {s['name']}", "",
-                 f"いずれかを届け出ている医療機関：{nf:,}件（うち病院 {nh:,}件）", "",
+                 f"いずれかを届け出ている医療機関：{s['n']:,}件（うち病院 {s['n_hosp']:,}件）", "",
                  "| 届出 | どんなものか | 届け出ている医療機関 |", "|---|---|--:|"]
-        body += [f"| {_cell(name)} | {_cell(desc)} | {n:,} |" for name, desc, n in rows]
+        for r in s["rows"]:
+            name = r["name"] + (f"（{r['variants']}種類）" if r["variants"] > 1 else "")
+            body.append(f"| {_cell(name)} | {_cell(r['desc'])} | {r['n']:,} |")
     OUT.write_text("\n".join(head + body) + "\n", encoding="utf-8")
     print(f"{len(SPECIALTIES)}分野・{sum(len(s['items']) for s in SPECIALTIES)}行 → {OUT}")
     return 0

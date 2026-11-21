@@ -387,3 +387,33 @@ def matches(con, pattern: str) -> list[tuple]:
     return con.execute(
         "SELECT id, name, n_facilities FROM kijun WHERE name LIKE ? ORDER BY n_facilities DESC",
         (pattern,)).fetchall()
+
+
+def build(con) -> list[dict]:
+    """診療科ごとの行（表示名・説明・届け出ている医療機関数・検索に使う届出項目のid）。
+    一覧（make_specialty_list.py）と、サイトの「診療科から探す」（/specialty）で使う。"""
+    try:
+        from .specialty_desc import DESC, DISPLAY
+    except ImportError:
+        from specialty_desc import DESC, DISPLAY
+    out = []
+    for s in SPECIALTIES:
+        rows, all_ids = [], set()
+        for p in s["items"]:
+            m = matches(con, p)
+            kids = [kid for kid, _, _ in m]
+            if not kids:
+                continue
+            all_ids.update(kids)
+            q = ",".join("?" * len(kids))
+            n = con.execute(f"SELECT COUNT(DISTINCT facility_id) FROM filings WHERE kijun_id IN ({q})", kids).fetchone()[0]
+            items = [r[0] for r in con.execute(f"SELECT id FROM items WHERE kijun_id IN ({q}) ORDER BY id", kids)]
+            name = DISPLAY.get(p) or (m[0][1] if len(m) == 1 else p.rstrip("%"))
+            rows.append({"name": name, "variants": len(m), "desc": DESC.get(p, ""), "n": n, "items": items})
+        q = ",".join("?" * len(all_ids))
+        nf, nh = con.execute(
+            f"""SELECT COUNT(DISTINCT f.id), COUNT(DISTINCT CASE WHEN f.ftype = '病院' THEN f.id END)
+                FROM filings fl JOIN facilities f ON f.id = fl.facility_id WHERE fl.kijun_id IN ({q})""",
+            list(all_ids)).fetchone()
+        out.append({"key": s["key"], "name": s["name"], "n": nf, "n_hosp": nh, "rows": rows})
+    return out
