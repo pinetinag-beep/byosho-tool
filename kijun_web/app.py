@@ -28,7 +28,6 @@ from fastapi.templating import Jinja2Templates
 
 from .build_db import OUT as DEFAULT_DB, search_key
 from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
-from .vision import COL_FUNC, COL_LABEL, FUNCS as VISION_FUNCS, presence as vision_presence
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -102,10 +101,6 @@ def city_url(pref_name: str, city: str) -> str:
     return f"/city/{quote(pref_name, safe='')}/{quote(city, safe='')}"
 
 
-def vision_url(pref_name: str, area: str) -> str:
-    return f"/vision/{quote(pref_name)}/{quote(area)}"
-
-
 def area_url(pref_name: str, area: str) -> str:
     """二次医療圏の病院一覧（/area/京都府/中丹）。"""
     return f"/area/{quote(pref_name, safe='')}/{quote(area, safe='')}"
@@ -145,7 +140,7 @@ templates.env.filters["jdate"] = jdate
 # CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
 templates.env.globals["css_version"] = int((HERE / "static" / "style.css").stat().st_mtime)
 templates.env.globals.update(
-    kijun_url=kijun_url, facility_url=facility_url, city_url=city_url, area_url=area_url, vision_url=vision_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
+    kijun_url=kijun_url, facility_url=facility_url, city_url=city_url, area_url=area_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
     site_url=SITE_URL, kouseikyoku_url=KOUSEIKYOKU_URL, pdl_url=PDL_URL,
     mhlw_terms_url=MHLW_TERMS_URL, ftypes=FTYPES, kubun_ref_note=kubun_ref_note,
     adsense_client=ADSENSE_CLIENT, adsense_slot=ADSENSE_SLOT, contact_email=CONTACT_EMAIL, operator_name=OPERATOR_NAME, ga_id=GA_MEASUREMENT_ID,
@@ -159,7 +154,6 @@ GA_PAGE = {
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏",
-    "vision.html": "地域医療構想", "vision_index.html": "地域医療構想",
 }
 
 
@@ -1262,54 +1256,6 @@ def area_page(request: Request, pref_name: str, area: str):
     return render(request, "area.html", pref=pref, area=area, cities=cities, hosp=hosp, n_all=n_all)
 
 
-@app.get("/vision", response_class=HTMLResponse)
-def vision_index(request: Request):
-    """地域医療構想の医療機関機能と届出：都道府県・二次医療圏の一覧。"""
-    with db() as con:
-        prefs = [{"name": p["name"], "areas": [a["area"] for a in _pref_areas(con, p["code"])]} for p in _prefs(con)]
-        n_change = con.execute("SELECT COUNT(*) FROM vision_change").fetchone()[0] if _has_table(con, "vision_change") else 0
-    return render(request, "vision_index.html", prefs=prefs, n_change=n_change)
-
-
-@app.get("/vision/{pref_name}/{area}", response_class=HTMLResponse)
-def vision_page(request: Request, pref_name: str, area: str):
-    """二次医療圏ごとに、医療機関機能（急性期拠点機能など）の説明に関係する届出を病院ごとに並べる。
-    どの病院がどの機能かは判定しない（vision.py の説明を参照）。"""
-    with db() as con:
-        pref = _pref_by_name(con, pref_name)
-        if not pref or not _valid_area(area):
-            raise HTTPException(404)
-        dpc_year = con.execute("SELECT value FROM meta WHERE key = 'hstats_dpc_year'").fetchone()
-        dpc_year = int(dpc_year[0]) if dpc_year and dpc_year[0] else None
-        dpc_sql = ("""(SELECT d."件数_全身麻酔" FROM dpc_hosp d
-                       WHERE d.code = substr('0000000000' || f.byosho_code, -10) AND d.year = ?)"""
-                   if dpc_year and _has_table(con, "dpc_hosp") else "NULL")
-        hosp = con.execute(
-            f"""SELECT f.id, f.name, f.city, h.beds, h.b_hk, h.b_ak, h.b_kf, h.b_mk, h.amb,
-                       {dpc_sql} AS anes
-                FROM facilities f LEFT JOIN hstats h ON h.facility_id = f.id
-                WHERE f.pref_code = ? AND f.area = ? AND f.ftype = '病院'
-                ORDER BY COALESCE(h.beds, 0) DESC, f.n_kijun DESC, f.name""",
-            ((dpc_year,) if dpc_sql != "NULL" else ()) + (pref["code"], area)).fetchall()
-        if not hosp:
-            raise HTTPException(404)
-        pres = vision_presence(con, "f.pref_code = ? AND f.area = ?", (pref["code"], area))
-        changes = con.execute(
-            "SELECT * FROM vision_change WHERE pref_code = ? AND area = ? ORDER BY name, col",
-            (pref["code"], area)).fetchall() if _has_table(con, "vision_change") else []
-        areas = [a["area"] for a in _pref_areas(con, pref["code"])]
-    counts = {}
-    for (_, col) in pres:
-        counts[col] = counts.get(col, 0) + 1
-    return render(request, "vision.html", pref=pref, area=area, hosp=hosp, pres=pres, counts=counts,
-                  funcs=VISION_FUNCS, changes=changes, col_label=COL_LABEL, col_func=COL_FUNC,
-                  areas=areas, dpc_year=dpc_year)
-
-
-def _has_table(con, name: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?", (name,)).fetchone() is not None
-
-
 def _pref_areas(con, pref_code: str) -> list[dict]:
     """都道府県ページの「二次医療圏・市区町村から探す」。二次医療圏ごとに市区町村と医療機関数。"""
     out: dict[str, dict] = {}
@@ -1399,7 +1345,7 @@ def sitemap_index():
 def sitemap_part(part: str):
     with db() as con:
         if part == "static":
-            paths = ["/", "/guide", "/kijun", "/vision", "/about", "/operator", "/contact", "/privacy"] + [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
+            paths = ["/", "/guide", "/kijun", "/about", "/operator", "/contact", "/privacy"] + [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
             for r in con.execute(
                 """SELECT DISTINCT p.name AS pref, f.area, f.city FROM facilities f
                    JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area, f.city"""):
@@ -1410,7 +1356,6 @@ def sitemap_part(part: str):
                    JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area"""):
                 if _valid_area(r["area"]):
                     paths.append(area_url(r["pref"], r["area"]))
-                    paths.append(vision_url(r["pref"], r["area"]))
         elif part == "kijun":
             paths = [kijun_url(r["name"]) for r in con.execute("SELECT name FROM kijun")]
             paths += [

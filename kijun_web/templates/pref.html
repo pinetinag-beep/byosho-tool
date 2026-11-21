@@ -15,7 +15,7 @@
 <h2>二次医療圏・市区町村から探す</h2>
 <div class="table-wrap" data-ga-sec="pref_areas"><table class="near">
   <thead><tr><th>二次医療圏</th><th>市区町村（医療機関の数）</th></tr></thead>
-  <tbody>{% for a in areas %}<tr><td class="nowrap"><a href="{{ area_url(pref.name, a.area) }}">{{ a.area }}</a><div class="small"><a href="{{ vision_url(pref.name, a.area) }}">医療機関機能と届出</a></div></td>
+  <tbody>{% for a in areas %}<tr><td class="nowrap"><a href="{{ area_url(pref.name, a.area) }}">{{ a.area }}</a></td>
     <td>{% for c in a.cities %}<a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a><span class="muted small">（{{ "{:,}".format(c.n) }}）</span>{% if not loop.last %}　{% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}

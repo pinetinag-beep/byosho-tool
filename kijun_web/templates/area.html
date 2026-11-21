@@ -22,8 +22,6 @@
 </div>
 <p class="small muted">二次医療圏は、都道府県が入院医療の提供体制を考える単位として定めた地域です。圏内の市区町村：{% for c in cities %}<a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</p>
 
-<p class="callout" data-ga-sec="area_vision"><a href="{{ vision_url(pref.name, area) }}">{{ area }}医療圏の病院を、地域医療構想の医療機関機能（急性期拠点機能・高齢者救急・在宅医療等連携・専門等）に関係する届出で比べる →</a></p>
-
 {% if hosp %}
 <h2>{{ area }}医療圏の病院（{{ hosp|length }}件）</h2>
 {% with rows = hosp, show_city = true, ga_sec = "area_hospitals" %}{% include "_hosp_table.html" %}{% endwith %}
