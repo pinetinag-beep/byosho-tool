@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}薬局の検索結果{% if pref %}（{{ pref.name }}{{ c.city }}）{% endif %}{% endblock %}
+{% block robots %}<meta name="robots" content="noindex">{% endblock %}
+{% block ga_events %}gtag("event", "search", { search_term: {{ ("薬局 " ~ (pref.name if pref else "全国") ~ " " ~ c.city ~ " " ~ (sel|map(attribute="name")|join("・")) ~ " " ~ c.q)|trim|tojson }}, results: {{ total }}, content_group: "薬局の検索結果" });{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › <a href="/yakkyoku">薬局を探す</a> › 検索結果</p>
+<h1>薬局の検索結果</h1>
+<div class="cond-summary">
+  <span class="tag">{{ pref.name if pref else "全国" }}{% if c.city %} {{ c.city }}{% endif %}</span>
+  {% if c.q %}<span class="tag">「{{ c.q }}」</span>{% endif %}
+  {% if sel %}<span>{{ sel|length }}件の届出の{{ "すべて" if c.mode == "and" and sel|length > 1 else "いずれか" }}：{% for s in sel %}{{ s.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+  <a href="/yakkyoku?{{ c.query() }}">検索条件を変更する</a>
+</div>
+
+{% if pref %}
+<form class="sp-opts" action="/yakkyoku/search" method="get">
+  <input type="hidden" name="pref" value="{{ c.pref }}">
+  {% for i in c["items"] %}<input type="hidden" name="item" value="{{ i }}">{% endfor %}
+  {% if c.mode == "and" %}<input type="hidden" name="mode" value="and">{% endif %}
+  <label class="sx-field"><span class="sx-flabel">市区町村で絞り込む</span>
+    <select name="city" class="sp-select" onchange="this.form.submit()"><option value="">{{ pref.name }}のすべて</option>
+      {% for ct in cities %}<option value="{{ ct.city }}" {% if ct.city == c.city %}selected{% endif %}>{{ ct.city }}（{{ ct.n }}）</option>{% endfor %}</select></label>
+  <label class="sx-field sx-grow"><span class="sx-flabel">薬局名・住所</span><input type="text" name="q" value="{{ c.q }}" class="sp-select"></label>
+  <button type="submit" class="btn">絞り込む</button>
+</form>
+{% endif %}
+
+<div class="result-head">
+  <div class="count">{{ "{:,}".format(total) }} 件{% if total > 0 %}（{{ page }} / {{ pages }} ページ）{% endif %}</div>
+  {% if total %}<a class="btn" href="{{ csv_url }}">CSVダウンロード（無料）</a>{% endif %}
+</div>
+{% if rows %}
+<div class="table-wrap" data-ga-sec="y_search_results"><table class="y-table">
+  <thead><tr><th>薬局名</th><th>所在地</th><th>調剤基本料</th><th>地域支援・医薬品供給対応体制加算</th>{% if sel %}<th>当てはまる届出</th>{% endif %}<th class="num">届出の数</th></tr></thead>
+  <tbody>{% for r in rows %}<tr>
+    <td class="y-name"><a href="{{ y_url(r.id) }}">{{ r.name }}</a></td>
+    <td class="small nowrap">{{ r.pref_name }}{% if r.city %} <a href="{{ y_city_url(r.pref_name, r.city) }}">{{ r.city }}</a>{% endif %}</td>
+    <td class="small nowrap">{{ r.kihon or "—" }}</td>
+    <td class="small nowrap">{{ (r.chiiki or "—")|replace("地域支援・医薬品供給対応体制", "") }}</td>
+    {% if sel %}<td class="small">{{ hits.get(r.id, [])|join("・") }}</td>{% endif %}
+    <td class="num">{{ r.n_kijun }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}<a href="{{ page_url(page - 1) }}">← 前へ</a>{% endif %}
+  {% for p in range([1, page - 3]|max, [pages, page + 3]|min + 1) %}
+    {% if p == page %}<span class="cur">{{ p }}</span>{% else %}<a href="{{ page_url(p) }}">{{ p }}</a>{% endif %}
+  {% endfor %}
+  {% if page < pages %}<a href="{{ page_url(page + 1) }}">次へ →</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<p class="note">条件に合う薬局はありませんでした。</p>
+{% endif %}
+<p class="source">出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿・薬局）」を加工して作成（各ページのURLと利用した日は<a href="/about#sources">データの出典と利用条件</a>）</p>
+{% include "_ad.html" %}
+{% endblock %}

@@ -79,6 +79,10 @@ URL:
   （令和8年度改定で急性期病院Ａ/Ｂ等に移ったため）。この結果から、出し直された届出にだけ注意書きを付ける
   （`app.py` の `kubun_ref_note()`）
 
+## 薬局を探す（2026年11月）
+
+`/yakkyoku/…`：各厚生局の「届出受理医療機関名簿（薬局）」から、調剤基本料・地域支援・在宅などの届出で薬局を探す。データは `build_yakkyoku.py` → `yakkyoku_cache.parquet` → `build_db.py` の `_build_yakkyoku()`（`y_*` のテーブル）。ページは `yakkyoku.py`、届出のまとまりと説明は `yakkyoku_kijun.py`。薬局のIDは都道府県2桁＋「4」＋医療機関番号7桁。
+
 ## 開発時の起動（リポジトリ直下で）
 
 ```bash

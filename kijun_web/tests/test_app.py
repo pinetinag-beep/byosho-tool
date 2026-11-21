@@ -440,3 +440,46 @@ def test_specialty_page_and_grouped_items():
     assert count(a.text) == count(b.text)
     assert "/specialty<" in client.get("/sitemap-static.xml").text
     assert 'href="/specialty"' in client.get("/").text
+
+
+def test_yakkyoku_pages():
+    """薬局を探す：トップ・検索・CSV・薬局・都道府県・市区町村・届出のページ。"""
+    import csv as _csv
+    import io
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    con.row_factory = sqlite3.Row
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'y_fac'").fetchone():
+        pytest.skip("薬局のデータがありません（yakkyoku_cache.parquet）")
+    assert con.execute("SELECT COUNT(DISTINCT pref_code) FROM y_fac").fetchone()[0] == 47
+    f = con.execute("SELECT * FROM y_fac WHERE kihon IS NOT NULL AND chiiki IS NOT NULL AND city IS NOT NULL LIMIT 1").fetchone()
+    assert len(f["id"]) == 10 and f["id"][2] == "4"       # 都道府県2桁＋薬局「4」＋医療機関番号7桁
+    k1 = con.execute("SELECT id, name FROM y_kijun WHERE name = '調剤基本料１'").fetchone()
+    k2 = con.execute("SELECT id, name FROM y_kijun WHERE name = '無菌製剤処理加算'").fetchone()
+
+    r = client.get("/yakkyoku")
+    assert r.status_code == 200 and "調剤基本料（薬局の基本の区分）" in r.text and "どんなものか" in r.text
+    r = client.get(f"/yakkyoku/{f['id']}")
+    assert r.status_code == 200 and f["name"] in r.text and '"@type": "Pharmacy"' in r.text and f["kihon"] in r.text
+    assert client.get("/yakkyoku/0000000000").status_code == 404
+    assert client.get("/yakkyoku/abc").status_code == 404
+    assert client.get(f"/yakkyoku/pref/{quote(f['pref_name'])}").status_code == 200
+    assert client.get(f"/yakkyoku/city/{quote(f['pref_name'])}/{quote(f['city'])}").status_code == 200
+    r = client.get(f"/yakkyoku/kijun/{quote(k2['name'])}")
+    assert r.status_code == 200 and "無菌" in r.text
+
+    # いずれか／すべて：すべての方が少ない。CSVは選んだ届出ごとに○の列
+    n = lambda html: int(re.search(r'class="count">([\d,]+) 件', html).group(1).replace(",", ""))
+    any_ = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&item={k2['id']}").text)
+    all_ = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&item={k2['id']}&mode=and").text)
+    db_all = con.execute("""SELECT COUNT(*) FROM (SELECT f.id FROM y_fac f JOIN y_filings fl ON fl.facility_id = f.id
+                            WHERE f.pref_code = '13' AND fl.kijun_id IN (?, ?) GROUP BY f.id HAVING COUNT(DISTINCT fl.kijun_id) = 2)""",
+                         (k1["id"], k2["id"])).fetchone()[0]
+    assert 0 < all_ == db_all < any_
+    r = client.get(f"/yakkyoku/search.csv?pref=39&item={k2['id']}")
+    rows = list(_csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
+    assert rows[0][-1] == f"届出：{k2['name']}" and rows[1][0] == "高知県" and rows[1][-1] == "○"
+    # サイトマップとヘッダーのメニュー
+    assert "/sitemap-yakkyoku-0.xml" in client.get("/sitemap.xml").text
+    assert f"/yakkyoku/{f['id']}<" in client.get("/sitemap-yakkyoku-0.xml").text
+    assert 'href="/yakkyoku"' in client.get("/").text

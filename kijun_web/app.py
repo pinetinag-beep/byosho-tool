@@ -29,6 +29,7 @@ from fastapi.templating import Jinja2Templates
 from .build_db import OUT as DEFAULT_DB, search_key
 from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
 from .specialties import build as build_specialties
+from . import yakkyoku as ymod
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -139,6 +140,9 @@ def kubun_ref_note(ref: str | None, start_date: str | None, ref_date: str | None
 
 templates.env.filters["jdate"] = jdate
 # CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
+templates.env.globals.update(y_url=ymod.y_url, y_pref_url=ymod.y_pref_url, y_city_url=ymod.y_city_url,
+                             y_kijun_url=ymod.y_kijun_url)
+app.include_router(ymod.router)   # 薬局を探す（/yakkyoku/…）
 templates.env.globals["css_version"] = int((HERE / "static" / "style.css").stat().st_mtime)
 templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, city_url=city_url, area_url=area_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
@@ -155,6 +159,8 @@ GA_PAGE = {
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
+    "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
+    "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
 }
 
 
@@ -1373,7 +1379,11 @@ def _loc(path: str) -> str:
 def sitemap_index():
     with db() as con:
         n_fac = con.execute("SELECT COUNT(*) FROM facilities").fetchone()[0]
+        n_y = con.execute("SELECT COUNT(*) FROM y_fac").fetchone()[0] if con.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'y_fac'").fetchone() else 0
     names = ["static", "kijun"] + [f"facilities-{i}" for i in range(math.ceil(n_fac / SITEMAP_CHUNK))]
+    if n_y:
+        names += ["yakkyoku"] + [f"yakkyoku-{i}" for i in range(math.ceil(n_y / SITEMAP_CHUNK))]
     items = "".join(f"<sitemap><loc>{SITE_URL}/sitemap-{n}.xml</loc></sitemap>" for n in names)
     return _xml(f'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{items}</sitemapindex>')
 
@@ -1402,6 +1412,19 @@ def sitemap_part(part: str):
                        JOIN kijun kj ON kj.id = kp.kijun_id JOIN prefs p ON p.code = kp.pref_code"""
                 )
             ]
+        elif part == "yakkyoku":
+            paths = ["/yakkyoku"]
+            paths += [ymod.y_pref_url(r["name"]) for r in con.execute("SELECT name FROM y_prefs ORDER BY code")]
+            paths += [ymod.y_city_url(r["pref"], r["city"]) for r in con.execute(
+                """SELECT DISTINCT p.name AS pref, f.city FROM y_fac f JOIN y_prefs p ON p.code = f.pref_code
+                   WHERE f.city IS NOT NULL ORDER BY f.pref_code, f.city""")]
+            paths += [ymod.y_kijun_url(r["name"]) for r in con.execute("SELECT name FROM y_kijun")]
+        elif part.startswith("yakkyoku-") and part[9:].isdigit():
+            i = int(part[9:])
+            paths = [ymod.y_url(r["id"]) for r in con.execute(
+                "SELECT id FROM y_fac ORDER BY id LIMIT ? OFFSET ?", (SITEMAP_CHUNK, i * SITEMAP_CHUNK))]
+            if not paths:
+                raise HTTPException(404)
         elif part.startswith("facilities-") and part[11:].isdigit():
             i = int(part[11:])
             paths = [

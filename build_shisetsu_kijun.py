@@ -296,7 +296,7 @@ def _normalize_label(label: str) -> str:
     return s
 
 
-def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
+def _parse_sheet(raw: "pd.DataFrame", kind: str = "医科") -> "tuple[pd.DataFrame, str]":
     """
     1シートのrawデータをパースして (df, 年月) を返す。
 
@@ -326,7 +326,7 @@ def _parse_sheet(raw: "pd.DataFrame") -> "tuple[pd.DataFrame, str]":
         "備考見出し", "備考データ", "市町村コード", "市町村名", "種別コード", "種別",
     ]
 
-    data = data[data["区分"] == "医科"].copy()
+    data = data[data["区分"] == kind].copy()   # 医科（既定）／歯科／薬局
 
     def _fmt_pref(v):
         if pd.isna(v) or str(v).strip() in ("", "nan", "None"):
@@ -461,7 +461,7 @@ def _classify_facility_types(df: pd.DataFrame) -> "pd.Series":
     return key.map(_classify)
 
 
-def parse_file(path: str) -> tuple[pd.DataFrame, str, str]:
+def parse_file(path: str, kind: str = "医科") -> tuple[pd.DataFrame, str, str]:
     """
     Excel 1ファイルをパースして (df, 年月文字列, 時点の日付) を返す。
     複数シートがある場合はすべて結合する（東北局形式など）。
@@ -488,7 +488,7 @@ def parse_file(path: str) -> tuple[pd.DataFrame, str, str]:
             raw = pd.read_excel(path, sheet_name=sname, header=None, dtype=str)
         except Exception:
             continue
-        df_s, ym = _parse_sheet(raw)
+        df_s, ym = _parse_sheet(raw, kind)
         if not df_s.empty:
             sheet_dfs.append(df_s)
             if not year_month:

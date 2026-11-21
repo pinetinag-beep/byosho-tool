@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set place = f.pref_name ~ (f.city or "") %}
+{% block title %}{{ f.name }}（{{ place }}）の調剤基本料・施設基準の届出{% endblock %}
+{% block description %}{{ f.name }}（{{ f.address }}、医療機関コード{{ f.id }}）が地方厚生局に届け出ている施設基準{{ n_filings }}種類の一覧。{% if f.kihon %}{{ f.kihon }}{% endif %}{% if f.chiiki %}、{{ f.chiiki }}{% endif %}など。{% endblock %}
+{% block head_extra %}
+<script type="application/ld+json">{{ {
+  "@context": "https://schema.org",
+  "@graph": [
+    {"@type": "Pharmacy", "name": f.name, "url": site_url ~ y_url(f.id),
+     "address": {"@type": "PostalAddress", "addressRegion": f.pref_name, "addressLocality": f.city or "", "streetAddress": f.address or ""},
+     "identifier": {"@type": "PropertyValue", "propertyID": "医療機関コード", "value": f.id}},
+    {"@type": "BreadcrumbList", "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "薬局を探す", "item": site_url ~ "/yakkyoku"},
+      {"@type": "ListItem", "position": 2, "name": f.pref_name, "item": site_url ~ y_pref_url(f.pref_name)},
+      {"@type": "ListItem", "position": 3, "name": f.city or f.pref_name, "item": site_url ~ (y_city_url(f.pref_name, f.city) if f.city else y_pref_url(f.pref_name))},
+      {"@type": "ListItem", "position": 4, "name": f.name, "item": site_url ~ y_url(f.id)}]}
+  ]
+}|tojson }}</script>
+{% endblock %}
+{% block ga_events %}gtag("event", "view_pharmacy", { prefecture: {{ f.pref_name|tojson }}, content_group: "薬局" });{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/yakkyoku">薬局を探す</a> › <a href="{{ y_pref_url(f.pref_name) }}">{{ f.pref_name }}</a>{% if f.city %} › <a href="{{ y_city_url(f.pref_name, f.city) }}">{{ f.city }}</a>{% endif %} › {{ f.name }}</p>
+<h1>{{ f.name }}</h1>
+<p class="summary">{{ f.name }}は、{{ place }}にある薬局です。地方厚生局に{{ n_filings }}種類の施設基準を届け出ています{% if pref %}（{{ pref.as_of_label }}時点）{% endif %}。{% if f.kihon %}調剤基本料の区分は「{{ f.kihon }}」{% if f.chiiki %}、「{{ f.chiiki }}」も届け出ています{% endif %}。{% endif %}</p>
+<div class="facts">
+  <div class="fact"><div class="k">所在地</div><div class="v small">{{ f.address }}</div></div>
+  <div class="fact"><div class="k">調剤基本料</div><div class="v small">{{ f.kihon or "—" }}</div></div>
+  <div class="fact"><div class="k">地域支援・医薬品供給対応体制加算</div><div class="v small">{{ (f.chiiki or "届出なし")|replace("地域支援・医薬品供給対応体制", "") }}</div></div>
+  <div class="fact"><div class="k">医療機関コード（10桁）</div><div class="v small">{{ f.id }}</div></div>
+</div>
+
+<h2>届け出ている施設基準（{{ n_filings }}種類）</h2>
+{% for g in groups %}
+<h3>{{ g.label }}</h3>
+<div class="table-wrap"><table class="sp-table">
+  <thead><tr><th>届出</th><th>どんなものか</th><th>受理番号</th><th>算定開始</th></tr></thead>
+  <tbody>{% for r in g.rows %}<tr>
+    <td class="sp-name"><a href="{{ y_kijun_url(r.name) }}">{{ r.name }}</a>{% if r.symbol %}<span class="sym">{{ r.symbol }}</span>{% endif %}</td>
+    <td class="sp-desc">{{ r.desc }}</td>
+    <td class="nowrap small">{{ r.juri_no }}</td>
+    <td class="nowrap small">{{ r.start_date|jdate }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% endfor %}
+<p class="muted small">「どんなものか」はMedilenZが一般向けにまとめた説明で、届出の要件そのものではありません。</p>
+{% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
+
+{% if near %}
+<h2>{{ f.city }}のほかの薬局</h2>
+<div class="table-wrap" data-ga-sec="y_near"><table>
+  <thead><tr><th>薬局名</th><th>調剤基本料</th><th class="num">届出の数</th></tr></thead>
+  <tbody>{% for r in near %}<tr><td><a href="{{ y_url(r.id) }}">{{ r.name }}</a></td><td class="small">{{ r.kihon or "—" }}</td><td class="num">{{ r.n_kijun }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if n_near > near|length + 1 %}<p class="small"><a href="{{ y_city_url(f.pref_name, f.city) }}">{{ f.city }}の薬局をすべて見る（{{ "{:,}".format(n_near) }}件）</a></p>{% endif %}
+{% endif %}
+{% if hosp %}
+<h2>{{ f.city }}の病院</h2>
+<ul class="chips" data-ga-sec="y_hosp">{% for h in hosp %}<li><a href="{{ facility_url(h.id) }}">{{ h.name }}{% if h.beds %}<span class="n">{{ h.beds }}床</span>{% endif %}</a></li>{% endfor %}</ul>
+{% endif %}
+{% include "_ad.html" %}
+{% endblock %}

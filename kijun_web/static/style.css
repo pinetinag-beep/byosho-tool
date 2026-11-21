@@ -35,7 +35,7 @@ a:hover { color: var(--brand); }
 .logo span { color: var(--brand); }
 .logo small { font-size: 0.75rem; font-weight: 700; color: var(--ink-muted); margin-left: 10px; letter-spacing: 0; }
 .nav { display: flex; gap: 18px; font-size: 0.9rem; }
-.nav a { color: var(--ink-muted); text-decoration: none; }
+.nav a { color: var(--ink-muted); text-decoration: none; white-space: nowrap; }
 .nav a:hover { color: var(--brand); }
 .site-footer { margin-top: 64px; padding: 28px 0 40px; border-top: 1px solid var(--line); background: var(--card); }
 .credit { font-size: 0.78rem; color: var(--ink-muted); margin: 0 0 8px; }
@@ -412,4 +412,11 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
   .sp-table td.num { grid-row: 1; grid-column: 3; }
   .sp-table tr:has(input:checked) { background: var(--brand-soft); }
   .sp-table tr:has(input:checked) td { background: transparent; }
+}
+
+/* 薬局を探す（/yakkyoku/…） */
+.y-table td.y-name { min-width: 11em; }
+@media (max-width: 760px) {
+  /* ヘッダーのメニューが増えたので、スマホでは1行に並べて横にスクロールできるようにする */
+  .nav { width: 100%; gap: 14px; overflow-x: auto; font-size: 0.85rem; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
 }

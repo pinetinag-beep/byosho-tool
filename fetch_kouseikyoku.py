@@ -7,12 +7,14 @@
   - 全件の名簿（24列。県ごとの全届出）→ shisetsu_raw/
   - 届出項目別の名簿（19列。区分・病床数などの内訳あり）→ shisetsu_kubun_raw/
   - 北海道の新規・変更届出のPDF（北海道は届出項目別の名簿が無いため）→ shisetsu_kubun_raw/北海道/
+  - 薬局の全件の名簿（医科と同じ24列で「区分」が薬局）→ shisetsu_raw_yakkyoku/（2026年11月〜、薬局を探すページ用）
 
 厚生局はファイル名（番号）を毎月変え、ページの作りも局ごとに違う。そのため、決まったページにある
 Excel/ZIPをまとめて取り、**中身で**見分ける（ファイル名やリンクの文字には頼らない）:
   - build_shisetsu_kijun.parse_file() で読めれば全件の名簿（医科の行だけを読む）
   - build_shisetsu_kijun._parse_kubun_file() で読めて種別が「医科」なら届出項目別の名簿
-  - どちらでもない（歯科・薬局・訪問看護・保険外併用療養費など）は捨てる
+  - bk.parse_file(kind="薬局") で読めれば薬局の全件の名簿
+  - どれでもない（歯科・訪問看護・保険外併用療養費・薬局の届出項目別など）は捨てる
 --apply では、同じ県・同じ種類の古いファイル（時点が同じか古いもの）を消してから新しいファイルを入れる。
 ダウンロードしたものは shisetsu_fetch/（git管理外）に残る。
 
@@ -41,6 +43,7 @@ ROOT = Path(__file__).resolve().parent
 BASE = "https://kouseikyoku.mhlw.go.jp"
 STAGE = ROOT / "shisetsu_fetch"
 RAW_DIR = ROOT / "shisetsu_raw"
+YAKKYOKU_DIR = ROOT / "shisetsu_raw_yakkyoku"   # 薬局の全件の名簿
 KUBUN_DIR = bk.KUBUN_DIR
 
 # 厚生局ごとの、名簿のExcel/ZIPが並んでいるページ
@@ -60,8 +63,9 @@ PAGES = {
 HOKKAIDO_SHINKI = "/hokkaido/iryo_shido/shisetsukijyun_jyuri_iryoukikan.html"
 
 # 明らかに医科の施設基準の名簿ではないもの（ダウンロードを減らすため。最終的な判定は中身で行う）
-SKIP_URL = re.compile(r"heiyo|houmon|houkan|hshitei|hkijun|shika|sika|yakkyoku|r\d+jisseki|chukan", re.I)
-SKIP_TEXT = re.compile(r"歯科|薬局|訪問看護|併用|歯料")
+# 薬局の名簿は取る（薬局を探すページ用）。歯科はまだ使わないので取らない
+SKIP_URL = re.compile(r"heiyo|houmon|houkan|hshitei|hkijun|shika|sika|r\d+jisseki|chukan", re.I)
+SKIP_TEXT = re.compile(r"歯科|訪問看護|併用|歯料")
 
 
 def _get(url: str) -> bytes:
@@ -167,6 +171,16 @@ def _classify(path: Path) -> dict | None:
     return None
 
 
+def _classify_yakkyoku(path: Path) -> dict | None:
+    """薬局の名簿。全件（24列、区分＝薬局）か、全件の名簿が無い局（中国）の届出項目別（19列）の薬局版。"""
+    import build_yakkyoku as by
+    df, snap, typ = by.read(path)
+    if not typ:
+        return None
+    return {"type": "yakkyoku", "path": path, "snap": snap,
+            "prefs": sorted(df["都道府県名"].unique()), "group": typ, "n": len(df)}
+
+
 def fetch() -> tuple[list[dict], list[Path], list[str]]:
     STAGE.mkdir(exist_ok=True)
     found: list[dict] = []
@@ -191,19 +205,35 @@ def fetch() -> tuple[list[dict], list[Path], list[str]]:
                 if f is None:
                     continue
                 files += _extract(f, d) if f.suffix.lower() == ".zip" else [f]
-        # 九州などは過去の月の名簿も同じページに並んでいるので、医科以外と、最新の時点でないものは読まない
-        peeked = {f: _peek(f) for f in dict.fromkeys(files)}
-        peeked = {f: v for f, v in peeked.items() if v[1] in ("", "医科")}
+        # 九州などは過去の月の名簿も同じページに並んでいるので、最新の時点でないものは読まない（医科・薬局それぞれで）
+        allpeek = {f: _peek(f) for f in dict.fromkeys(files)}
+        peeked = {f: v for f, v in allpeek.items() if v[1] in ("", "医科")}
         newest = max((v[0] for v in peeked.values()), default="")
         old = [f for f, v in peeked.items() if v[0] != newest]
         if old:
             print(f"    最新（{newest}）でない名簿{len(old)}件は使わない（過去の掲載分）")
-        got = [c for c in (_classify(f) for f, v in peeked.items() if v[0] == newest) if c]
+        got = []
+        for f, v in peeked.items():
+            if v[0] != newest:
+                continue
+            c = _classify(f)
+            # 種別が書いていない名簿は、医科として読めなければ薬局として読んでみる
+            if c is None and v[1] == "":
+                c = _classify_yakkyoku(f)
+            if c:
+                got.append(c)
+        ypeek = {f: v for f, v in allpeek.items() if v[1] == "薬局"}
+        ynewest = max((v[0] for v in ypeek.values()), default="")
+        got += [c for c in (_classify_yakkyoku(f) for f, v in ypeek.items() if v[0] == ynewest) if c]
         for c in got:
             print(f"    {c['type']:5} {c['snap']:10} {'・'.join(c['prefs'])[:30]:30} {c['group'][:16]:16} {c['n']:>7,}件  {c['path'].name}")
         if not any(c["type"] == "full" for c in got):
             failed.append(kyoku)
         found += got
+
+    # 薬局の届出項目別の名簿は、全件の名簿が取れた県の分は使わない（東北の「項目別10」など一部の届出だけのもの）
+    y_full = {p for c in found if c["type"] == "yakkyoku" and c["group"] == "全件" for p in c["prefs"]}
+    found = [c for c in found if not (c["type"] == "yakkyoku" and c["group"] == "項目別" and set(c["prefs"]) <= y_full)]
 
     # 北海道の新規・変更届出のPDF（医科）
     hk = STAGE / "北海道_新規変更"
@@ -227,7 +257,7 @@ def fetch() -> tuple[list[dict], list[Path], list[str]]:
 def _existing(dir_: Path, type_: str) -> list[dict]:
     out = []
     for f in sorted(dir_.glob("*.xlsx")):
-        c = _classify(f)
+        c = _classify_yakkyoku(f) if type_ == "yakkyoku" else _classify(f)
         if c and c["type"] == type_:
             out.append(c)
     return out
@@ -235,10 +265,11 @@ def _existing(dir_: Path, type_: str) -> list[dict]:
 
 def apply(found: list[dict], pdfs: list[Path]) -> None:
     """新しいファイルを入れ、同じ県・同じ種類で時点が同じか古いファイルを消す。"""
-    for type_, dir_ in (("full", RAW_DIR), ("kubun", KUBUN_DIR)):
+    for type_, dir_ in (("full", RAW_DIR), ("kubun", KUBUN_DIR), ("yakkyoku", YAKKYOKU_DIR)):
         new = [c for c in found if c["type"] == type_]
         if not new:
             continue
+        dir_.mkdir(exist_ok=True)
         # 同じ県・同じ種類の中で、新しく取ったものの最新
         latest: dict[tuple[str, str], str] = {}
         for c in new:
@@ -259,15 +290,18 @@ def apply(found: list[dict], pdfs: list[Path]) -> None:
             shutil.copy2(c["path"], dest)
             print(f"  追加: {dir_.name}/{dest.name}（{c['snap']}）")
     # 出典に書く「利用した日」（名簿を取った日）を県ごとに残す（kijun_web/sources.py 参照）
-    fetched_path = RAW_DIR / "fetched.json"
-    fetched = json.loads(fetched_path.read_text(encoding="utf-8")) if fetched_path.exists() else {}
     today = datetime.date.today().isoformat()
-    for c in found:
-        if c["type"] == "full":
-            for pref in c["prefs"]:
-                fetched[pref] = today
-    fetched_path.write_text(json.dumps(dict(sorted(fetched.items())), ensure_ascii=False, indent=1) + "\n",
-                            encoding="utf-8")
+    for type_, dir_ in (("full", RAW_DIR), ("yakkyoku", YAKKYOKU_DIR)):
+        if not any(c["type"] == type_ for c in found):
+            continue
+        fetched_path = dir_ / "fetched.json"
+        fetched = json.loads(fetched_path.read_text(encoding="utf-8")) if fetched_path.exists() else {}
+        for c in found:
+            if c["type"] == type_:
+                for pref in c["prefs"]:
+                    fetched[pref] = today
+        fetched_path.write_text(json.dumps(dict(sorted(fetched.items())), ensure_ascii=False, indent=1) + "\n",
+                                encoding="utf-8")
     hk_dir = KUBUN_DIR / "北海道"
     hk_dir.mkdir(exist_ok=True)
     for f in pdfs:
@@ -278,7 +312,7 @@ def apply(found: list[dict], pdfs: list[Path]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--apply", action="store_true", help="shisetsu_raw/ ・ shisetsu_kubun_raw/ に入れる")
+    ap.add_argument("--apply", action="store_true", help="shisetsu_raw/ ・ shisetsu_kubun_raw/ ・ shisetsu_raw_yakkyoku/ に入れる")
     args = ap.parse_args()
     found, pdfs, failed = fetch()
     full_prefs = {p for c in found if c["type"] == "full" for p in c["prefs"]}
@@ -286,6 +320,9 @@ def main() -> int:
     print(f"\n全件の名簿: {len(full_prefs)}都道府県" + (f"（取れなかった: {'・'.join(missing)}）" if missing else ""))
     if failed:
         print(f"全件の名簿が見つからなかった厚生局: {'・'.join(failed)} → PAGES を確認すること")
+    y_prefs = {p for c in found if c["type"] == "yakkyoku" for p in c["prefs"]}
+    y_missing = [p for p in bk_pref_names() if p not in y_prefs]
+    print(f"薬局の名簿: {len(y_prefs)}都道府県" + (f"（取れなかった: {'・'.join(y_missing)}）" if y_missing else ""))
     if args.apply:
         apply(found, pdfs)
     return 0

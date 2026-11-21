@@ -48,6 +48,8 @@ DPC_MDC = ROOT / "dpc_mdc_cases.parquet"
 GAIRAI = ROOT / "gairai_form1_annual.parquet"   # 市区町村→二次医療圏の対応に使う（外来機能報告）
 ABBR = HERE / "abbr_order.json"                 # 受理記号の分類と並び順（make_abbr_order.py が作る）
 OUT = HERE / "data" / "kijun.sqlite"
+YAKKYOKU = ROOT / "yakkyoku_cache.parquet"                  # 薬局の届出（build_yakkyoku.py が作る）
+YAKKYOKU_FETCHED = ROOT / "shisetsu_raw_yakkyoku" / "fetched.json"
 
 # 検索フォームで届出項目を並べる区分（略称一覧の見出しと同じ順）
 SECTION_ORDER = ["基本診療料", "特掲診療料", "入院時食事療養", "その他の届出", "先進医療"]
@@ -658,9 +660,87 @@ def _build_kijun_rel(con, top: int = 12) -> int:
     return con.execute("SELECT COUNT(*) FROM kijun_rel").fetchone()[0]
 
 
-def _with_sources(prefs: pd.DataFrame) -> pd.DataFrame:
+def _jlabel(iso: str) -> str:
+    try:
+        return f"{int(iso[:4])}年{int(iso[5:7])}月{int(iso[8:10])}日"
+    except (ValueError, TypeError):
+        return ""
+
+
+def _build_yakkyoku(con) -> int:
+    """薬局の届出（yakkyoku_cache.parquet）を y_* のテーブルに入れる（/yakkyoku/… のページ用）。
+
+    薬局の医療機関番号は医科と同じ7桁の体系で別の施設に重なることがあるので、IDは
+    都道府県コード2桁＋薬局を表す「4」＋医療機関番号7桁の10桁にする（医科は9桁なので重ならない）。"""
+    if not YAKKYOKU.exists():
+        return 0
+    d = pd.read_parquet(YAKKYOKU).fillna("")
+    d["facility_id"] = d["都道府県コード"].str.zfill(2) + "4" + d["医療機関番号"].str.zfill(7)
+    d["start_date"] = d["算定開始年月日"].map(wareki_to_iso)
+    con.executescript("""
+        CREATE TABLE y_prefs (code TEXT PRIMARY KEY, name TEXT, as_of TEXT, as_of_label TEXT, n_facilities INTEGER,
+                              bureau TEXT, bureau_page TEXT, bureau_url TEXT, used_on TEXT, used_on_label TEXT);
+        CREATE TABLE y_fac (id TEXT PRIMARY KEY, pref_code TEXT, pref_name TEXT, code TEXT, name TEXT, name_search TEXT,
+                            address TEXT, address_search TEXT, city TEXT, area TEXT, n_kijun INTEGER,
+                            kihon TEXT, chiiki TEXT);
+        CREATE TABLE y_kijun (id INTEGER PRIMARY KEY, name TEXT UNIQUE, symbol TEXT, n_facilities INTEGER);
+        CREATE TABLE y_filings (facility_id TEXT, kijun_id INTEGER, symbol TEXT, juri_no TEXT, start_date TEXT);
+        CREATE TABLE y_kijun_pref (kijun_id INTEGER, pref_code TEXT, n INTEGER);
+        CREATE TABLE y_areas (pref_code TEXT, area TEXT, area_order INTEGER, city TEXT, city_order TEXT, n INTEGER);
+    """)
+    p = (d.groupby(["都道府県コード", "都道府県名"])
+          .agg(as_of=("時点", "max"), n_facilities=("facility_id", "nunique")).reset_index())
+    p = _with_sources(p, YAKKYOKU_FETCHED)
+    p["as_of_label"] = p["as_of"].map(_jlabel)
+    con.executemany("INSERT INTO y_prefs VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    p[["都道府県コード", "都道府県名", "as_of", "as_of_label", "n_facilities",
+                       "bureau", "bureau_page", "bureau_url", "used_on", "used_on_label"]].astype(object).itertuples(index=False, name=None))
+    # 薬局ごとの調剤基本料・地域支援の区分（一覧の列に出す）
+    first = lambda pat: (d[d["受理届出名称"].str.match(pat)].sort_values("受理届出名称")
+                         .groupby("facility_id")["受理届出名称"].first())
+    fac = (d.groupby("facility_id")
+            .agg(pref_code=("都道府県コード", "first"), pref_name=("都道府県名", "first"), code=("医療機関番号", "first"),
+                 name=("医療機関名称", "first"), address=("住所", "first"), n_kijun=("受理届出名称", "nunique"))
+            .reset_index())
+    fac["kihon"] = fac["facility_id"].map(first(r"(特別)?調剤基本料"))
+    fac["chiiki"] = fac["facility_id"].map(first(r"地域支援"))
+    fac["name_search"] = fac["name"].map(search_key)
+    fac["address_search"] = fac["address"].map(search_key)
+    fac["city"], fac["area"], areas = _city_area(fac)
+    con.executemany("INSERT INTO y_fac VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    fac[["facility_id", "pref_code", "pref_name", "code", "name", "name_search", "address",
+                         "address_search", "city", "area", "n_kijun", "kihon", "chiiki"]]
+                    .astype(object).where(fac.notna(), None).itertuples(index=False, name=None))
+    con.executemany("INSERT INTO y_areas VALUES (?,?,?,?,?,?)",
+                    areas[["pref_code", "area", "area_order", "city", "city_order", "n"]].astype(object).itertuples(index=False, name=None))
+    kj = d.groupby("受理届出名称").agg(n=("facility_id", "nunique")).reset_index()
+    sym = (d.groupby(["受理届出名称", "受理記号"]).size().reset_index(name="c").sort_values("c", ascending=False)
+            .drop_duplicates("受理届出名称").set_index("受理届出名称")["受理記号"])
+    kj = kj.sort_values(["n", "受理届出名称"], ascending=[False, True]).reset_index(drop=True)
+    kj["id"] = kj.index + 1
+    kj["symbol"] = kj["受理届出名称"].map(sym)
+    con.executemany("INSERT INTO y_kijun VALUES (?,?,?,?)",
+                    kj[["id", "受理届出名称", "symbol", "n"]].astype(object).itertuples(index=False, name=None))
+    d["kijun_id"] = d["受理届出名称"].map(dict(zip(kj["受理届出名称"], kj["id"])))
+    con.executemany("INSERT INTO y_filings VALUES (?,?,?,?,?)",
+                    d[["facility_id", "kijun_id", "受理記号", "受理番号", "start_date"]].drop_duplicates()
+                    .astype(object).itertuples(index=False, name=None))
+    kp = d.groupby(["kijun_id", "都道府県コード"])["facility_id"].nunique().reset_index(name="n")
+    con.executemany("INSERT INTO y_kijun_pref VALUES (?,?,?)", kp.astype(object).itertuples(index=False, name=None))
+    con.executescript("""
+        CREATE INDEX ix_yf_pref ON y_fac(pref_code, city);
+        CREATE INDEX ix_yf_area ON y_fac(pref_code, area);
+        CREATE INDEX ix_yfl_fac ON y_filings(facility_id);
+        CREATE INDEX ix_yfl_kijun ON y_filings(kijun_id, facility_id);
+        CREATE INDEX ix_ykp ON y_kijun_pref(kijun_id, pref_code);
+        CREATE INDEX ix_ya ON y_areas(pref_code);
+    """)
+    return len(fac)
+
+
+def _with_sources(prefs: pd.DataFrame, fetched_path: Path = FETCHED) -> pd.DataFrame:
     """都道府県ごとに、出典に書く厚生局・名簿のページ・URL・利用した日（名簿を取った日）を付ける。"""
-    fetched = json.loads(FETCHED.read_text(encoding="utf-8")) if FETCHED.exists() else {}
+    fetched = json.loads(fetched_path.read_text(encoding="utf-8")) if fetched_path.exists() else {}
     p = prefs.copy()
     names = p["都道府県名"].astype(str)
     p["bureau"] = names.map(lambda n: BUREAU_OF_PREF.get(n, ("", "", ""))[0])
@@ -807,6 +887,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_gairai_rows = _build_gairai(con)
     n_hstats = _build_hstats(con)
     n_kijun_rel = _build_kijun_rel(con)
+    n_yakkyoku = _build_yakkyoku(con)
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -825,6 +906,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_gairai_rows": str(n_gairai_rows),
         "n_hstats": str(n_hstats),
         "n_kijun_rel": str(n_kijun_rel),
+        "n_yakkyoku": str(n_yakkyoku),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),

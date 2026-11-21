@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ pref.name }}の薬局一覧（{{ "{:,}".format(pref.n_facilities) }}件・調剤基本料・施設基準の届出）{% endblock %}
+{% block description %}{{ pref.name }}の薬局{{ "{:,}".format(pref.n_facilities) }}件を市区町村ごとに一覧。調剤基本料の区分、地域支援・医薬品供給対応体制加算、在宅などの施設基準の届出を届出ごとに数えています（{{ pref.as_of_label }}時点）。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/yakkyoku">薬局を探す</a> › {{ pref.name }}</p>
+<h1>{{ pref.name }}の薬局</h1>
+<div class="facts">
+  <div class="fact"><div class="k">薬局（施設基準の届出あり）</div><div class="v">{{ "{:,}".format(pref.n_facilities) }} <small>件</small></div></div>
+  {% for k in ["調剤基本料１", "調剤基本料２", "調剤基本料３イ", "調剤基本料３ロ", "調剤基本料３ハ", "特別調剤基本料Ａ"] if kihon.get(k) %}
+  <div class="fact"><div class="k">{{ k }}</div><div class="v">{{ "{:,}".format(kihon[k]) }} <small>件</small></div></div>
+  {% endfor %}
+</div>
+<p><a class="btn" href="/yakkyoku/search?pref={{ pref.code }}">{{ pref.name }}の薬局を条件で探す</a></p>
+
+<h2>市区町村から探す</h2>
+<div class="table-wrap" data-ga-sec="y_pref_cities"><table class="near">
+  <thead><tr><th>二次医療圏</th><th>市区町村（薬局の数）</th></tr></thead>
+  <tbody>{% for a in areas %}<tr><td class="nowrap">{{ a.area }}</td>
+    <td>{% for c in a.cities %}<a href="{{ y_city_url(pref.name, c.city) }}">{{ c.city }}</a><span class="muted small">（{{ "{:,}".format(c.n) }}）</span>{% if not loop.last %}　{% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
+</table></div>
+
+<h2>{{ pref.name }}で届け出ている薬局の数（届出ごと）</h2>
+<div class="table-wrap" data-ga-sec="y_pref_kijun"><table>
+  <thead><tr><th>届出</th><th class="num">薬局の数</th><th></th></tr></thead>
+  <tbody>{% for k in kijun %}<tr><td><a href="{{ y_kijun_url(k.name) }}">{{ k.name }}</a></td><td class="num">{{ "{:,}".format(k.n) }}件</td>
+    <td class="small"><a href="/yakkyoku/search?pref={{ pref.code }}&amp;item={{ k.id }}">リストを見る</a></td></tr>{% endfor %}</tbody>
+</table></div>
+{% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
+{% include "_ad.html" %}
+{% endblock %}

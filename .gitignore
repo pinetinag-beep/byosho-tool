@@ -6,6 +6,7 @@ __pycache__/
 # 旧キャッシュ（Streamlit Cloud用データは除く）
 *.parquet
 !data_cache.parquet
+!yakkyoku_cache.parquet
 !ward_cache.parquet
 !surgery_cache.parquet
 !locations_cache.parquet
@@ -72,3 +73,6 @@ kijun_web/data/
 
 # 厚生局サイトから集めた名簿の置き場（fetch_kouseikyoku.py）
 shisetsu_fetch/
+
+# 薬局の名簿の生データ（毎月 fetch_kouseikyoku.py で取り直す。処理後の yakkyoku_cache.parquet と fetched.json だけを管理する）
+shisetsu_raw_yakkyoku/*.xlsx
