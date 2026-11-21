@@ -395,6 +395,10 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 .sp-table .sp-name label { cursor: pointer; }
 .sp-table .sp-desc { font-size: 0.84rem; color: var(--ink-muted); line-height: 1.65; min-width: 16em; }
 .sp-table tr:has(input:checked) td { background: var(--brand-soft); }
+.sp-subs { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-weight: 400; font-size: 0.8rem; color: var(--ink-muted); }
+.sp-subs label { display: inline-flex; align-items: flex-start; gap: 4px; cursor: pointer; line-height: 1.5; }
+.sp-subs input { margin-top: 3px; flex: none; }
+.sp-subs .n { color: var(--ink-faint); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .ct-bar .btn:disabled { opacity: 0.5; cursor: default; }
 @media (max-width: 760px) {

@@ -422,14 +422,16 @@ def test_facility_summary_sentence():
 
 
 def test_specialty_page_and_grouped_items():
-    """診療科から探す：説明つきの届出を選んで検索。1行の複数の届出項目は item=1.2.3 でまとめて送る。"""
+    """診療科から探す：説明つきの届出を選んで検索。item=1.2.3 のように「.」でまとめた値も1つずつ送った時と同じ検索になる。"""
     r = client.get("/specialty")
     assert r.status_code == 200
     assert "循環器内科" in r.text and "どんなものか" in r.text and "MedilenZが作ったもの" in r.text
     vals = re.findall(r'name="item" value="([\d.]+)"', r.text)
-    assert len(vals) > 250 and any("." in v for v in vals)
-    grouped = next(v for v in vals if "." in v)
-    ids = grouped.split(".")
+    assert len(vals) > 250
+    # 区分をまとめた行（特定集中治療室管理料１〜３など）は、区分ごとのチェックボックスも持つ
+    assert 'class="sp-grp"' in r.text and 'class="sp-subs"' in r.text
+    ids = [vals[0].split(".")[0], vals[1].split(".")[0]]
+    grouped = ".".join(ids)
     # まとめた値と、1つずつ送った値は同じ検索になる
     a = client.get(f"/search?item={grouped}&mode=or&ftype=病院")
     b = client.get("/search?" + "&".join(f"item={i}" for i in ids) + "&mode=or&ftype=病院")

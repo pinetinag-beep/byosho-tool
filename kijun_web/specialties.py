@@ -12,6 +12,8 @@ pattern は SQL の LIKE 用（% を含まなければ完全一致と同じ）�
 """
 from __future__ import annotations
 
+import re
+
 SPECIALTIES: list[dict] = [
     {"key": "cardio", "name": "循環器内科", "items": [
         "ペースメーカー移植術及びペースメーカー交換術%",
@@ -148,7 +150,7 @@ SPECIALTIES: list[dict] = [
         "無菌治療室管理加算%",
         "移植後患者指導管理料（造血幹細胞移植後）",
         "骨髄微小残存病変量測定",
-        "輸血管理料Ⅰ",
+        "輸血管理料%",
     ]},
     {"key": "onco", "name": "がん薬物療法（腫瘍内科）", "items": [
         "外来腫瘍化学療法診療料%",
@@ -195,7 +197,7 @@ SPECIALTIES: list[dict] = [
         "四肢・躯幹軟部悪性腫瘍手術及び骨悪性腫瘍手術の注に掲げる処理骨再建加算",
         "骨悪性腫瘍、類骨骨腫及び四肢軟部腫瘍ラジオ波焼灼療法",
         "運動器リハビリテーション料%",
-        "二次性骨折予防継続管理料１",
+        "二次性骨折予防継続管理料%",
     ]},
     {"key": "rehab", "name": "リハビリテーション科", "items": [
         "脳血管疾患等リハビリテーション料（Ⅰ）",
@@ -395,6 +397,27 @@ def matches(con, pattern: str) -> list[tuple]:
         (pattern,)).fetchall()
 
 
+def _sub_label(name: str, prefix: str) -> str:
+    """まとめた行の中の区分の短い名前（例：「１」「ロボット等を使う場合」「診療所・(２)ア」）。"""
+    if not prefix:
+        # 在宅療養支援診療所・病院などは「別添１の「第９」の１の(３)に規定する…」という名前なので、
+        # 診療所（第９）／病院（第14の２）と項番だけにする
+        kind = "診療所" if "「第９」" in name else "病院" if "「第14の２」" in name else ""
+        m = re.search(r"の[１２]の(\(.\)(?:の[アイ])?)に規定", name)
+        num = m.group(1).replace("の", "") if m else ""
+        tail = re.search(r"加算([１２])$", name)
+        if name.endswith(("在宅療養支援診療所", "在宅療養支援病院")):
+            return num or name           # (１)(２)は機能強化型、(３)はそれ以外（説明に書く）
+        parts = [kind, f"加算{tail.group(1)}" if tail else ""]
+        return "・".join(x for x in parts if x) or name
+    rest = name[len(prefix):] if name.startswith(prefix) else name
+    rest = rest.strip()
+    if not rest:
+        return "通常"
+    rest = re.sub(r"（内視鏡手術用支援機器を用いる(場合|もの)）", "（ロボット等を使う場合）", rest)
+    return rest[1:] if rest.startswith("の") else rest
+
+
 def build(con) -> list[dict]:
     """診療科ごとの行（表示名・説明・届け出ている医療機関数・検索に使う届出項目のid）。
     一覧（make_specialty_list.py）と、サイトの「診療科から探す」（/specialty）で使う。"""
@@ -415,7 +438,16 @@ def build(con) -> list[dict]:
             n = con.execute(f"SELECT COUNT(DISTINCT facility_id) FROM filings WHERE kijun_id IN ({q})", kids).fetchone()[0]
             items = [r[0] for r in con.execute(f"SELECT id FROM items WHERE kijun_id IN ({q}) ORDER BY id", kids)]
             name = DISPLAY.get(p) or (m[0][1] if len(m) == 1 else p.rstrip("%"))
-            rows.append({"name": name, "variants": len(m), "desc": DESC.get(p, ""), "n": n, "items": items})
+            # 区分（１〜３、ロボット版など）ごとにも選べるように、まとめた行の中身も持つ
+            subs = []
+            if len(m) > 1:
+                prefix = "" if p.startswith("%") else p.split("%")[0]
+                for kid, kname, kn in sorted(m, key=lambda r: r[1]):
+                    subs.append({
+                        "label": _sub_label(kname, prefix), "n": kn,
+                        "items": [r[0] for r in con.execute("SELECT id FROM items WHERE kijun_id = ? ORDER BY id", (kid,))],
+                    })
+            rows.append({"name": name, "variants": len(m), "desc": DESC.get(p, ""), "n": n, "items": items, "subs": subs})
         q = ",".join("?" * len(all_ids))
         nf, nh = con.execute(
             f"""SELECT COUNT(DISTINCT f.id), COUNT(DISTINCT CASE WHEN f.ftype = '病院' THEN f.id END)

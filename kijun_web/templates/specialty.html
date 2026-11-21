@@ -30,8 +30,15 @@
     <div class="table-wrap"><table class="sp-table">
       <thead><tr><th class="sp-cb"><span class="sr">選ぶ</span></th><th>届出</th><th>どんなものか</th><th class="num">届け出ている医療機関</th></tr></thead>
       <tbody>{% for r in s.rows %}<tr>
-        <td class="sp-cb"><input type="checkbox" name="item" value="{{ r['items']|join('.') }}" data-sec="{{ s.key }}" id="sp-{{ s.key }}-{{ loop.index }}"></td>
-        <td class="sp-name"><label for="sp-{{ s.key }}-{{ loop.index }}">{{ r.name }}{% if r.variants > 1 %}<span class="muted small">（{{ r.variants }}種類）</span>{% endif %}</label></td>
+        {% set rid = "sp-" ~ s.key ~ "-" ~ loop.index %}
+        {% if r.subs %}
+        <td class="sp-cb"><input type="checkbox" class="sp-grp" data-sec="{{ s.key }}" data-grp="{{ rid }}" id="{{ rid }}"></td>
+        <td class="sp-name"><label for="{{ rid }}">{{ r.name }}<span class="muted small">（{{ r.variants }}種類）</span></label>
+          <div class="sp-subs">{% for v in r.subs %}<label><input type="checkbox" name="item" value="{{ v['items']|join('.') }}" data-sec="{{ s.key }}" data-grp="{{ rid }}">{{ v.label }}<span class="n">{{ "{:,}".format(v.n) }}</span></label>{% endfor %}</div></td>
+        {% else %}
+        <td class="sp-cb"><input type="checkbox" name="item" value="{{ r['items']|join('.') }}" data-sec="{{ s.key }}" id="{{ rid }}"></td>
+        <td class="sp-name"><label for="{{ rid }}">{{ r.name }}</label></td>
+        {% endif %}
         <td class="sp-desc">{{ r.desc }}</td>
         <td class="num">{{ "{:,}".format(r.n) }}</td>
       </tr>{% endfor %}</tbody>
@@ -44,7 +51,7 @@
     <button type="submit" class="btn" id="sp-submit" disabled>リストを抽出する</button>
   </div>
 </form>
-<p class="muted small">届け出ている医療機関の数は全国の数で、名前の似た届出（１〜３などの区分、手術支援ロボットを使うものなど）はまとめて数えています。出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」を加工して作成（<a href="/about#sources">データの出典と利用条件</a>）。</p>
+<p class="muted small">届け出ている医療機関の数は全国の数で、名前の似た届出（１〜３などの区分、手術支援ロボットを使うものなど）は1行にまとめ、行の数はそのどれかを届け出ている医療機関の数です。区分ごとにも選べます。出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」を加工して作成（<a href="/about#sources">データの出典と利用条件</a>）。</p>
 
 <script>
 (() => {
@@ -55,15 +62,25 @@
     const n = boxes.filter(b => b.checked).length;
     count.textContent = n ? `${n}件を選択中` : "届出を選んでください";
     submit.disabled = !n;
+    grps.forEach(g => {
+      const sub = boxes.filter(b => b.dataset.grp === g.dataset.grp);
+      g.checked = sub.every(b => b.checked);
+      g.indeterminate = !g.checked && sub.some(b => b.checked);
+    });
     form.querySelectorAll(".sp-allbox").forEach(a => {
       const sec = boxes.filter(b => b.dataset.sec === a.dataset.sec);
       a.checked = sec.every(b => b.checked);
       a.indeterminate = !a.checked && sec.some(b => b.checked);
     });
   };
+  const grps = [...form.querySelectorAll(".sp-grp")];
   form.addEventListener("change", (e) => {
-    if (e.target.classList.contains("sp-allbox")) {
-      boxes.filter(b => b.dataset.sec === e.target.dataset.sec).forEach(b => { b.checked = e.target.checked; });
+    const t = e.target;
+    if (t.classList.contains("sp-allbox")) {
+      boxes.filter(b => b.dataset.sec === t.dataset.sec).forEach(b => { b.checked = t.checked; });
+    } else if (t.classList.contains("sp-grp")) {
+      // まとめた行のチェック＝中の区分をすべて選ぶ／外す
+      boxes.filter(b => b.dataset.grp === t.dataset.grp).forEach(b => { b.checked = t.checked; });
     }
     update();
   });
