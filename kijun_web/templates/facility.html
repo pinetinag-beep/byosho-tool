@@ -195,6 +195,17 @@
 </div>
 {% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
 
+{% if kd %}
+<h2>届出の動き（毎月の名簿の比較）</h2>
+<div class="table-wrap" data-ga-sec="facility_changes"><table>
+  <thead><tr><th>名簿の時点</th><th>動き</th><th>届出</th></tr></thead>
+  <tbody>{% for r in kd %}<tr><td class="small nowrap">{{ month_label(r.prev_month) }}→{{ month_label(r.month) }}</td>
+    <td class="nowrap"><span class="tag kd-{{ {'新規': 'new', '変更': 'chg', '取り下げ': 'drop'}[r.kind] }}">{{ {'新規': '新規', '変更': '区分の変更', '取り下げ': '取り下げ等'}[r.kind] }}</span></td>
+    <td class="small">{% if r.kind == "変更" %}{{ r.prev_name }} → {% endif %}{{ r.kijun_name }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="small muted">前回と今回の地方厚生局の名簿を比べたものです（<a href="/changes">全国の新規届出・取り下げ</a>）。</p>
+{% endif %}
+
 {% if near.city_rows or near.area_rows %}
 <h2>近くの医療機関</h2>
 {% if near.city_rows %}

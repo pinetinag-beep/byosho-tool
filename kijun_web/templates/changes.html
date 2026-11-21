@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% set ml = month_label(c.month) if c.month else "" %}
+{% block title %}施設基準の新規届出・取り下げ（{{ ml }}の名簿{% if pref %}・{{ pref.pref_name }}{% endif %}）{% endblock %}
+{% block description %}地方厚生局の施設基準の届出名簿（{{ ml }}時点）を前回の名簿と比べ、新たに届け出た医療機関、区分を変えた医療機関、届出が無くなった（辞退・失効など）医療機関を届出ごと・都道府県ごとにまとめました。CSVで無料ダウンロードできます。{% endblock %}
+{% block robots %}{% if c.filtered %}<meta name="robots" content="noindex">{% endif %}{% endblock %}
+{% block ga_events %}gtag("event", "view_changes", { month: {{ c.month|tojson }}, prefecture: {{ (pref.pref_name if pref else "全国")|tojson }}, kind: {{ c.kind|tojson }}, search_term: {{ (c.kijun or c.q)|tojson }}, content_group: "新規届出・取り下げ" });{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › {% if pref or c.filtered %}<a href="/changes?month={{ c.month }}">新規届出・取り下げ</a> › {{ pref.pref_name if pref else "絞り込み" }}{% else %}新規届出・取り下げ{% endif %}</p>
+<h1>施設基準の新規届出・取り下げ{% if pref %}（{{ pref.pref_name }}）{% endif %}</h1>
+{% if empty %}
+<p class="lead">まだ比べられる名簿がありません。</p>
+{% else %}
+<p class="lead">地方厚生局の届出の名簿を、前回の名簿と比べました。新しく届け出た医療機関（営業先の候補）、区分を変えた医療機関、届出が名簿から無くなった医療機関が分かります。{% if pref %}{{ pref.pref_name }}の{{ month_label(pref.prev_month) }}と{{ ml }}の名簿を比べたものです。{% else %}{{ ml }}の名簿で更新された{{ by_pref|length }}都道府県分です。{% endif %}</p>
+
+<form class="sp-opts" action="/changes" method="get">
+  <label class="sx-field"><span class="sx-flabel">名簿の時点</span>
+    <select name="month" class="sp-select">{% for m in months %}<option value="{{ m }}" {% if m == c.month %}selected{% endif %}>{{ month_label(m) }}</option>{% endfor %}</select></label>
+  <label class="sx-field"><span class="sx-flabel">都道府県</span>
+    <select name="pref" class="sp-select"><option value="">全国（更新された県）</option>
+      {% for p in by_pref %}<option value="{{ p.pref_code }}" {% if p.pref_code == c.pref %}selected{% endif %}>{{ p.pref_name }}</option>{% endfor %}</select></label>
+  <label class="sx-field"><span class="sx-flabel">動き</span>
+    <select name="kind" class="sp-select"><option value="">すべて</option>
+      {% for k, lab in [("新規", "新規の届出"), ("変更", "区分の変更"), ("取り下げ", "取り下げ・失効など")] %}<option value="{{ k }}" {% if k == c.kind %}selected{% endif %}>{{ lab }}</option>{% endfor %}</select></label>
+  <label class="sx-field sx-grow"><span class="sx-flabel">届出名・医療機関名（一部でよい）</span>
+    <input type="text" name="q" value="{{ c.q }}" class="sp-select" placeholder="例：地域包括ケア、在宅療養支援診療所"></label>
+  {% if c.kijun %}<input type="hidden" name="kijun" value="{{ c.kijun }}">{% endif %}
+  <button type="submit" class="btn">絞り込む</button>
+</form>
+{% if c.kijun %}<p class="small">届出「{{ c.kijun }}」で絞り込み中　<a href="/changes?{{ c.query(kijun='') }}">解除</a></p>{% endif %}
+
+{% if c.pref and not pref %}<p class="note">選んだ都道府県は、{{ ml }}の名簿では更新されていません（名簿の時点が前回と同じため比べていません）。「名簿の時点」を変えてみてください。</p>{% endif %}
+<div class="facts">
+  <div class="fact"><div class="k">新規の届出</div><div class="v">{{ "{:,}".format(counts.get("新規", 0)) }} <small>件</small></div></div>
+  <div class="fact"><div class="k">区分の変更</div><div class="v">{{ "{:,}".format(counts.get("変更", 0)) }} <small>件</small></div></div>
+  <div class="fact"><div class="k">取り下げ・失効など</div><div class="v">{{ "{:,}".format(counts.get("取り下げ", 0)) }} <small>件</small></div></div>
+  <div class="fact"><div class="k">名簿に加わった／外れた医療機関</div><div class="v">{{ "{:,}".format(fac_events.get("名簿に追加（開設など）", 0)) }} <small>／</small> {{ "{:,}".format(fac_events.get("名簿から削除（廃止・休止など）", 0)) }} <small>件</small></div></div>
+</div>
+
+{% if not c.filtered %}
+<h2>届出ごとの動き{% if pref %}（{{ pref.pref_name }}）{% endif %}</h2>
+<div class="table-wrap" data-ga-sec="changes_kijun"><table>
+  <thead><tr><th>届出</th><th class="num">新規</th><th class="num">区分の変更（変更後）</th><th class="num">取り下げ等</th></tr></thead>
+  <tbody>{% for k in by_kijun %}<tr>
+    <td><a href="/changes?{{ c.query(kijun=k.name) }}">{{ k.name }}</a></td>
+    <td class="num">{{ "{:,}".format(k.n_new) if k.n_new else "—" }}</td>
+    <td class="num">{{ "{:,}".format(k.n_chg) if k.n_chg else "—" }}</td>
+    <td class="num">{{ "{:,}".format(k.n_drop) if k.n_drop else "—" }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="small muted">件数の多い40の届出。ほかの届出は上の欄で名前を入れると探せます。</p>
+
+{% if not pref %}
+<h2>都道府県ごと（前回→今回の名簿の時点）</h2>
+<div class="table-wrap" data-ga-sec="changes_pref"><table>
+  <thead><tr><th>都道府県</th><th>名簿の時点</th><th class="num">新規</th><th class="num">区分の変更</th><th class="num">取り下げ等</th></tr></thead>
+  <tbody>{% for p in by_pref %}<tr><td><a href="/changes?{{ c.query(pref=p.pref_code) }}">{{ p.pref_name }}</a></td>
+    <td class="small nowrap">{{ month_label(p.prev_month) }}→{{ month_label(c.month) }}</td>
+    <td class="num">{{ "{:,}".format(p.n_new) }}</td><td class="num">{{ "{:,}".format(p.n_chg) }}</td><td class="num">{{ "{:,}".format(p.n_drop) }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+{% endif %}
+
+<h2>医療機関の一覧</h2>
+<div class="result-head">
+  <div class="count">{{ "{:,}".format(total) }} 件{% if total > 0 %}（{{ page }} / {{ pages }} ページ）{% endif %}</div>
+  {% if total %}<a class="btn" href="{{ csv_url }}">CSVダウンロード（無料）</a>{% endif %}
+</div>
+{% if rows %}
+<div class="table-wrap" data-ga-sec="changes_list"><table class="y-table kd-table">
+  <thead><tr><th>医療機関</th><th>所在地</th><th>動き</th><th>届出</th><th>算定開始</th></tr></thead>
+  <tbody>{% for r in rows %}<tr>
+    <td class="y-name">{% if r.live_id %}<a href="{{ facility_url(r.live_id) }}">{{ r.fac_name }}</a>{% else %}{{ r.fac_name }}{% endif %}
+      {% if r.fac_event %}<div class="small muted">{{ r.fac_event }}</div>{% endif %}</td>
+    <td class="small nowrap">{{ r.pref_name }}{% if r.city %} <a href="{{ city_url(r.pref_name, r.city) }}">{{ r.city }}</a>{% endif %}</td>
+    <td class="nowrap"><span class="tag kd-{{ {'新規': 'new', '変更': 'chg', '取り下げ': 'drop'}[r.kind] }}">{{ {'新規': '新規', '変更': '区分の変更', '取り下げ': '取り下げ等'}[r.kind] }}</span></td>
+    <td class="small">{% if r.kind == "変更" %}{{ r.prev_name }} → {% endif %}{% if r.kijun_id %}<a href="{{ kijun_url(r.kijun_name) }}">{{ r.kijun_name }}</a>{% else %}{{ r.kijun_name }}{% endif %}</td>
+    <td class="small nowrap">{{ r.start_date|jdate if r.start_date and r.kind != "取り下げ" else "" }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}<a href="{{ page_url(page - 1) }}">← 前へ</a>{% endif %}
+  {% for p in range([1, page - 3]|max, [pages, page + 3]|min + 1) %}
+    {% if p == page %}<span class="cur">{{ p }}</span>{% else %}<a href="{{ page_url(p) }}">{{ p }}</a>{% endif %}
+  {% endfor %}
+  {% if page < pages %}<a href="{{ page_url(page + 1) }}">次へ →</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<p class="note">条件に合う動きはありませんでした。</p>
+{% endif %}
+
+<h2>この表の見方</h2>
+<ul class="small">
+  <li><b>新規</b>：前回の名簿には無く、今回の名簿にある届出です。算定開始日が新しいものが多いですが、名簿への載り方の違いで古い算定開始日のものもあります。</li>
+  <li><b>区分の変更</b>：同じ医療機関が、同じ種類の届出の区分を変えたもの（例：加算３→加算２）です。前回の届出が取り下げられ、今回別の区分が載っている組み合わせから判定しています。</li>
+  <li><b>取り下げ等</b>：前回の名簿にあり、今回の名簿に無い届出です。辞退・失効・医療機関の廃止などが考えられますが、理由は名簿からは分かりません。</li>
+  <li>名簿の時点は都道府県（厚生局）ごとに違い、時点が変わった都道府県だけを比べています。診療報酬改定で廃止・新設された届出名は、名前の入れ替わりなので数えていません。</li>
+  <li>名簿の比較はMedilenZが行ったもので、厚生局が公表している「新規・変更届出の一覧」とは別のものです。正確な情報は各地方厚生局の公表資料でご確認ください。</li>
+</ul>
+<p class="source">出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」を加工して作成（各ページのURLと利用した日は<a href="/about#sources">データの出典と利用条件</a>）</p>
+{% endif %}
+{% include "_ad.html" %}
+{% endblock %}

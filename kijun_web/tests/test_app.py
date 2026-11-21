@@ -514,3 +514,34 @@ def test_shika_pages():
     assert '"@type": "Pharmacy"' in client.get(f"/yakkyoku/{con.execute('SELECT id FROM y_fac LIMIT 1').fetchone()[0]}").text
     assert "/sitemap-shika-0.xml" in client.get("/sitemap.xml").text
     assert 'href="/shika"' in client.get("/").text
+
+
+def test_changes_pages():
+    """新規届出・取り下げ（/changes）：名簿の比較の一覧・絞り込み・CSV、医療機関・施設基準ページの「動き」。"""
+    import csv as _csv
+    import io
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    con.row_factory = sqlite3.Row
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'kdiff'").fetchone() or \
+            not con.execute("SELECT COUNT(*) FROM kdiff").fetchone()[0]:
+        pytest.skip("名簿の比較のデータがありません（kijun_diff.parquet）")
+    month = con.execute("SELECT MAX(month) FROM kdiff").fetchone()[0]
+    n_new = con.execute("SELECT COUNT(*) FROM kdiff WHERE month = ? AND kind = '新規'", (month,)).fetchone()[0]
+    n = lambda html: int(re.search(r'class="count">([\d,]+) 件', html).group(1).replace(",", ""))
+    r = client.get("/changes")
+    assert r.status_code == 200 and "noindex" not in r.text
+    assert n(client.get(f"/changes?month={month}&kind=新規").text) == n_new
+    # 県だけ選ぶと、その県の名簿が最後に更新された月になる
+    p = con.execute("SELECT pref_code, MAX(month) AS m FROM kdiff GROUP BY pref_code ORDER BY m LIMIT 1").fetchone()
+    r = client.get(f"/changes?pref={p['pref_code']}")
+    assert n(r.text) == con.execute("SELECT COUNT(*) FROM kdiff WHERE pref_code = ? AND month = ?", (p["pref_code"], p["m"])).fetchone()[0]
+    # 区分の変更は前の届出名と組になっている
+    chg = con.execute("SELECT * FROM kdiff WHERE kind = '変更' LIMIT 1").fetchone()
+    assert chg["prev_name"] and chg["prev_name"] != chg["kijun_name"]
+    rows = list(_csv.reader(io.StringIO(client.get(f"/changes.csv?month={month}&kind=変更").content.decode("utf-8-sig"))))
+    assert rows[0][7] == "動き" and rows[1][7] == "変更" and rows[1][9]
+    # 医療機関ページ・施設基準ページ
+    fid = con.execute("SELECT k.facility_id FROM kdiff k JOIN facilities f ON f.id = k.facility_id LIMIT 1").fetchone()[0]
+    assert "届出の動き" in client.get(f"/facility/{fid}").text
+    assert 'href="/changes"' in client.get("/").text

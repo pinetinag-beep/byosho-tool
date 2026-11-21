@@ -20,6 +20,10 @@
   <a class="btn secondary" href="{{ csv_url }}">全国分をCSVダウンロード（無料）</a>
 </div>
 
+{% if kd and (kd.n_new or kd.n_chg or kd.n_drop) %}
+<p class="kd-box">{{ month_label(kd.month) }}の名簿で、新たに届け出た医療機関 <b>{{ kd.n_new or 0 }}</b> 件・区分の変更 {{ kd.n_chg or 0 }} 件・取り下げ等 {{ kd.n_drop or 0 }} 件
+  <a href="/changes?kijun={{ kj.name|urlencode }}" data-ga-sec="kijun_changes">医療機関の一覧を見る</a></p>
+{% endif %}
 <h2>都道府県別の届出医療機関数</h2>
 <div class="table-wrap">
 <table>

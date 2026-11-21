@@ -8,6 +8,7 @@ __pycache__/
 !data_cache.parquet
 !yakkyoku_cache.parquet
 !shika_cache.parquet
+!kijun_diff.parquet
 !ward_cache.parquet
 !surgery_cache.parquet
 !locations_cache.parquet

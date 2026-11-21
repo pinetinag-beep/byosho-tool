@@ -30,6 +30,7 @@ from .build_db import OUT as DEFAULT_DB, search_key
 from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
 from .specialties import build as build_specialties
 from . import yakkyoku as ymod
+from . import changes as cmod
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -141,8 +142,9 @@ def kubun_ref_note(ref: str | None, start_date: str | None, ref_date: str | None
 templates.env.filters["jdate"] = jdate
 # CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
 templates.env.globals.update(y_url=ymod.y_url, y_pref_url=ymod.y_pref_url, y_city_url=ymod.y_city_url,
-                             y_kijun_url=ymod.y_kijun_url)
+                             y_kijun_url=ymod.y_kijun_url, month_label=cmod.month_label)
 app.include_router(ymod.router)   # 薬局を探す（/yakkyoku/…）
+app.include_router(cmod.router)   # 新規届出・取り下げ（/changes）
 templates.env.globals["css_version"] = int((HERE / "static" / "style.css").stat().st_mtime)
 templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, city_url=city_url, area_url=area_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
@@ -159,7 +161,7 @@ GA_PAGE = {
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
-    "404.html": "ページが見つかりません", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
+    "404.html": "ページが見つかりません", "changes.html": "新規届出・取り下げ", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
     "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
     # 歯科（/shika）も同じ y_*.html を使い、render() で「薬局」を「歯科」に置き換える
 }
@@ -601,7 +603,9 @@ def index(request: Request):
         examples = _examples(con)
         type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
         hosp_counts = _hosp_counts(con)
-    return render(request, "index.html", cond=cond, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
+        kd_top = con.execute("""SELECT month, SUM(kind = '新規') AS n_new, SUM(kind = '取り下げ') AS n_drop FROM kdiff
+                                WHERE month = (SELECT MAX(month) FROM kdiff)""").fetchone() if _has_kdiff(con) else None
+    return render(request, "index.html", cond=cond, kd_top=kd_top, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
                   sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
 
 
@@ -898,7 +902,8 @@ def facility(request: Request, fid: str):
         dpc = _dpc_ctx(con, f["byosho_code"])
         gairai = _gairai_ctx(con, fid)
         near = _nearby(con, f)
-    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai,
+        kd = _kdiff_rows(con, "facility_id = ?", (fid,))
+    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai, kd=kd,
                   near=near)
 
 
@@ -1148,8 +1153,9 @@ def kijun_detail(request: Request, name: str):
         rel = con.execute(
             """SELECT k.name, r.n, k.n_facilities FROM kijun_rel r JOIN kijun k ON k.id = r.rel_id
                WHERE r.kijun_id = ? ORDER BY r.rk""", (kj["id"],)).fetchall()
+        kd = _kdiff_summary(con, kj["name"])
     type_counts = {r["ftype"]: r["n"] for r in by_type}
-    return render(request, "kijun.html", kj=kj, by_pref=by_pref, type_counts=type_counts, kubun=kubun,
+    return render(request, "kijun.html", kj=kj, kd=kd, by_pref=by_pref, type_counts=type_counts, kubun=kubun,
                   hosp=hosp, rel=rel, csv_url=_url("/search.csv", kx=name))
 
 
@@ -1384,6 +1390,27 @@ def _xml(body: str) -> Response:
     return Response('<?xml version="1.0" encoding="UTF-8"?>\n' + body, media_type="application/xml")
 
 
+def _has_kdiff(con) -> bool:
+    return bool(con.execute("SELECT 1 FROM sqlite_master WHERE name = 'kdiff'").fetchone())
+
+
+def _kdiff_rows(con, where: str, params: tuple) -> list:
+    """医療機関ページの「届出の動き」（毎月の名簿の比較。新しい月から）。"""
+    if not _has_kdiff(con):
+        return []
+    return con.execute(f"SELECT * FROM kdiff WHERE {where} ORDER BY month DESC, kind, kijun_name", params).fetchall()
+
+
+def _kdiff_summary(con, name: str):
+    """施設基準ページの「最近の名簿での動き」（最新の月の件数）。"""
+    if not _has_kdiff(con):
+        return None
+    r = con.execute("""SELECT month, SUM(kind = '新規') AS n_new, SUM(kind = '変更') AS n_chg, SUM(kind = '取り下げ') AS n_drop
+                       FROM kdiff WHERE (kijun_name = ? OR prev_name = ?) AND month = (SELECT MAX(month) FROM kdiff)""",
+                    (name, name)).fetchone()
+    return r if r and r["month"] else None
+
+
 def _loc(path: str) -> str:
     return f"<url><loc>{SITE_URL}{path}</loc></url>"
 
@@ -1414,7 +1441,10 @@ def _other_kind(part: str):
 def sitemap_part(part: str):
     with db() as con:
         if part == "static":
-            paths = ["/", "/guide", "/kijun", "/specialty", "/about", "/operator", "/contact", "/privacy"] + [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
+            paths = ["/", "/guide", "/kijun", "/specialty", "/changes", "/about", "/operator", "/contact", "/privacy"]
+            for r in con.execute("SELECT DISTINCT pref_code FROM kdiff ORDER BY pref_code") if _has_kdiff(con) else []:
+                paths.append(f"/changes?pref={r[0]}")
+            paths += [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
             for r in con.execute(
                 """SELECT DISTINCT p.name AS pref, f.area, f.city FROM facilities f
                    JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area, f.city"""):
