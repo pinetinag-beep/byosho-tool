@@ -172,9 +172,7 @@ def k_index(K: Kind, request: Request):
         prefs = _prefs(K, con)
         n = con.execute(f"SELECT COUNT(*) FROM {K.t('fac')}").fetchone()[0]
         as_of = con.execute(f"SELECT MIN(as_of_label), MAX(as_of_label) FROM {K.t('prefs')}").fetchone()
-        n_other = {k.x: _count(con, k) for k in KINDS}
-    return A.render(request, "y_index.html", K=K, groups=groups, prefs=prefs, n_total=n, c=c, as_of=as_of,
-                    n_other=n_other)
+    return A.render(request, "y_index.html", K=K, groups=groups, prefs=prefs, n_total=n, c=c, as_of=as_of)
 
 
 def _count(con, K: Kind) -> int:

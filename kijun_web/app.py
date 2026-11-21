@@ -601,8 +601,7 @@ def index(request: Request):
         examples = _examples(con)
         type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
         hosp_counts = _hosp_counts(con)
-        n_other = {k.x: ymod._count(con, k) for k in ymod.KINDS}   # 探す対象のタブに出す薬局・歯科の件数
-    return render(request, "index.html", cond=cond, n_other=n_other, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
+    return render(request, "index.html", cond=cond, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
                   sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
 
 

@@ -1,9 +1,9 @@
-{# 探す対象の切り替え（トップ・歯科・薬局・診療科のページの上）。診療科から探すは病院・診療所の検索なので、その隣に置く。cur: med / d / y / sp、kc: 件数 {"med":…, "d":…, "y":…} #}
-{% set kc = kc or {} %}
-{% set tabs = [("med", "/", "病院・診療所", ("{:,}件".format(kc.med) if kc.med else "地域・届出で探す")),
+{# 探す対象の切り替え（トップ・歯科・薬局・診療科のページの上）。診療科から探すは病院・診療所の検索なので、その隣に置く。cur: med / d / y / sp #}
+{# 下の小さい字はどのページでも同じにする（ページごとに変わると落ち着かない、とユーザー指摘）。件数は meta（build_db の集計）から #}
+{% set tabs = [("med", "/", "病院・診療所", "{:,}件".format(meta.n_facilities|int)),
                ("sp", "/specialty", "診療科から探す", "病院・診療所を診療科で"),
-               ("d", "/shika", "歯科診療所", ("{:,}件".format(kc.d) if kc.d else "歯科の届出で探す")),
-               ("y", "/yakkyoku", "薬局", ("{:,}件".format(kc.y) if kc.y else "調剤基本料・加算で探す"))] %}
+               ("d", "/shika", "歯科診療所", "{:,}件".format(meta.n_shika|int) if meta.n_shika else "歯科"),
+               ("y", "/yakkyoku", "薬局", "{:,}件".format(meta.n_yakkyoku|int) if meta.n_yakkyoku else "薬局")] %}
 <nav class="kind-tabs" aria-label="探す対象" data-ga-sec="kind_tabs">
   {% for key, href, label, sub in tabs %}
   {% if key == cur %}<span class="kind-tab cur" aria-current="page"><b>{{ label|replace("・", "・<wbr>")|replace("歯科診療所", "歯科<wbr>診療所")|replace("から探す", "<wbr>から探す")|safe }}</b><span class="kt-n">{{ sub }}</span></span>

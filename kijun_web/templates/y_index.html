@@ -3,7 +3,7 @@
 {% block description %}全国{{ "{:,}".format(n_total) }}件の{{ K.word }}の施設基準の届出（{{ K.topics }}）を都道府県・市区町村・届出から無料で検索。条件に合う{{ K.word }}のリストはCSVでダウンロードできます。{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › {{ K.word }}を探す</p>
-{% with cur = K.x, kc = {K.x: n_total} %}{% include "_kind_tabs.html" %}{% endwith %}
+{% with cur = K.x %}{% include "_kind_tabs.html" %}{% endwith %}
 <h1>{{ K.word }}を探す</h1>
 <p class="lead">全国{{ "{:,}".format(n_total) }}件の{{ K.word }}が地方厚生局に届け出ている施設基準（{{ K.topics }}）から、条件に合う{{ K.word }}のリストを作れます。届出には説明を付けています。</p>
 

@@ -2,7 +2,7 @@
 {% block title %}施設基準届出データベース — 全国の病院・診療所を条件で抽出・CSVダウンロード{% endblock %}
 {% block canonical %}/{% endblock %}
 {% block content %}
-{% with cur = "med", kc = {"med": meta.n_facilities|int, "d": n_other.d, "y": n_other.y} %}{% include "_kind_tabs.html" %}{% endwith %}
+{% with cur = "med" %}{% include "_kind_tabs.html" %}{% endwith %}
 <section class="db-head">
   <h1>施設基準届出データベース</h1>
   <ul class="db-notes">
