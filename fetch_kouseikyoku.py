@@ -7,7 +7,8 @@
   - 全件の名簿（24列。県ごとの全届出）→ shisetsu_raw/
   - 届出項目別の名簿（19列。区分・病床数などの内訳あり）→ shisetsu_kubun_raw/
   - 北海道の新規・変更届出のPDF（北海道は届出項目別の名簿が無いため）→ shisetsu_kubun_raw/北海道/
-  - 薬局の全件の名簿（医科と同じ24列で「区分」が薬局）→ shisetsu_raw_yakkyoku/（2026年11月〜、薬局を探すページ用）
+  - 薬局の全件の名簿（医科と同じ24列で「区分」が薬局）→ shisetsu_raw_yakkyoku/（2026年11月〜、薬局を探すページ用）。
+    中国四国厚生局は医科・歯科・薬局が1つの全件の名簿にまとめて入っているので、その中の薬局の行を使う
 
 厚生局はファイル名（番号）を毎月変え、ページの作りも局ごとに違う。そのため、決まったページにある
 Excel/ZIPをまとめて取り、**中身で**見分ける（ファイル名やリンクの文字には頼らない）:
@@ -225,6 +226,13 @@ def fetch() -> tuple[list[dict], list[Path], list[str]]:
         ypeek = {f: v for f, v in allpeek.items() if v[1] == "薬局"}
         ynewest = max((v[0] for v in ypeek.values()), default="")
         got += [c for c in (_classify_yakkyoku(f) for f, v in ypeek.items() if v[0] == ynewest) if c]
+        # 中国四国厚生局は全件の名簿1つに医科・歯科・薬局の行がまとめて入っている（薬局だけの名簿は無い）。
+        # 薬局の全件の名簿が見つからなかった県は、医科の全件の名簿の中の薬局の行を読む
+        y_have = {p for c in got if c["type"] == "yakkyoku" and c["group"] == "全件" for p in c["prefs"]}
+        for c in [c for c in got if c["type"] == "full" and not set(c["prefs"]) <= y_have]:
+            y = _classify_yakkyoku(c["path"])
+            if y and y["group"] == "全件":
+                got.append(y)
         for c in got:
             print(f"    {c['type']:5} {c['snap']:10} {'・'.join(c['prefs'])[:30]:30} {c['group'][:16]:16} {c['n']:>7,}件  {c['path'].name}")
         if not any(c["type"] == "full" for c in got):
@@ -276,7 +284,12 @@ def apply(found: list[dict], pdfs: list[Path]) -> None:
             for p in c["prefs"]:
                 k = (p, c["group"])
                 latest[k] = max(latest.get(k, ""), c["snap"])
+        full_prefs = {p for c in new if c["group"] == "全件" for p in c["prefs"]}
         for c in _existing(dir_, type_):
+            if type_ == "yakkyoku" and c["group"] == "項目別" and set(c["prefs"]) <= full_prefs:
+                print(f"  削除（全件の名簿があるので不要）: {dir_.name}/{c['path'].name}")
+                c["path"].unlink()
+                continue
             if all(latest.get((p, c["group"]), "") >= c["snap"] for p in c["prefs"]):
                 print(f"  削除（新しい名簿に置き換え）: {dir_.name}/{c['path'].name}")
                 c["path"].unlink()
