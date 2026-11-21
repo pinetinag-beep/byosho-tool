@@ -159,7 +159,7 @@ GA_PAGE = {
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
-    "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
+    "404.html": "ページが見つかりません", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
     "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
     # 歯科（/shika）も同じ y_*.html を使い、render() で「薬局」を「歯科」に置き換える
 }
