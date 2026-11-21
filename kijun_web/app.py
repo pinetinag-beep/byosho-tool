@@ -597,7 +597,11 @@ def index(request: Request):
         examples = _examples(con)
         type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
         hosp_counts = _hosp_counts(con)
-    return render(request, "index.html", cond=cond, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
+        try:
+            n_yakkyoku = con.execute("SELECT COUNT(*) FROM y_fac").fetchone()[0]
+        except sqlite3.OperationalError:
+            n_yakkyoku = 0
+    return render(request, "index.html", cond=cond, n_yakkyoku=n_yakkyoku, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
                   sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
 
 

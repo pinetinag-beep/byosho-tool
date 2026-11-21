@@ -2,6 +2,11 @@
 {% block title %}施設基準届出データベース — 全国の病院・診療所を条件で抽出・CSVダウンロード{% endblock %}
 {% block canonical %}/{% endblock %}
 {% block content %}
+<nav class="kind-tabs" aria-label="探す対象" data-ga-sec="top_kind_tabs">
+  <span class="kind-tab cur" aria-current="page"><b>病院・診療所</b><span class="kt-n">{{ "{:,}".format(meta.n_facilities|int) }}件</span></span>
+  {% if n_yakkyoku %}<a class="kind-tab" href="/yakkyoku"><b>薬局</b><span class="kt-n">{{ "{:,}".format(n_yakkyoku) }}件</span></a>{% endif %}
+  <a class="kind-tab" href="/specialty"><b>診療科から探す</b><span class="kt-n">届出を診療科ごとに</span></a>
+</nav>
 <section class="db-head">
   <h1>施設基準届出データベース</h1>
   <ul class="db-notes">

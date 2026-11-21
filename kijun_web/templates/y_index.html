@@ -3,6 +3,11 @@
 {% block description %}全国{{ "{:,}".format(n_total) }}件の薬局の施設基準の届出（調剤基本料、地域支援・医薬品供給対応体制加算、在宅、無菌製剤処理など）を都道府県・市区町村・届出から無料で検索。条件に合う薬局のリストはCSVでダウンロードできます。{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › 薬局を探す</p>
+<nav class="kind-tabs" aria-label="探す対象" data-ga-sec="kind_tabs">
+  <a class="kind-tab" href="/"><b>病院・診療所</b><span class="kt-n">地域・届出で探す</span></a>
+  <span class="kind-tab cur" aria-current="page"><b>薬局</b><span class="kt-n">{{ "{:,}".format(n_total) }}件</span></span>
+  <a class="kind-tab" href="/specialty"><b>診療科から探す</b><span class="kt-n">届出を診療科ごとに</span></a>
+</nav>
 <h1>薬局を探す</h1>
 <p class="lead">全国{{ "{:,}".format(n_total) }}件の薬局が地方厚生局に届け出ている施設基準（調剤基本料・地域支援・在宅・無菌製剤処理など）から、条件に合う薬局のリストを作れます。届出には説明を付けています。</p>
 

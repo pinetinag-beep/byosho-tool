@@ -420,3 +420,19 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
   /* ヘッダーのメニューが増えたので、スマホでは1行に並べて横にスクロールできるようにする */
   .nav { width: 100%; gap: 14px; overflow-x: auto; font-size: 0.85rem; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
 }
+
+/* トップ：探す対象の切り替え（病院・診療所／薬局／診療科） */
+.kind-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--brand); margin: 4px 0 22px; }
+.kind-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 11em; padding: 10px 22px; border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0;
+  margin-right: 6px; background: var(--card); color: var(--ink); text-decoration: none; }
+.kind-tab b { font-size: 1rem; }
+.kind-tab .kt-n { font-size: 0.78rem; color: var(--ink-muted); }
+a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
+.kind-tab.cur { background: var(--brand); border-color: var(--brand); color: #fff; }
+.kind-tab.cur .kt-n { color: rgba(255,255,255,.85); }
+@media (max-width: 640px) {
+  .kind-tab { min-width: 0; flex: 1; padding: 8px 6px; margin-right: 4px; }
+  .kind-tab b { font-size: 0.9rem; }
+  .kind-tab .kt-n { font-size: 0.7rem; text-align: center; }
+}
