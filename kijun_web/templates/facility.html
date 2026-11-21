@@ -39,6 +39,12 @@
 <p class="crumbs"><a href="/">トップ</a> › <a href="/pref/{{ f.pref_name }}">{{ f.pref_name }}</a>{% if f.city %} › <a href="{{ city_url(f.pref_name, f.city) }}">{{ f.city }}</a>{% endif %} › {{ f.name }}</p>
 <h1>{{ f.name }}</h1>
 <p class="lead"><span class="tag {% if f.ftype == '病院' %}hosp{% endif %}">{{ f.ftype }}</span>　{{ f.pref_name }}{{ f.address }}{% if f.area and f.area != '（二次医療圏不明）' %}<span class="muted small">（二次医療圏：{{ f.area }}）</span>{% endif %}</p>
+{#- ページの要点を文章で（検索結果の説明文やAIの回答に引用されやすいよう、公表データの数字をそのまま並べる） -#}
+<p class="summary">{{ f.name }}は、{{ f.pref_name }}{{ f.city or "" }}にある{{ f.ftype }}です。
+{%- if byosho and byosho.total %}厚生労働省「病床機能報告」（{{ byosho.label }}）による許可病床数は{{ "{:,}".format(byosho.total) }}床
+{%- set fs = byosho.funcs|selectattr("beds")|list %}{% if fs %}（{% for x in fs %}{{ x.name }}{{ "{:,}".format(x.beds) }}床{% if not loop.last %}・{% endif %}{% endfor %}）{% endif %}です。{% endif -%}
+地方厚生局に{{ f.n_kijun }}種類の施設基準を届け出ています（{{ pref.as_of_label }}時点）。
+{%- if dpc and dpc.total %}DPC調査（{{ dpc.label }}）の退院患者数は年間{{ "{:,}".format(dpc.total) }}件です。{% endif %}</p>
 
 <div class="facts">
   <div class="fact"><div class="k">届け出ている施設基準</div><div class="v">{{ f.n_kijun }} 種類</div></div>

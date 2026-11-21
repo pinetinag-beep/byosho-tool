@@ -410,3 +410,12 @@ def test_kijun_page_hospitals_and_related():
     # 関連の施設基準は自分自身を含まず、上位12件まで
     assert con.execute("SELECT COUNT(*) FROM kijun_rel WHERE kijun_id = rel_id").fetchone()[0] == 0
     assert con.execute("SELECT MAX(c) FROM (SELECT COUNT(*) c FROM kijun_rel GROUP BY kijun_id)").fetchone()[0] <= 12
+
+
+def test_facility_summary_sentence():
+    import re
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    fid = con.execute("SELECT facility_id FROM hstats WHERE beds > 0 AND dpc_total > 0 LIMIT 1").fetchone()[0]
+    m = re.search(r'<p class="summary">(.*?)</p>', client.get(f"/facility/{fid}").text, re.S)
+    assert m and "許可病床数は" in m.group(1) and "種類の施設基準を届け出ています" in m.group(1) and "退院患者数は年間" in m.group(1)

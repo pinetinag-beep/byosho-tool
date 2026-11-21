@@ -373,3 +373,6 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 .ct-nums em, .ct-range { font-style: normal; white-space: nowrap; }
 .ct-nums label { display: flex; align-items: center; gap: 6px; }
 .ct-nums label span { min-width: 9.5em; }
+
+/* 医療機関ページ冒頭の要約文 */
+.summary { margin: 4px 0 16px; line-height: 1.8; }
