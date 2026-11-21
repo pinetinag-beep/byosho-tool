@@ -5,14 +5,15 @@
 <script type="application/ld+json">{{ {
   "@context": "https://schema.org", "@type": "BreadcrumbList",
   "itemListElement": [
-    {"@type": "ListItem", "position": 1, "name": K.word ~ "を探す", "item": site_url ~ K.base},
-    {"@type": "ListItem", "position": 2, "name": pref.name, "item": site_url ~ K.pref_url(pref.name)},
-    {"@type": "ListItem", "position": 3, "name": city, "item": site_url ~ K.city_url(pref.name, city)},
+    {"@type": "ListItem", "position": 1, "name": "トップ", "item": site_url ~ "/"},
+    {"@type": "ListItem", "position": 2, "name": K.word ~ "を探す", "item": site_url ~ K.base},
+    {"@type": "ListItem", "position": 3, "name": pref.name, "item": site_url ~ K.pref_url(pref.name)},
+    {"@type": "ListItem", "position": 4, "name": city, "item": site_url ~ K.city_url(pref.name, city)},
   ],
 }|tojson }}</script>
 {% endblock %}
 {% block content %}
-<p class="crumbs"><a href="{{ K.base }}">{{ K.word }}を探す</a> › <a href="{{ K.pref_url(pref.name) }}">{{ pref.name }}</a> › {{ city }}</p>
+<p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › <a href="{{ K.pref_url(pref.name) }}">{{ pref.name }}</a> › {{ city }}</p>
 <h1>{{ pref.name }}{{ city }}の{{ K.word }}（{{ rows|length }}件）</h1>
 <p class="small muted">{% if area and not area.startswith("（") %}二次医療圏：{{ area }}　{% endif %}{% if n_med %}<a href="{{ city_url(pref.name, city) }}">{{ city }}の病院・診療所（{{ "{:,}".format(n_med) }}件）</a>{% endif %}{% for k, n in sib %}　<a href="{{ k.city_url(pref.name, city) }}">{{ city }}の{{ k.word }}（{{ "{:,}".format(n) }}件）</a>{% endfor %}</p>
 <div class="table-wrap" data-ga-sec="{{ K.x }}_city_list"><table class="y-table">

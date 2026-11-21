@@ -10,16 +10,17 @@
      "address": {"@type": "PostalAddress", "addressRegion": f.pref_name, "addressLocality": f.city or "", "streetAddress": f.address or ""},
      "identifier": {"@type": "PropertyValue", "propertyID": "医療機関コード", "value": f.id}},
     {"@type": "BreadcrumbList", "itemListElement": [
-      {"@type": "ListItem", "position": 1, "name": K.word ~ "を探す", "item": site_url ~ K.base},
-      {"@type": "ListItem", "position": 2, "name": f.pref_name, "item": site_url ~ K.pref_url(f.pref_name)},
-      {"@type": "ListItem", "position": 3, "name": f.city or f.pref_name, "item": site_url ~ (K.city_url(f.pref_name, f.city) if f.city else K.pref_url(f.pref_name))},
-      {"@type": "ListItem", "position": 4, "name": f.name, "item": site_url ~ K.url(f.id)}]}
+      {"@type": "ListItem", "position": 1, "name": "トップ", "item": site_url ~ "/"},
+      {"@type": "ListItem", "position": 2, "name": K.word ~ "を探す", "item": site_url ~ K.base},
+      {"@type": "ListItem", "position": 3, "name": f.pref_name, "item": site_url ~ K.pref_url(f.pref_name)},
+      {"@type": "ListItem", "position": 4, "name": f.city or f.pref_name, "item": site_url ~ (K.city_url(f.pref_name, f.city) if f.city else K.pref_url(f.pref_name))},
+      {"@type": "ListItem", "position": 5, "name": f.name, "item": site_url ~ K.url(f.id)}]}
   ]
 }|tojson }}</script>
 {% endblock %}
 {% block ga_events %}gtag("event", {{ K.ga_event|tojson }}, { prefecture: {{ f.pref_name|tojson }}, content_group: {{ K.word|tojson }} });{% endblock %}
 {% block content %}
-<p class="crumbs"><a href="{{ K.base }}">{{ K.word }}を探す</a> › <a href="{{ K.pref_url(f.pref_name) }}">{{ f.pref_name }}</a>{% if f.city %} › <a href="{{ K.city_url(f.pref_name, f.city) }}">{{ f.city }}</a>{% endif %} › {{ f.name }}</p>
+<p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › <a href="{{ K.pref_url(f.pref_name) }}">{{ f.pref_name }}</a>{% if f.city %} › <a href="{{ K.city_url(f.pref_name, f.city) }}">{{ f.city }}</a>{% endif %} › {{ f.name }}</p>
 <h1>{{ f.name }}</h1>
 <p class="summary">{{ f.name }}は、{{ place }}にある{{ K.word }}です。地方厚生局に{{ n_filings }}種類の施設基準を届け出ています{% if pref %}（{{ pref.as_of_label }}時点）{% endif %}。{% if K.x == "y" and f.kihon %}調剤基本料の区分は「{{ f.kihon }}」{% if f.chiiki %}、「{{ f.chiiki }}」も届け出ています{% endif %}。{% elif K.x != "y" and (f.kihon or f.chiiki) %}{{ "「" ~ K.col1 ~ "」" if f.kihon }}{{ "「" ~ f.chiiki ~ "」" if f.chiiki }}を届け出ています。{% endif %}</p>
 <div class="facts">

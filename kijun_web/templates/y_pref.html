@@ -2,7 +2,7 @@
 {% block title %}{{ pref.name }}の{{ K.word }}一覧（{{ "{:,}".format(pref.n_facilities) }}件・施設基準の届出）{% endblock %}
 {% block description %}{{ pref.name }}の{{ K.word }}{{ "{:,}".format(pref.n_facilities) }}件を市区町村ごとに一覧。{{ K.topics }}の施設基準の届出を届出ごとに数えています（{{ pref.as_of_label }}時点）。{% endblock %}
 {% block content %}
-<p class="crumbs"><a href="{{ K.base }}">{{ K.word }}を探す</a> › {{ pref.name }}</p>
+<p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › {{ pref.name }}</p>
 <h1>{{ pref.name }}の{{ K.word }}</h1>
 <div class="facts">
   <div class="fact"><div class="k">{{ K.word }}（施設基準の届出あり）</div><div class="v">{{ "{:,}".format(pref.n_facilities) }} <small>件</small></div></div>

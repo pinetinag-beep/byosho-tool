@@ -2,7 +2,7 @@
 {% block title %}{{ kj.name }}を届け出ている{{ K.word }}（全国{{ "{:,}".format(kj.n_facilities) }}件・都道府県別）{% endblock %}
 {% block description %}{{ kj.name }}を地方厚生局に届け出ている{{ K.word }}は全国{{ "{:,}".format(kj.n_facilities) }}件。{{ desc }}都道府県別の件数と、届け出ている{{ K.word }}のリスト（CSV）を無料で確認できます。{% endblock %}
 {% block content %}
-<p class="crumbs"><a href="{{ K.base }}">{{ K.word }}を探す</a> › {{ kj.name }}</p>
+<p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › {{ kj.name }}</p>
 <h1>{{ kj.name }}<span class="sym">{{ kj.symbol }}</span></h1>
 {% if desc %}<p class="summary">{{ desc }}</p>{% endif %}
 <p class="muted small">説明はMedilenZが一般向けにまとめたもので、届出の要件そのものではありません。正式な定義は厚生労働省の告示・通知によります。</p>
