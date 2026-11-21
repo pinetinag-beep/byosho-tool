@@ -419,3 +419,67 @@ def test_facility_summary_sentence():
     fid = con.execute("SELECT facility_id FROM hstats WHERE beds > 0 AND dpc_total > 0 LIMIT 1").fetchone()[0]
     m = re.search(r'<p class="summary">(.*?)</p>', client.get(f"/facility/{fid}").text, re.S)
     assert m and "許可病床数は" in m.group(1) and "種類の施設基準を届け出ています" in m.group(1) and "退院患者数は年間" in m.group(1)
+
+
+def test_vision_pages():
+    """地域医療構想のページ：機能ごとの届出を病院別に並べる（判定はしない）。"""
+    import sqlite3
+    from kijun_web.vision import COLS, presence
+    con = sqlite3.connect(appmod.DB_PATH)
+    # 急性期病院Ａ一般入院料（公式の区分）を届け出ている病院のある二次医療圏
+    pref, area, fid, fname = con.execute(
+        """SELECT p.name, f.area, f.id, f.name FROM fac_kubun fk JOIN kubuns kb ON kb.id = fk.kubun_id
+           JOIN facilities f ON f.id = fk.facility_id JOIN prefs p ON p.code = f.pref_code
+           WHERE kb.name = '急性期病院Ａ一般入院料' AND fk.ref = 0 AND f.ftype = '病院' AND f.area NOT LIKE '（%'
+           LIMIT 1""").fetchone()
+    pres = presence(con, "f.id = ?", (fid,))
+    assert pres[(fid, "kyubyo")] in ("Ａ", "Ａ・Ｂ")
+    assert all(k[1] in {c["key"] for c in COLS} for k in pres)
+    url = f"/vision/{quote(pref)}/{quote(area)}"
+    r = client.get(url)
+    assert r.status_code == 200
+    assert f"<title>{area}医療圏（{pref}）の地域医療構想" in r.text
+    assert "どの病院がどの機能を担うかを示すものではありません" in r.text
+    for name in ("急性期拠点機能", "高齢者救急・地域急性期機能", "在宅医療等連携機能", "専門等機能"):
+        assert name in r.text
+    assert f'href="/facility/{fid}"' in r.text
+    assert client.get(f"/vision/{quote(pref)}/{quote('（二次医療圏不明）')}").status_code == 404
+    assert client.get(f"/vision/{quote(pref)}/{quote('存在しない医療圏')}").status_code == 404
+    # 一覧・医療圏ページ・都道府県ページ・サイトマップから辿れる
+    assert url in client.get("/vision").text
+    assert url in client.get(f"/area/{quote(pref)}/{quote(area)}").text
+    assert url in client.get(f"/pref/{quote(pref)}").text
+    assert f"{url}<" in client.get("/sitemap-static.xml").text
+
+
+def test_vision_change_carry_over(tmp_path):
+    """前回の更新からの変化：名簿の時点が新しくなった県だけ比べ、同じ時点なら前回の記録を引き継ぐ。"""
+    import shutil
+    import sqlite3
+    from kijun_web.build_db import _build_vision_change
+    prev, cur = tmp_path / "prev.sqlite", tmp_path / "cur.sqlite"
+    shutil.copy(appmod.DB_PATH, prev)
+    shutil.copy(appmod.DB_PATH, cur)
+    p = sqlite3.connect(prev)
+    code = p.execute(
+        """SELECT f.pref_code FROM filings fl JOIN kijun k ON k.id = fl.kijun_id
+           JOIN facilities f ON f.id = fl.facility_id
+           WHERE k.name LIKE '地域包括医療病棟入院料%' AND f.ftype = '病院' LIMIT 1""").fetchone()[0]
+    p.execute("UPDATE prefs SET as_of = '2000-01', as_of_label = '2000年1月' WHERE code = ?", (code,))
+    p.execute("""DELETE FROM filings WHERE facility_id LIKE ? AND kijun_id IN
+                 (SELECT id FROM kijun WHERE name LIKE '地域包括医療病棟入院料%')""", (code + "%",))
+    p.commit()
+    p.close()
+    c = sqlite3.connect(cur)
+    c.execute("DROP TABLE vision_change")
+    n = _build_vision_change(c, prev)
+    rows = c.execute("SELECT pref_code, col, old, new, since FROM vision_change").fetchall()
+    assert n > 0 and all(r == (code, "chiho", None, "○", "2000年1月") for r in rows)
+    c.commit()
+    c.close()
+    # 次のビルド（時点は同じ）では前回の記録をそのまま引き継ぐ
+    shutil.copy(cur, prev)
+    c = sqlite3.connect(cur)
+    c.execute("DROP TABLE vision_change")
+    assert _build_vision_change(c, prev) == n
+    c.close()

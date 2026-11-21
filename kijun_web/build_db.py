@@ -28,6 +28,11 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+try:  # app.py からはパッケージとして、手元・サーバーではスクリプトとして読まれる
+    from .vision import COLS as VISION_COLS, presence as vision_presence
+except ImportError:
+    from vision import COLS as VISION_COLS, presence as vision_presence
+
 try:  # kijun_web.build_db として読まれる場合と、python kijun_web/build_db.py で動かす場合の両方
     from .sources import BUREAU_OF_PREF
 except ImportError:
@@ -672,6 +677,56 @@ def _with_sources(prefs: pd.DataFrame) -> pd.DataFrame:
     return p
 
 
+def _build_vision_change(con, prev_path: Path) -> int:
+    """地域医療構想のページ（/vision/…）の「前回の更新からの変化」。
+
+    DBはコードを直すたびにも作り直されるので、直前のDBと比べるだけでは届出データの月替わりが分からない。
+    そこで都道府県ごとに名簿の時点（prefs.as_of）を比べ、
+    - 時点が同じ県は、直前のDBに記録してある変化をそのまま引き継ぐ
+    - 時点が新しくなった県は、直前のDBとの届出の違い（vision.py の列ごと）を記録する
+    """
+    con.execute("""CREATE TABLE vision_change (
+        pref_code TEXT NOT NULL, facility_id TEXT NOT NULL, name TEXT NOT NULL, area TEXT,
+        col TEXT NOT NULL, old TEXT, new TEXT, since TEXT, until TEXT)""")
+    con.execute("CREATE INDEX ix_vc ON vision_change(pref_code, area)")
+    if not prev_path.exists():
+        return 0
+    prev = sqlite3.connect(prev_path)
+    try:
+        have = {r[0] for r in prev.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"prefs", "facilities", "filings", "fac_kubun"} <= have:
+            return 0
+        prev_asof = {c: (a, lab) for c, a, lab in prev.execute("SELECT code, as_of, as_of_label FROM prefs")}
+        for code, as_of, label in con.execute("SELECT code, as_of, as_of_label FROM prefs").fetchall():
+            pa = prev_asof.get(code)
+            if not pa:
+                continue
+            if pa[0] == as_of:
+                if "vision_change" in have:
+                    con.executemany("INSERT INTO vision_change VALUES (?,?,?,?,?,?,?,?,?)",
+                                    prev.execute("SELECT * FROM vision_change WHERE pref_code = ?", (code,)).fetchall())
+                continue
+            if not pa[0] or not as_of or pa[0] > as_of:
+                continue
+            old = vision_presence(prev, "f.pref_code = ?", (code,))
+            new = vision_presence(con, "f.pref_code = ?", (code,))
+            info = {r[0]: (r[1], r[2]) for r in con.execute(
+                "SELECT id, name, area FROM facilities WHERE pref_code = ?", (code,))}
+            for r in prev.execute("SELECT id, name, area FROM facilities WHERE pref_code = ?", (code,)):
+                info.setdefault(r[0], (r[1], r[2]))
+            rows = []
+            for key in sorted(set(old) | set(new)):
+                o, n = old.get(key), new.get(key)
+                if o == n:
+                    continue
+                name, area = info.get(key[0], ("", None))
+                rows.append((code, key[0], name, area, key[1], o, n, pa[1], label))
+            con.executemany("INSERT INTO vision_change VALUES (?,?,?,?,?,?,?,?,?)", rows)
+    finally:
+        prev.close()
+    return con.execute("SELECT COUNT(*) FROM vision_change").fetchone()[0]
+
+
 def build(src: Path = SRC, out: Path = OUT) -> dict:
     """メモリを抑えるため、集計用の列だけを辞書エンコード（category）のまま読み、
     届出行はparquetから10万行ずつ読んでDBに流し込む（全列を一度に文字列で
@@ -836,6 +891,9 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     }
     con.executemany("INSERT INTO meta VALUES (?,?)", stats.items())
     con.executescript(INDEXES)
+    con.commit()
+    stats["n_vision_change"] = str(_build_vision_change(con, out))
+    con.execute("INSERT INTO meta VALUES ('n_vision_change', ?)", (stats["n_vision_change"],))
     con.commit()
     con.execute("VACUUM")
     con.close()

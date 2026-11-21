@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}地域医療構想の医療機関機能に関係する届出（全国の二次医療圏別）{% endblock %}
+{% block description %}新しい地域医療構想の医療機関機能（急性期拠点機能・高齢者救急・地域急性期機能・在宅医療等連携機能・専門等機能）に関係する施設基準の届出を、全国の二次医療圏ごとに病院別の一覧で確認できます。毎月の届出データの更新で変わります。{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › 地域医療構想</p>
+<h1>地域医療構想の医療機関機能に関係する届出</h1>
+<p class="summary">新しい地域医療構想では、病院が担う役割を「急性期拠点機能」「高齢者救急・地域急性期機能」「在宅医療等連携機能」「専門等機能」に分け、各病院が都道府県に報告します（医療機関機能報告、令和8年度から）。二次医療圏を選ぶと、圏内の病院について、それぞれの機能の説明に関係する施設基準の届出と、救急車の受入件数・全身麻酔の件数を一覧で見られます。届出は毎月、地方厚生局の公表データで更新し、前回の更新から新たに届け出た・届出がなくなった病院も表示します。</p>
+<div class="note">このページは、どの病院がどの機能を担うかを示すものではありません。医療機関機能は各病院が自ら報告するもので、届出だけで決まるものではありません。</div>
+
+<h2>二次医療圏から選ぶ</h2>
+<div class="table-wrap" data-ga-sec="vision_index"><table class="near">
+  <thead><tr><th>都道府県</th><th>二次医療圏</th></tr></thead>
+  <tbody>{% for p in prefs if p.areas %}<tr>
+    <td class="nowrap"><a href="/pref/{{ p.name }}">{{ p.name }}</a></td>
+    <td>{% for a in p.areas %}<a href="{{ vision_url(p.name, a) }}">{{ a }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% include "_ad.html" %}
+{% endblock %}
