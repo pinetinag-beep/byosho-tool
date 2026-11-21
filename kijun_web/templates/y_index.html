@@ -1,23 +1,19 @@
 {% extends "base.html" %}
-{% block title %}薬局を探す（全国{{ "{:,}".format(n_total) }}件の調剤基本料・施設基準の届出）{% endblock %}
-{% block description %}全国{{ "{:,}".format(n_total) }}件の薬局の施設基準の届出（調剤基本料、地域支援・医薬品供給対応体制加算、在宅、無菌製剤処理など）を都道府県・市区町村・届出から無料で検索。条件に合う薬局のリストはCSVでダウンロードできます。{% endblock %}
+{% block title %}{{ K.word }}を探す（全国{{ "{:,}".format(n_total) }}件の施設基準の届出）{% endblock %}
+{% block description %}全国{{ "{:,}".format(n_total) }}件の{{ K.word }}の施設基準の届出（{{ K.topics }}）を都道府県・市区町村・届出から無料で検索。条件に合う{{ K.word }}のリストはCSVでダウンロードできます。{% endblock %}
 {% block content %}
-<p class="crumbs"><a href="/">トップ</a> › 薬局を探す</p>
-<nav class="kind-tabs" aria-label="探す対象" data-ga-sec="kind_tabs">
-  <a class="kind-tab" href="/"><b>病院・診療所</b><span class="kt-n">地域・届出で探す</span></a>
-  <span class="kind-tab cur" aria-current="page"><b>薬局</b><span class="kt-n">{{ "{:,}".format(n_total) }}件</span></span>
-  <a class="kind-tab" href="/specialty"><b>診療科から探す</b><span class="kt-n">届出を診療科ごとに</span></a>
-</nav>
-<h1>薬局を探す</h1>
-<p class="lead">全国{{ "{:,}".format(n_total) }}件の薬局が地方厚生局に届け出ている施設基準（調剤基本料・地域支援・在宅・無菌製剤処理など）から、条件に合う薬局のリストを作れます。届出には説明を付けています。</p>
+<p class="crumbs"><a href="/">トップ</a> › {{ K.word }}を探す</p>
+{% with cur = K.x, kc = {K.x: n_total} %}{% include "_kind_tabs.html" %}{% endwith %}
+<h1>{{ K.word }}を探す</h1>
+<p class="lead">全国{{ "{:,}".format(n_total) }}件の{{ K.word }}が地方厚生局に届け出ている施設基準（{{ K.topics }}）から、条件に合う{{ K.word }}のリストを作れます。届出には説明を付けています。</p>
 
-<form id="sp" action="/yakkyoku/search" method="get" autocomplete="off">
+<form id="sp" action="{{ K.base }}/search" method="get" autocomplete="off">
   <div class="sp-opts">
     <label class="sx-field"><span class="sx-flabel">都道府県</span>
       <select name="pref" class="sp-select"><option value="">全国</option>
         {% for p in prefs %}<option value="{{ p.code }}" {% if c.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
-    <label class="sx-field sx-grow"><span class="sx-flabel">薬局名・住所（一部でよい）</span>
-      <input type="text" name="q" value="{{ c.q }}" class="sp-select" placeholder="例：さくら薬局、横浜市港北区"></label>
+    <label class="sx-field sx-grow"><span class="sx-flabel">{{ K.word }}名・住所（一部でよい）</span>
+      <input type="text" name="q" value="{{ c.q }}" class="sp-select" placeholder="{{ K.placeholder }}"></label>
     <div class="sx-field"><span class="sx-flabel">チェックした届出を</span>
       <div class="ct-checks"><label><input type="radio" name="mode" value="or" {% if c.mode != "and" %}checked{% endif %}>いずれか届け出ている</label><label><input type="radio" name="mode" value="and" {% if c.mode == "and" %}checked{% endif %}>すべて届け出ている</label></div></div>
   </div>
@@ -27,14 +23,15 @@
   <section class="sp-sec" id="g-{{ g.key }}">
     <div class="sp-head"><h2>{{ g.label }}</h2></div>
     <div class="table-wrap"><table class="sp-table">
-      <thead><tr><th class="sp-cb"><span class="sr">選ぶ</span></th><th>届出</th><th>どんなものか</th><th class="num">届け出ている薬局</th></tr></thead>
+      <thead><tr><th class="sp-cb"><span class="sr">選ぶ</span></th><th>届出</th><th>どんなものか</th><th class="num">届け出ている{{ K.word }}</th></tr></thead>
       <tbody>{% for k in g["items"] %}<tr>
         <td class="sp-cb"><input type="checkbox" name="item" value="{{ k.id }}" id="yk-{{ k.id }}" {% if k.id in c["items"] %}checked{% endif %}></td>
-        <td class="sp-name"><label for="yk-{{ k.id }}">{{ k.name }}</label><div class="small"><a href="{{ y_kijun_url(k.name) }}">都道府県別に見る</a></div></td>
+        <td class="sp-name"><label for="yk-{{ k.id }}">{{ k.name }}</label><div class="small"><a href="{{ K.kijun_url(k.name) }}">都道府県別に見る</a></div></td>
         <td class="sp-desc">{{ k.desc }}</td>
         <td class="num">{{ "{:,}".format(k.n_facilities) }}</td>
       </tr>{% endfor %}</tbody>
     </table></div>
+    {% if g.n_hidden %}<p class="small muted">ほかに、届け出ている{{ K.word }}が30件未満の届出が{{ g.n_hidden }}種類あります{% if K.x == "d" %}（多くは病院の歯科が届け出ている医科の届出です）{% endif %}。各{{ K.word }}のページで確認できます。</p>{% endif %}
   </section>
   {% endfor %}
 
@@ -46,8 +43,8 @@
 <div class="note small">「どんなものか」は、MedilenZが届出の内容を一般向けに短くまとめたもので、届出の要件（施設基準）そのものではありません。正式な定義は厚生労働省の告示・通知によります。</div>
 
 <h2>都道府県から探す</h2>
-<ul class="pref-grid" data-ga-sec="y_index_prefs">{% for p in prefs %}<li><a href="{{ y_pref_url(p.name) }}">{{ p.name }}<span class="muted small">（{{ "{:,}".format(p.n_facilities) }}）</span></a></li>{% endfor %}</ul>
-<p class="source">出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿・薬局）」を加工して作成（{{ as_of[0] }}〜{{ as_of[1] }}時点。都道府県により異なります。各ページのURLと利用した日は<a href="/about#sources">データの出典と利用条件</a>）</p>
+<ul class="pref-grid" data-ga-sec="{{ K.x }}_index_prefs">{% for p in prefs %}<li><a href="{{ K.pref_url(p.name) }}">{{ p.name }}<span class="muted small">（{{ "{:,}".format(p.n_facilities) }}）</span></a></li>{% endfor %}</ul>
+<p class="source">出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿・{{ K.roster }}）」を加工して作成（{{ as_of[0] }}〜{{ as_of[1] }}時点。都道府県により異なります。各ページのURLと利用した日は<a href="/about#sources">データの出典と利用条件</a>）</p>
 
 <script>
 (() => {

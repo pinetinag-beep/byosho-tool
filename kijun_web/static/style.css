@@ -412,6 +412,10 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
   .sp-table td.num { grid-row: 1; grid-column: 3; }
   .sp-table tr:has(input:checked) { background: var(--brand-soft); }
   .sp-table tr:has(input:checked) td { background: transparent; }
+  /* チェックボックスの無い表（薬局・歯科のページの届出一覧）：届出名→説明→受理番号・算定開始 */
+  .sp-plain tr { grid-template-columns: auto 1fr; column-gap: 12px; padding: 4px 0; }
+  .sp-plain .sp-name, .sp-plain .sp-desc { grid-column: 1 / 3; padding-left: 10px; }
+  .sp-plain td.nowrap { padding-top: 0; padding-left: 10px; }
 }
 
 /* 薬局を探す（/yakkyoku/…） */
@@ -431,8 +435,11 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .kind-tab.cur { background: var(--brand); border-color: var(--brand); color: #fff; }
 .kind-tab.cur .kt-n { color: rgba(255,255,255,.85); }
+.kind-tab .kt-short { display: none; }
 @media (max-width: 640px) {
-  .kind-tab { min-width: 0; flex: 1; padding: 8px 6px; margin-right: 4px; }
-  .kind-tab b { font-size: 0.9rem; }
-  .kind-tab .kt-n { font-size: 0.7rem; text-align: center; }
+  .kind-tab { min-width: 0; flex: 1; padding: 10px 4px; margin-right: 4px; }
+  .kind-tab b { font-size: 0.95rem; }
+  .kind-tab .kt-long { display: none; }
+  .kind-tab .kt-short { display: inline; }
+  .kind-tab .kt-n { display: none; }
 }

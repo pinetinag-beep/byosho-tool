@@ -1,6 +1,9 @@
-"""薬局の施設基準の届出（各地方厚生局「届出受理医療機関名簿（薬局）」）を yakkyoku_cache.parquet にまとめる。
+"""薬局・歯科の施設基準の届出（各地方厚生局「届出受理医療機関名簿（薬局）（歯科）」）を parquet にまとめる。
 
-    python build_yakkyoku.py          # shisetsu_raw_yakkyoku/ の xlsx をすべて読む
+    python build_yakkyoku.py          # 薬局: shisetsu_raw_yakkyoku/ → yakkyoku_cache.parquet
+    python build_yakkyoku.py --kind 歯科   # 歯科: shisetsu_raw_shika/ → shika_cache.parquet（build_shika.py と同じ）
+
+歯科も薬局と同じ形の名簿（24列で「区分」が歯科、届出項目別は19列）なので、同じ読み方をする。
 
 名簿の集め方は fetch_kouseikyoku.py（--apply で shisetsu_raw_yakkyoku/ に入る）。
 - 基本は全件の名簿（医科と同じ24列で、「区分」の列が「薬局」）。読み方は build_shisetsu_kijun.parse_file と同じ。
@@ -22,13 +25,16 @@ import build_shisetsu_kijun as bk
 ROOT = Path(__file__).resolve().parent
 RAW = ROOT / "shisetsu_raw_yakkyoku"
 OUT = ROOT / "yakkyoku_cache.parquet"
+# 種類ごとの (生データのフォルダ, 出力) 
+KINDS = {"薬局": (RAW, OUT),
+         "歯科": (ROOT / "shisetsu_raw_shika", ROOT / "shika_cache.parquet")}
 COLS = ["都道府県コード", "都道府県名", "医療機関番号", "医療機関名称", "住所",
         "受理届出名称", "受理記号", "受理番号", "算定開始年月日", "内訳その他", "時点"]
 
 
-def parse_items(path: Path) -> tuple[pd.DataFrame, str]:
-    """届出項目別の名簿（19列）の薬局版を読む。列は見出しの名前で探す。薬局の名簿でなければ空を返す。"""
-    out, snap, kind = [], "", ""
+def parse_items(path: Path, kind: str = "薬局") -> tuple[pd.DataFrame, str]:
+    """届出項目別の名簿（19列）の薬局版・歯科版を読む。列は見出しの名前で探す。その種類の名簿でなければ空を返す。"""
+    out, snap, title_kind = [], "", ""
     for sname in pd.ExcelFile(path).sheet_names:
         raw = pd.read_excel(path, sheet_name=sname, header=None, dtype=str).fillna("")
         hdr = next((i for i in range(min(10, len(raw)))
@@ -37,7 +43,7 @@ def parse_items(path: Path) -> tuple[pd.DataFrame, str]:
             continue
         title = " ".join(raw.iloc[:hdr].astype(str).values.ravel())
         snap = snap or bk._wareki_date(title)
-        kind = kind or next((k for k in ("医科", "歯科", "薬局") if k in title), "")
+        title_kind = title_kind or next((k for k in ("医科", "歯科", "薬局") if k in title), "")
         d = raw.iloc[hdr + 1:].copy()
         d.columns = [str(c).strip() for c in raw.iloc[hdr]]
         d = d[d["医療機関番号"].str.strip().ne("")]
@@ -57,17 +63,17 @@ def parse_items(path: Path) -> tuple[pd.DataFrame, str]:
             "内訳その他": "",
         })
         out.append(f)
-    if kind != "薬局" or not out:
+    if title_kind != kind or not out:
         return pd.DataFrame(columns=COLS), snap
     df = pd.concat(out, ignore_index=True)
     df["時点"] = snap
     return df, snap
 
 
-def read(path: Path) -> tuple[pd.DataFrame, str, str]:
-    """1ファイルを読み (df, 時点, 種類) を返す。種類は「全件」「項目別」。読めなければ空。"""
+def read(path: Path, kind: str = "薬局") -> tuple[pd.DataFrame, str, str]:
+    """1ファイルを読み (df, 時点, 名簿の種類) を返す。名簿の種類は「全件」「項目別」。読めなければ空。"""
     try:
-        df, _ym, snap = bk.parse_file(str(path), kind="薬局")
+        df, _ym, snap = bk.parse_file(str(path), kind=kind)
     except Exception:  # noqa: BLE001
         df, snap = pd.DataFrame(), ""
     if not df.empty:
@@ -78,17 +84,18 @@ def read(path: Path) -> tuple[pd.DataFrame, str, str]:
                 df[c] = ""
         return df[COLS].fillna(""), snap, "全件"
     try:
-        df, snap = parse_items(path)
+        df, snap = parse_items(path, kind)
     except Exception:  # noqa: BLE001
         df, snap = pd.DataFrame(columns=COLS), ""
     return (df[COLS], snap, "項目別") if not df.empty else (df, "", "")
 
 
-def build(src: Path = RAW, out: Path = OUT) -> pd.DataFrame:
+def build(kind: str = "薬局") -> pd.DataFrame:
+    src, out = KINDS[kind]
     parsed: dict[str, list[tuple[str, pd.DataFrame, str]]] = {"全件": [], "項目別": []}
     for f in sorted(src.glob("*.xlsx")):
-        df, snap, typ = read(f)
-        print(f"読み込み: {f.name} … " + (f"{typ} {len(df):,}行 ({snap})" if typ else "スキップ（薬局の名簿ではない）"))
+        df, snap, typ = read(f, kind)
+        print(f"読み込み: {f.name} … " + (f"{typ} {len(df):,}行 ({snap})" if typ else f"スキップ（{kind}の名簿ではない）"))
         if typ:
             parsed[typ].append((f.name, df, snap))
     full = bk._keep_latest_per_pref(parsed["全件"])
@@ -99,16 +106,19 @@ def build(src: Path = RAW, out: Path = OUT) -> pd.DataFrame:
         print("全件の名簿が無く届出項目別の名簿を使った県:", "・".join(sorted({p for d in items for p in d["都道府県名"].unique()})))
     dfs = full + items
     if not dfs:
-        raise SystemExit("エラー: 薬局の名簿がありません")
+        raise SystemExit(f"エラー: {kind}の名簿がありません")
     df = pd.concat(dfs, ignore_index=True).drop_duplicates()
     df.to_parquet(out, index=False, compression="zstd")
     n_fac = df.groupby(["都道府県コード", "医療機関番号"]).ngroups
-    print(f"完了: {len(df):,}行・薬局{n_fac:,}件・{df['都道府県名'].nunique()}都道府県 → {out.name}")
+    print(f"完了: {len(df):,}行・{kind}{n_fac:,}件・{df['都道府県名'].nunique()}都道府県 → {out.name}")
     return df
 
 
 def main() -> int:
-    build()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--kind", choices=list(KINDS), default="薬局")
+    build(ap.parse_args().kind)
     return 0
 
 

@@ -161,13 +161,17 @@ GA_PAGE = {
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
     "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
     "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
+    # 歯科（/shika）も同じ y_*.html を使い、render() で「薬局」を「歯科」に置き換える
 }
 
 
 def render(request: Request, template: str, status_code: int = 200, **ctx) -> HTMLResponse:
     with db() as con:
         ctx.setdefault("meta", _meta(con))
-    ctx.setdefault("ga_page", GA_PAGE.get(template, "その他"))
+    ga = GA_PAGE.get(template, "その他")
+    if template.startswith("y_") and ctx.get("K") is not None and ctx["K"].x != "y":   # 歯科も同じテンプレート
+        ga = ga.replace("薬局", "歯科")
+    ctx.setdefault("ga_page", ga)
     return templates.TemplateResponse(request, template, ctx, status_code=status_code)
 
 
@@ -597,11 +601,8 @@ def index(request: Request):
         examples = _examples(con)
         type_counts = {r["ftype"]: r["n"] for r in con.execute("SELECT ftype, COUNT(*) AS n FROM facilities GROUP BY ftype")}
         hosp_counts = _hosp_counts(con)
-        try:
-            n_yakkyoku = con.execute("SELECT COUNT(*) FROM y_fac").fetchone()[0]
-        except sqlite3.OperationalError:
-            n_yakkyoku = 0
-    return render(request, "index.html", cond=cond, n_yakkyoku=n_yakkyoku, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
+        n_other = {k.x: ymod._count(con, k) for k in ymod.KINDS}   # 探す対象のタブに出す薬局・歯科の件数
+    return render(request, "index.html", cond=cond, n_other=n_other, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
                   sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
 
 
@@ -1241,9 +1242,18 @@ def city_page(request: Request, pref_name: str, city: str):
             """SELECT city, SUM(n) AS n FROM areas WHERE pref_code = ? AND area IN ({}) AND city <> ?
                GROUP BY city ORDER BY MIN(city_order)""".format(",".join("?" * len(areas))),
             (pref["code"], *areas, city)).fetchall() if areas else []
+        # 同じ市区町村の歯科診療所・薬局の数（それぞれのページへのリンク）
+        sib = []
+        for K in ymod.KINDS:
+            if ymod._count(con, K):
+                n = con.execute(f"SELECT COUNT(*) FROM {K.t('fac')} WHERE pref_code = ? AND city = ?",
+                                (pref["code"], city)).fetchone()[0]
+                if n:
+                    sib.append((K, n))
     hosp = [r for r in rows if r["ftype"] == "病院"]
     clinics = [r for r in rows if r["ftype"] != "病院"]
-    return render(request, "city.html", pref=pref, city=city, hosp=hosp, clinics=clinics, areas=areas, others=others)
+    return render(request, "city.html", pref=pref, city=city, hosp=hosp, clinics=clinics, areas=areas, others=others,
+                  sib=sib)
 
 
 @app.get("/area/{pref_name}/{area}", response_class=HTMLResponse)
@@ -1383,13 +1393,22 @@ def _loc(path: str) -> str:
 def sitemap_index():
     with db() as con:
         n_fac = con.execute("SELECT COUNT(*) FROM facilities").fetchone()[0]
-        n_y = con.execute("SELECT COUNT(*) FROM y_fac").fetchone()[0] if con.execute(
-            "SELECT 1 FROM sqlite_master WHERE name = 'y_fac'").fetchone() else 0
+        n_other = {K.base[1:]: ymod._count(con, K) for K in ymod.KINDS}
     names = ["static", "kijun"] + [f"facilities-{i}" for i in range(math.ceil(n_fac / SITEMAP_CHUNK))]
-    if n_y:
-        names += ["yakkyoku"] + [f"yakkyoku-{i}" for i in range(math.ceil(n_y / SITEMAP_CHUNK))]
+    for key, n in n_other.items():   # 薬局（yakkyoku）・歯科（shika）
+        if n:
+            names += [key] + [f"{key}-{i}" for i in range(math.ceil(n / SITEMAP_CHUNK))]
     items = "".join(f"<sitemap><loc>{SITE_URL}/sitemap-{n}.xml</loc></sitemap>" for n in names)
     return _xml(f'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{items}</sitemapindex>')
+
+
+def _other_kind(part: str):
+    """サイトマップの名前（yakkyoku・yakkyoku-0・shika・shika-0 …）から薬局・歯科の Kind を返す。"""
+    for K in ymod.KINDS:
+        key = K.base[1:]
+        if part == key or (part.startswith(key + "-") and part[len(key) + 1:].isdigit()):
+            return K
+    return None
 
 
 @app.get("/sitemap-{part}.xml")
@@ -1416,19 +1435,20 @@ def sitemap_part(part: str):
                        JOIN kijun kj ON kj.id = kp.kijun_id JOIN prefs p ON p.code = kp.pref_code"""
                 )
             ]
-        elif part == "yakkyoku":
-            paths = ["/yakkyoku"]
-            paths += [ymod.y_pref_url(r["name"]) for r in con.execute("SELECT name FROM y_prefs ORDER BY code")]
-            paths += [ymod.y_city_url(r["pref"], r["city"]) for r in con.execute(
-                """SELECT DISTINCT p.name AS pref, f.city FROM y_fac f JOIN y_prefs p ON p.code = f.pref_code
-                   WHERE f.city IS NOT NULL ORDER BY f.pref_code, f.city""")]
-            paths += [ymod.y_kijun_url(r["name"]) for r in con.execute("SELECT name FROM y_kijun")]
-        elif part.startswith("yakkyoku-") and part[9:].isdigit():
-            i = int(part[9:])
-            paths = [ymod.y_url(r["id"]) for r in con.execute(
-                "SELECT id FROM y_fac ORDER BY id LIMIT ? OFFSET ?", (SITEMAP_CHUNK, i * SITEMAP_CHUNK))]
-            if not paths:
-                raise HTTPException(404)
+        elif (K := _other_kind(part)) is not None:
+            if part == K.base[1:]:
+                paths = [K.base]
+                paths += [K.pref_url(r["name"]) for r in con.execute(f"SELECT name FROM {K.t('prefs')} ORDER BY code")]
+                paths += [K.city_url(r["pref"], r["city"]) for r in con.execute(
+                    f"""SELECT DISTINCT p.name AS pref, f.city FROM {K.t('fac')} f JOIN {K.t('prefs')} p ON p.code = f.pref_code
+                       WHERE f.city IS NOT NULL ORDER BY f.pref_code, f.city""")]
+                paths += [K.kijun_url(r["name"]) for r in con.execute(f"SELECT name FROM {K.t('kijun')}")]
+            else:
+                i = int(part.rsplit("-", 1)[1])
+                paths = [K.url(r["id"]) for r in con.execute(
+                    f"SELECT id FROM {K.t('fac')} ORDER BY id LIMIT ? OFFSET ?", (SITEMAP_CHUNK, i * SITEMAP_CHUNK))]
+                if not paths:
+                    raise HTTPException(404)
         elif part.startswith("facilities-") and part[11:].isdigit():
             i = int(part[11:])
             paths = [

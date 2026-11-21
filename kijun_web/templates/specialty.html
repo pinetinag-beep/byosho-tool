@@ -3,11 +3,7 @@
 {% block description %}循環器内科・消化器外科・眼科など33の診療科・分野ごとに、その診療科の特徴を示す施設基準の届出を、どんな手術・検査・治療かの説明つきで一覧にしました。チェックした届出を届け出ている病院・診療所のリストを作れます。{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › 診療科から探す</p>
-<nav class="kind-tabs" aria-label="探す対象" data-ga-sec="kind_tabs">
-  <a class="kind-tab" href="/"><b>病院・診療所</b><span class="kt-n">地域・届出で探す</span></a>
-  <a class="kind-tab" href="/yakkyoku"><b>薬局</b><span class="kt-n">調剤基本料・加算で探す</span></a>
-  <span class="kind-tab cur" aria-current="page"><b>診療科から探す</b><span class="kt-n">届出を診療科ごとに</span></span>
-</nav>
+{% with cur = "sp" %}{% include "_kind_tabs.html" %}{% endwith %}
 <h1>診療科から探す</h1>
 <p class="lead">診療科ごとに、その診療科の特徴を示す施設基準の届出を並べています。説明を見ながらチェックを入れ、「リストを抽出する」を押すと、チェックした届出を届け出ている医療機関のリストを作れます。</p>
 <div class="note small">診療科への分け方と説明は、届出名称をもとに<strong>MedilenZが作ったもの</strong>です（公式の分類ではありません）。説明は、どんな手技・検査・治療・体制かを短くまとめたもので、届出の要件（施設基準）そのものではありません。届出が要らない手術・治療（ふつうのカテーテル治療・胃の内視鏡切除など）は名簿に載らないため、ここにもありません。届出があっても、診療の量（件数）は分かりません。</div>

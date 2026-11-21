@@ -483,3 +483,34 @@ def test_yakkyoku_pages():
     assert "/sitemap-yakkyoku-0.xml" in client.get("/sitemap.xml").text
     assert f"/yakkyoku/{f['id']}<" in client.get("/sitemap-yakkyoku-0.xml").text
     assert 'href="/yakkyoku"' in client.get("/").text
+
+
+def test_shika_pages():
+    """歯科診療所を探す：薬局と同じ仕組み（yakkyoku.Kind）で /shika/… のページを作る。"""
+    import csv as _csv
+    import io
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    con.row_factory = sqlite3.Row
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'd_fac'").fetchone():
+        pytest.skip("歯科のデータがありません（shika_cache.parquet）")
+    assert con.execute("SELECT COUNT(DISTINCT pref_code) FROM d_fac").fetchone()[0] == 47
+    f = con.execute("SELECT * FROM d_fac WHERE kihon IS NOT NULL AND city IS NOT NULL LIMIT 1").fetchone()
+    assert len(f["id"]) == 10 and f["id"][2] == "3"       # 都道府県2桁＋歯科「3」＋医療機関番号7桁
+    k = con.execute("SELECT id, name FROM d_kijun WHERE name = '在宅療養支援歯科診療所１'").fetchone()
+
+    r = client.get("/shika")
+    assert r.status_code == 200 and "歯科診療所を探す" in r.text and "在宅（訪問歯科診療）" in r.text
+    r = client.get(f"/shika/{f['id']}")
+    assert r.status_code == 200 and f["name"] in r.text and '"@type": "Dentist"' in r.text and "口腔管理体制強化加算" in r.text
+    assert client.get(f"/shika/pref/{quote(f['pref_name'])}").status_code == 200
+    r = client.get(f"/shika/city/{quote(f['pref_name'])}/{quote(f['city'])}")
+    assert r.status_code == 200 and "の薬局（" in r.text      # 同じ市区町村の薬局へのリンク
+    assert client.get(f"/shika/kijun/{quote(k['name'])}").status_code == 200
+    r = client.get(f"/shika/search.csv?pref=39&item={k['id']}")
+    rows = list(_csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
+    assert rows[0][3] == "歯科診療所名" and rows[0][-1] == f"届出：{k['name']}" and rows[1][-1] == "○"
+    # 薬局のページが歯科の設定に引きずられていない（同じ関数・テンプレートを使うので）
+    assert '"@type": "Pharmacy"' in client.get(f"/yakkyoku/{con.execute('SELECT id FROM y_fac LIMIT 1').fetchone()[0]}").text
+    assert "/sitemap-shika-0.xml" in client.get("/sitemap.xml").text
+    assert 'href="/shika"' in client.get("/").text

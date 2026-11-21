@@ -7,6 +7,7 @@ __pycache__/
 *.parquet
 !data_cache.parquet
 !yakkyoku_cache.parquet
+!shika_cache.parquet
 !ward_cache.parquet
 !surgery_cache.parquet
 !locations_cache.parquet
@@ -76,3 +77,5 @@ shisetsu_fetch/
 
 # 薬局の名簿の生データ（毎月 fetch_kouseikyoku.py で取り直す。処理後の yakkyoku_cache.parquet と fetched.json だけを管理する）
 shisetsu_raw_yakkyoku/*.xlsx
+# 歯科の名簿の生データ（同じく shika_cache.parquet と fetched.json だけを管理する）
+shisetsu_raw_shika/*.xlsx

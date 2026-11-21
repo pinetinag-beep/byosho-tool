@@ -1,0 +1,13 @@
+{# 探す対象の切り替え（トップ・歯科・薬局・診療科のページの上）。cur: med / d / y / sp、kc: 件数 {"med":…, "d":…, "y":…} #}
+{% set kc = kc or {} %}
+{% set short = {"med": "医科", "d": "歯科", "y": "薬局", "sp": "診療科"} %}
+{% set tabs = [("med", "/", "病院・診療所", ("{:,}件".format(kc.med) if kc.med else "地域・届出で探す")),
+               ("d", "/shika", "歯科診療所", ("{:,}件".format(kc.d) if kc.d else "歯科の届出で探す")),
+               ("y", "/yakkyoku", "薬局", ("{:,}件".format(kc.y) if kc.y else "調剤基本料・加算で探す")),
+               ("sp", "/specialty", "診療科から探す", "届出を診療科ごとに")] %}
+<nav class="kind-tabs" aria-label="探す対象" data-ga-sec="kind_tabs">
+  {% for key, href, label, sub in tabs %}
+  {% if key == cur %}<span class="kind-tab cur" aria-current="page"><b><span class="kt-long">{{ label }}</span><span class="kt-short">{{ short[key] }}</span></b><span class="kt-n">{{ sub }}</span></span>
+  {% else %}<a class="kind-tab" href="{{ href }}"><b><span class="kt-long">{{ label }}</span><span class="kt-short">{{ short[key] }}</span></b><span class="kt-n">{{ sub }}</span></a>{% endif %}
+  {% endfor %}
+</nav>
