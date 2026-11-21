@@ -435,11 +435,8 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .kind-tab.cur { background: var(--brand); border-color: var(--brand); color: #fff; }
 .kind-tab.cur .kt-n { color: rgba(255,255,255,.85); }
-.kind-tab .kt-short { display: none; }
 @media (max-width: 640px) {
   .kind-tab { min-width: 0; flex: 1; padding: 10px 4px; margin-right: 4px; }
-  .kind-tab b { font-size: 0.95rem; }
-  .kind-tab .kt-long { display: none; }
-  .kind-tab .kt-short { display: inline; }
+  .kind-tab b { font-size: 0.86rem; line-height: 1.35; text-align: center; word-break: keep-all; }
   .kind-tab .kt-n { display: none; }
 }
