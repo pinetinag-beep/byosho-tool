@@ -498,3 +498,19 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .ct-bar-act { display: inline-flex; align-items: center; gap: 14px; flex: none; }
 .ct-bar-act .ct-clear { font-size: 0.85rem; color: var(--ink-muted); white-space: nowrap; }
 @media (max-width: 760px) { .ct-bar-act { gap: 10px; } .ct-bar-act .ct-clear { font-size: 0.78rem; } }
+/* 診療科から探す：診療科ごとに開閉 */
+.sp-acc { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; }
+.sp-acc > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 12px 16px; }
+.sp-acc > summary::-webkit-details-marker { display: none; }
+.sp-acc > summary h2 { margin: 0; font-size: 1.05rem; border: 0; padding: 0; }
+.sp-acc > summary h2::before { content: "＋"; color: var(--brand); margin-right: 8px; font-weight: 700; }
+.sp-acc[open] > summary h2::before { content: "－"; }
+.sp-acc > summary:hover h2 { color: var(--brand-dark); }
+.sp-acc[open] > summary { border-bottom: 1px solid var(--line); }
+.sp-acc > .sp-all { margin: 10px 16px 0; }
+.sp-acc > .table-wrap { margin: 8px 12px 12px; }
+.sp-acc-n, .sp-toc-n { font-size: 0.75rem; font-weight: 700; color: #fff; background: var(--brand); border-radius: 999px; padding: 1px 8px; }
+.sp-toc-n { margin-left: 5px; padding: 0 6px; }
+.sp-acc[hidden], .sp-toc a[hidden], .sp-acc tr[hidden] { display: none; }
+.sp-toc-head { display: flex; align-items: center; gap: 10px; }
+.sp-openall { font: inherit; font-size: 0.8rem; color: var(--brand-dark); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
