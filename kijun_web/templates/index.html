@@ -5,20 +5,12 @@
 {% with cur = "med" %}{% include "_kind_tabs.html" %}{% endwith %}
 <section class="db-head">
   <h1>施設基準届出データベース</h1>
-  <ul class="db-notes">
-    <li>出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿）」（{{ meta.as_of_max_label }}までの公表分）。
-      医療機関 {{ "{:,}".format(meta.n_facilities|int) }} 件・届出 {{ "{:,}".format(meta.n_filings|int) }} 件</li>
-    <li>地域・施設の種類・届出項目を指定して医療機関のリストを抽出し、CSVでダウンロードできます（無料・登録不要。複数選択可）。</li>
-    <li>何も指定しない場合は、すべての医療機関が表示されます。</li>
-    {% if kd_top and kd_top.month %}<li><a href="/changes" data-ga-sec="top_changes">{{ month_label(kd_top.month) }}の名簿で新たに届け出た医療機関（新規{{ "{:,}".format(kd_top.n_new) }}件・取り下げ等{{ "{:,}".format(kd_top.n_drop) }}件）を見る</a></li>{% endif %}
-  </ul>
+  <p class="lead">地域・施設の種類・届出項目を選んで、医療機関のリストを作れます（CSVでダウンロード可、無料・登録不要）。何も選ばなければすべての医療機関が出ます。
+    <span class="muted small">地方厚生局の名簿（{{ meta.as_of_max_label }}までの公表分）、医療機関 {{ "{:,}".format(meta.n_facilities|int) }} 件・届出 {{ "{:,}".format(meta.n_filings|int) }} 件。</span>
+    {% if kd_top and kd_top.month %}<a href="/changes" data-ga-sec="top_changes">{{ month_label(kd_top.month) }}の新規届出 {{ "{:,}".format(kd_top.n_new) }}件</a>{% endif %}</p>
 </section>
 
 <form class="ct-form" id="ct" action="/search" method="get" autocomplete="off">
-  <div class="ct-actions">
-    <button type="submit" class="btn ct-go">リストを抽出する</button>
-    <a class="btn secondary ct-clear" href="/">条件をクリア</a>
-  </div>
 
   <table class="ct">
     <tr>
@@ -147,7 +139,7 @@
   {% if cond.k %}<p class="ct-hint">施設基準名「{{ cond.k }}」の条件も引き続き使います。<label><input type="checkbox" name="k" value="{{ cond.k }}" checked> この条件を使う</label></p>{% endif %}
   <div class="ct-bar" id="ct-bar">
     <span class="ct-count" id="ct-count">条件の指定なし（すべての医療機関）</span>
-    <button type="submit" class="btn">リストを抽出する</button>
+    <span class="ct-bar-act"><a class="ct-clear" href="/">条件をクリア</a><button type="submit" class="btn">リストを抽出する</button></span>
   </div>
 </form>
 

@@ -495,3 +495,6 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .yk-list .yk-grid label[hidden], .yk-list tr[hidden] { display: none; }
 .yk-sym { display: block; font-weight: 400; }
 @media (max-width: 760px) { .yk-list.view-f .yk-grid { grid-template-columns: 1fr; } }
+.ct-bar-act { display: inline-flex; align-items: center; gap: 14px; flex: none; }
+.ct-bar-act .ct-clear { font-size: 0.85rem; color: var(--ink-muted); white-space: nowrap; }
+@media (max-width: 760px) { .ct-bar-act { gap: 10px; } .ct-bar-act .ct-clear { font-size: 0.78rem; } }
