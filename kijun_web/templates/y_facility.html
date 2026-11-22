@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set place = f.pref_name ~ (f.city or "") %}
-{% block title %}{{ f.name }}（{{ place }}）の施設基準の届出{% endblock %}
+{% block title %}{{ f.name|short_name }}（{{ place }}）の施設基準の届出{% endblock %}
 {% block description %}{{ f.name }}（{{ f.address }}、医療機関コード{{ f.id }}）が地方厚生局に届け出ている施設基準{{ n_filings }}種類の一覧。{% if f.kihon %}{{ f.kihon }}{% endif %}{% if f.chiiki %}{% if f.kihon %}、{% endif %}{{ f.chiiki }}{% endif %}{% if f.kihon or f.chiiki %}など。{% endif %}{% endblock %}
 {% block head_extra %}
 <script type="application/ld+json">{{ {

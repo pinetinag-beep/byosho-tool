@@ -140,6 +140,24 @@ def kubun_ref_note(ref: str | None, start_date: str | None, ref_date: str | None
 
 
 templates.env.filters["jdate"] = jdate
+
+
+_CORP = ("法人", "株式会社", "有限会社", "合同会社", "合資会社")
+
+
+def short_name(name: str) -> str:
+    """タイトル用に、頭の法人名を外した呼び名（「医療法人社団　静山会　清川病院」→「清川病院」）。
+    検索する人は法人名を付けずに打つため。外すのは空白で区切られた頭の部分だけで、空白の無い名前はそのまま。"""
+    toks = [t for t in re.split(r"[\s\u3000]+", name or "") if t]
+    dropped = False
+    while len(toks) > 1 and (any(c in toks[0] for c in _CORP) or (dropped and toks[0].endswith("会"))):
+        toks.pop(0)
+        dropped = True
+    rest = "\u3000".join(toks)
+    return rest if dropped and len(rest) >= 2 else (name or "")
+
+
+templates.env.filters["short_name"] = short_name
 # CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
 templates.env.globals.update(y_url=ymod.y_url, y_pref_url=ymod.y_pref_url, y_city_url=ymod.y_city_url,
                              y_kijun_url=ymod.y_kijun_url, month_label=cmod.month_label)
