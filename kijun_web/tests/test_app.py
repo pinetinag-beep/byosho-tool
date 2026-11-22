@@ -568,3 +568,17 @@ def test_changes_shika_yakkyoku():
         fid = con.execute(f"SELECT k.facility_id FROM {t} k JOIN {fac} f ON f.id = k.facility_id LIMIT 1").fetchone()
         if fid:
             assert len(fid[0]) == 10 and "届出の動き" in client.get(f"{base}/{fid[0]}").text
+
+
+def test_yk_index_merged_rows():
+    """歯科・薬局のトップ：区分だけ違う届出は1行にまとめ、区分ごとにも選べる（name="item" は区分ごと）。"""
+    for base in ("/shika", "/yakkyoku"):
+        r = client.get(base)
+        assert r.status_code == 200
+        if 'class="sp-grp"' not in r.text:
+            continue
+        assert 'id="yk-filter"' in r.text and "区分）" in r.text
+        # まとめた行の区分のチェックは、それぞれが検索に使える届出のid
+        ids = re.findall(r'name="item" value="(\d+)" data-grp=', r.text)
+        assert ids and all(i.isdigit() for i in ids)
+        assert client.get(f"{base}/search?item={ids[0]}").status_code == 200

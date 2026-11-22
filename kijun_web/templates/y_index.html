@@ -18,21 +18,35 @@
   </div>
   <p class="hint">市区町村は、都道府県を選んで検索した後の画面で絞り込めます。届出を選ばずに検索すると、地域・名前だけで探せます。</p>
 
+  <div class="yk-find">
+    <label class="sx-field sx-grow"><span class="sx-flabel">届出を名前で探す</span>
+      <input type="search" id="yk-filter" class="sp-select" placeholder="例：{% if K.x == 'd' %}在宅、感染、CAD{% else %}在宅、無菌、地域支援{% endif %}"></label>
+    <nav class="sp-toc" aria-label="届出のまとまり">{% for g in groups %}<a href="#g-{{ g.key }}">{{ g.label }}</a>{% endfor %}</nav>
+  </div>
+  <p class="yk-none note small" id="yk-none" hidden>その名前の届出は見つかりませんでした。</p>
+
   {% for g in groups %}
   <section class="sp-sec" id="g-{{ g.key }}">
     <div class="sp-head"><h2>{{ g.label }}</h2></div>
     <div class="table-wrap"><table class="sp-table">
       <thead><tr><th class="sp-cb"><span class="sr">選ぶ</span></th><th>届出</th><th>どんなものか</th><th class="num">届け出ている{{ K.word }}</th></tr></thead>
-      <tbody>{% for k in g["items"] %}<tr>
-        <td class="sp-cb"><input type="checkbox" name="item" value="{{ k.id }}" id="yk-{{ k.id }}" {% if k.id in c["items"] %}checked{% endif %}></td>
-        <td class="sp-name"><label for="yk-{{ k.id }}">{{ k.name }}</label><div class="small"><a href="{{ K.kijun_url(k.name) }}">都道府県別に見る</a></div></td>
-        <td class="sp-desc">{{ k.desc }}</td>
-        <td class="num">{{ "{:,}".format(k.n_facilities) }}</td>
+      <tbody>{% for r in g.rows %}{% set rid = "yk-" ~ r.id %}<tr data-name="{{ r.name }}{% for v in r.subs %} {{ v.name }}{% endfor %}">
+        {% if r.subs %}
+        <td class="sp-cb"><input type="checkbox" class="sp-grp" data-grp="{{ rid }}" id="{{ rid }}"></td>
+        <td class="sp-name"><label for="{{ rid }}">{{ r.name }}<span class="muted small">（{{ r.subs|length }}区分）</span></label>
+          <div class="sp-subs">{% for v in r.subs %}<span class="yk-sub"><label><input type="checkbox" name="item" value="{{ v.id }}" data-grp="{{ rid }}" data-label="{{ v.name }}" {% if v.id in c["items"] %}checked{% endif %}>{{ v.label }}</label><a class="n" href="{{ K.kijun_url(v.name) }}" title="{{ v.name }}を届け出ている{{ K.word }}（都道府県別）">{{ "{:,}".format(v.n_facilities) }}</a></span>{% endfor %}</div></td>
+        {% else %}
+        <td class="sp-cb"><input type="checkbox" name="item" value="{{ r.id }}" id="{{ rid }}" data-label="{{ r.name }}" {% if r.id in c["items"] %}checked{% endif %}></td>
+        <td class="sp-name"><label for="{{ rid }}">{{ r.name }}</label></td>
+        {% endif %}
+        <td class="sp-desc">{{ r.desc }}</td>
+        <td class="num">{% if r.subs %}{{ "{:,}".format(r.n_facilities) }}{% else %}<a href="{{ K.kijun_url(r.name) }}" title="都道府県別に見る">{{ "{:,}".format(r.n_facilities) }}</a>{% endif %}</td>
       </tr>{% endfor %}</tbody>
     </table></div>
     {% if g.n_hidden %}<p class="small muted">ほかに、届け出ている{{ K.word }}が30件未満の届出が{{ g.n_hidden }}種類あります{% if K.x == "d" %}（多くは病院の歯科が届け出ている医科の届出です）{% endif %}。各{{ K.word }}のページで確認できます。</p>{% endif %}
   </section>
   {% endfor %}
+  <p class="muted small">区分（１・２など）だけが違う届出は1行にまとめています。行のチェックで中の区分をすべて、区分ごとのチェックで1つずつ選べます。件数を押すと都道府県別の数が見られます。</p>
 
   <div class="ct-bar">
     <span class="ct-count" id="sp-count">届出の指定なし</span>
@@ -49,12 +63,49 @@
 (() => {
   const form = document.getElementById("sp");
   const boxes = [...form.querySelectorAll('input[name="item"]')];
+  const grps = [...form.querySelectorAll(".sp-grp")];
   const count = document.getElementById("sp-count");
-  const update = () => { const n = boxes.filter(b => b.checked).length; count.textContent = n ? `${n}件の届出を選択中` : "届出の指定なし"; };
-  form.addEventListener("change", update);
+  const update = () => {
+    grps.forEach(g => {
+      const sub = boxes.filter(b => b.dataset.grp === g.dataset.grp);
+      g.checked = sub.every(b => b.checked);
+      g.indeterminate = !g.checked && sub.some(b => b.checked);
+    });
+    const on = boxes.filter(b => b.checked);
+    if (!on.length) { count.textContent = "届出の指定なし"; count.title = ""; return; }
+    const names = on.map(b => b.dataset.label);
+    count.textContent = `${on.length}件：` + names.slice(0, 3).join("、") + (names.length > 3 ? ` ほか${names.length - 3}件` : "");
+    count.title = names.join("\n");
+  };
+  form.addEventListener("change", (e) => {
+    if (e.target.classList.contains("sp-grp")) {   // まとめた行のチェック＝中の区分をすべて選ぶ／外す
+      boxes.filter(b => b.dataset.grp === e.target.dataset.grp).forEach(b => { b.checked = e.target.checked; });
+    }
+    update();
+  });
+  // 届出を名前で探す：合う行だけ出す（まとまりごと空なら見出しも隠す）
+  const filter = document.getElementById("yk-filter"), none = document.getElementById("yk-none");
+  const norm = (t) => t.normalize("NFKC").toLowerCase();
+  filter.addEventListener("input", () => {
+    const q = norm(filter.value.trim());
+    let any = false;
+    form.querySelectorAll(".sp-sec").forEach(sec => {
+      let hit = false;
+      sec.querySelectorAll("tbody tr").forEach(tr => {
+        const ok = !q || norm(tr.dataset.name + " " + tr.querySelector(".sp-desc").textContent).includes(q);
+        tr.hidden = !ok; hit = hit || ok;
+      });
+      sec.hidden = !hit; any = any || hit;
+      const toc = form.querySelector(`.sp-toc a[href="#${sec.id}"]`);
+      if (toc) toc.hidden = !hit;
+    });
+    none.hidden = any;
+  });
+  filter.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
   form.addEventListener("submit", () => {   // 空の条件をURLに残さない
     form.querySelectorAll("select, input[type=text]").forEach(el => { if (!el.value) el.disabled = true; });
-    setTimeout(() => form.querySelectorAll("select, input[type=text]").forEach(el => { el.disabled = false; }), 0);
+    filter.disabled = true;
+    setTimeout(() => { form.querySelectorAll("select, input[type=text]").forEach(el => { el.disabled = false; }); filter.disabled = false; }, 0);
   });
   update();
 })();

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import re
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -106,6 +107,49 @@ def _kijun_groups(K: Kind, con, all_other: bool = True) -> list[dict]:
     return [g for g in out.values() if g["items"]]
 
 
+_FAM = re.compile(r"[０-９0-9]+[イロハ]?(?=$|の注|（)")
+_ZEN = str.maketrans("０１２３４５６７８９イロハ", "0123456789abc")   # 「３イ・３ロ・３ハ」はいろは順
+
+
+def _nat(s: str) -> tuple:
+    """「２」より「１０」が後になるように（区分の並び）。"""
+    return tuple((0, int(t), "") if t.isdigit() else (1, 0, t) for t in re.findall(r"\d+|\D+", s.translate(_ZEN)))
+
+
+def _common_prefix(names: list[str]) -> str:
+    p = names[0]
+    for n in names[1:]:
+        while not n.startswith(p):
+            p = p[:-1]
+    return p
+
+
+def _merge_rows(K: Kind, con, items: list[dict]) -> list[dict]:
+    """区分の数字だけが違う届出（歯科外来診療感染対策加算１〜４、調剤基本料１・２・３イ…など）を1行にまとめる。
+    1行のチェックで中の区分をすべて、区分ごとのチェックで1つずつ選べる（「診療科から探す」と同じ形）。"""
+    fams: dict[str, list[dict]] = {}
+    for k in items:
+        fams.setdefault(_FAM.sub("", k["name"]), []).append(k)
+    rows = []
+    for key, ks in fams.items():
+        if len(ks) == 1:
+            k = ks[0]
+            rows.append({**k, "subs": [], "ids": [k["id"]]})
+            continue
+        names = [k["name"] for k in ks]
+        pre = _common_prefix(names)
+        suf = _common_prefix([n[len(pre):][::-1] for n in names])[::-1]
+        ks = sorted(ks, key=lambda k: _nat(k["name"][len(pre):len(k["name"]) - len(suf)]))
+        ids = [k["id"] for k in ks]
+        n = con.execute(f"SELECT COUNT(DISTINCT facility_id) FROM {K.t('filings')} WHERE kijun_id IN ({','.join('?' * len(ids))})",
+                        ids).fetchone()[0]
+        main = max(ks, key=lambda k: k["n_facilities"])
+        rows.append({"name": (pre + suf).rstrip("・（"), "id": ids[0], "ids": ids, "n_facilities": n,
+                     "desc": main["desc"] or next((k["desc"] for k in ks if k["desc"]), ""),
+                     "subs": [{**k, "label": k["name"][len(pre):len(k["name"]) - len(suf)] or "通常"} for k in ks]})
+    return rows
+
+
 def _prefs(K: Kind, con):
     return con.execute(f"SELECT * FROM {K.t('prefs')} ORDER BY code").fetchall()
 
@@ -169,6 +213,8 @@ def k_index(K: Kind, request: Request):
     c = YCond(request, K)   # 検索結果の「条件を変更する」から戻った時は条件を入れた状態で出す
     with A.db() as con:
         groups = _kijun_groups(K, con, all_other=False)
+        for g in groups:
+            g["rows"] = _merge_rows(K, con, g["items"])
         prefs = _prefs(K, con)
         n = con.execute(f"SELECT COUNT(*) FROM {K.t('fac')}").fetchone()[0]
         as_of = con.execute(f"SELECT MIN(as_of_label), MAX(as_of_label) FROM {K.t('prefs')}").fetchone()
