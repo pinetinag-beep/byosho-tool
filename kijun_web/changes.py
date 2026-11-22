@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 router = APIRouter()
-PAGE_SIZE = 100
+PAGE_SIZE = 50
 KINDS = ("新規", "変更", "取り下げ")
 
 

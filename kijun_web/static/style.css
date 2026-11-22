@@ -514,3 +514,20 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .sp-acc[hidden], .sp-toc a[hidden], .sp-acc tr[hidden] { display: none; }
 .sp-toc-head { display: flex; align-items: center; gap: 10px; }
 .sp-openall { font: inherit; font-size: 0.8rem; color: var(--brand-dark); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+
+/* 表の中のリンクは下線なし（行が多い一覧で下線が並ぶとうるさい）。指を置いた時だけ下線 */
+.table-wrap td a { text-decoration: none; }
+.table-wrap td a:hover { text-decoration: underline; }
+/* スマホ：表の1列目（名前）が1文字ずつ折り返さないように幅を確保し、表は横にスクロールさせる */
+@media (max-width: 640px) {
+  table.near td:first-child, table.results td:first-child, table.y-table td:first-child, #ktable td:first-child { min-width: 9.5em; }
+}
+.more-rows { display: block; margin: 10px auto 0; }
+.cond-summary .cs-edit { font-size: 0.85rem; font-weight: 700; margin-left: 4px; white-space: nowrap; }
+.table-wrap td:first-child > a { font-weight: 600; }
+@media (max-width: 640px) {
+  .pref-t th { white-space: normal; }
+  table.trend { min-width: 600px; }   /* 年度ごとの推移は列が多いので、詰めずに横にスクロール */
+  table.trend td { white-space: nowrap; }
+}
+.pref-t td:first-child { white-space: nowrap; }

@@ -23,9 +23,8 @@
   {% if sel_cols|length == 1 %}<span class="v">{% if sel_cols[0].kubun %}区分{% else %}届出項目{% endif %}：<abbr title="{{ sel_cols[0].title }}">{{ sel_cols[0].head }}</abbr></span>
   {% elif sel_cols %}<span class="v">{{ sel_cols|length }}件の{% if cond.mode == 'or' %}いずれか{% else %}すべて{% endif %}に当てはまる：
     {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+  <a class="cs-edit" href="/?{{ cond.query() }}">条件を変更する</a>
 </div>
-
-<p class="cm-edit"><a class="btn secondary" href="/?{{ cond.query() }}">検索条件を変更する</a></p>
 
 {% if matched_kubun %}
 <div class="callout small">

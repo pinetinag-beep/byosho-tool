@@ -44,17 +44,18 @@
 <h2>届出ごとの動き{% if pref %}（{{ pref.pref_name }}）{% endif %}</h2>
 <div class="table-wrap" data-ga-sec="changes_kijun"><table class="kd-sum">
   <thead><tr><th>届出</th><th class="num">新規</th><th class="num">区分変更</th><th class="num">取り下げ等</th></tr></thead>
-  <tbody>{% for k in by_kijun %}<tr>
+  <tbody>{% for k in by_kijun %}<tr{% if loop.index > 10 %} class="kd-more" hidden{% endif %}>
     <td><a href="{{ C.base }}?{{ c.query(kijun=k.name) }}">{{ k.name }}</a></td>
     <td class="num">{{ "{:,}".format(k.n_new) if k.n_new else "—" }}</td>
     <td class="num">{{ "{:,}".format(k.n_chg) if k.n_chg else "—" }}</td>
     <td class="num">{{ "{:,}".format(k.n_drop) if k.n_drop else "—" }}</td></tr>{% endfor %}</tbody>
 </table></div>
-<p class="small muted">件数の多い40の届出。区分変更は変更後の届出に数えています。ほかの届出は上の欄で名前を入れると探せます。</p>
+{% if by_kijun|length > 10 %}<button type="button" class="btn secondary more-rows" onclick="document.querySelectorAll('.kd-more').forEach(function(r){r.hidden=false});this.hidden=true">件数の多い{{ by_kijun|length }}の届出まで表示する</button>{% endif %}
+<p class="small muted">区分変更は変更後の届出に数えています。ほかの届出は上の欄で名前を入れると探せます。</p>
 
 {% if not pref %}
 <h2>都道府県ごと（前回→今回の名簿の時点）</h2>
-<div class="table-wrap" data-ga-sec="changes_pref"><table>
+<div class="table-wrap" data-ga-sec="changes_pref"><table class="pref-t">
   <thead><tr><th>都道府県</th><th>名簿の時点</th><th class="num">新規</th><th class="num">区分の変更</th><th class="num">取り下げ等</th></tr></thead>
   <tbody>{% for p in by_pref %}<tr><td><a href="{{ C.base }}?{{ c.query(pref=p.pref_code) }}">{{ p.pref_name }}</a></td>
     <td class="small nowrap">{{ month_label(p.prev_month) }}→{{ month_label(c.month) }}</td>
