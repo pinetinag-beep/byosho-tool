@@ -7,7 +7,6 @@
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="/kijun">施設基準の一覧</a> › {{ kj.name }}</p>
 <h1>{{ kj.name }}</h1>
-<p class="lead">この施設基準を届け出ている医療機関の数を、都道府県別にまとめました。都道府県名をクリックすると医療機関の一覧を見られます。</p>
 
 <div class="facts">
   <div class="fact"><div class="k">届出医療機関（全国）</div><div class="v">{{ "{:,}".format(kj.n_facilities) }} 件</div></div>
@@ -63,7 +62,7 @@
 
 {% if rel %}
 <h2>一緒に届け出られていることが多い施設基準</h2>
-<p class="small muted">「{{ kj.name }}」を届け出ている医療機関が、ほかに届け出ていることが多い施設基準です。（ ）内は両方を届け出ている医療機関の数。</p>
+<p class="small muted">（ ）内は両方を届け出ている医療機関の数。</p>
 <ul class="chips" data-ga-sec="kijun_related">{% for r in rel %}<li><a href="{{ kijun_url(r.name) }}">{{ r.name }}<span class="n">{{ "{:,}".format(r.n) }}</span></a></li>{% endfor %}</ul>
 {% endif %}
 

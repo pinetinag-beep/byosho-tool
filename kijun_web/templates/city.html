@@ -19,7 +19,7 @@
   <div class="fact"><div class="k">診療所</div><div class="v">{{ "{:,}".format(clinics|length) }} <small>件</small></div></div>
   <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
 </div>
-<p class="small muted">施設基準を届け出ている医療機関（保険医療機関）の一覧です。届出の内容や区分は、各医療機関のページで確認できます。条件で絞り込むなら<a href="/search?pref={{ pref.code }}&city={{ city|urlencode }}">検索</a>から。{% for K, n in sib %}{% if loop.first %}<br>{% endif %}<a href="{{ K.city_url(pref.name, city) }}" data-ga-sec="city_sib">{{ city }}の{{ K.word }}（{{ "{:,}".format(n) }}件）</a>{% if not loop.last %}　{% endif %}{% endfor %}</p>
+<p class="small muted">{% for K, n in sib %}<a href="{{ K.city_url(pref.name, city) }}" data-ga-sec="city_sib">{{ city }}の{{ K.word }}（{{ "{:,}".format(n) }}件）</a>{% if not loop.last %}　{% endif %}{% endfor %}</p>
 
 {% if hosp %}
 <h2>{{ city }}の病院（{{ hosp|length }}件）</h2>

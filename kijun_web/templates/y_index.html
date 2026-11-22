@@ -4,7 +4,7 @@
 {% block content %}
 {% with cur = K.x %}{% include "_kind_tabs.html" %}{% endwith %}
 <h1>{{ K.word }}を探す</h1>
-<p class="lead">全国{{ "{:,}".format(n_total) }}件の{{ K.word }}が地方厚生局に届け出ている施設基準（{{ K.topics }}）から、条件に合う{{ K.word }}のリストを作れます。届出は医科と同じ略称（受理記号）で並べ、「説明つき」に切り替えるとどんな届出かの説明が見られます。{% if kd_top and kd_top.month %}<a href="{{ K.base }}/changes" data-ga-sec="top_changes">{{ month_label(kd_top.month) }}の名簿で新たに届け出た{{ K.word }}（新規{{ "{:,}".format(kd_top.n_new) }}件）</a>も見られます。{% endif %}</p>
+<p class="lead">全国{{ "{:,}".format(n_total) }}件の{{ K.word }}が地方厚生局に届け出ている施設基準（{{ K.topics }}）から、条件に合う{{ K.word }}のリストを作れます。{% if kd_top and kd_top.month %}<a href="{{ K.base }}/changes" data-ga-sec="top_changes">{{ month_label(kd_top.month) }}の名簿で新たに届け出た{{ K.word }}（新規{{ "{:,}".format(kd_top.n_new) }}件）</a>も見られます。{% endif %}</p>
 
 <form id="sp" action="{{ K.base }}/search" method="get" autocomplete="off">
   <div class="sp-opts">
@@ -16,7 +16,6 @@
     <div class="sx-field"><span class="sx-flabel">チェックした届出を</span>
       <div class="ct-checks"><label><input type="radio" name="mode" value="or" {% if c.mode != "and" %}checked{% endif %}>いずれか届け出ている</label><label><input type="radio" name="mode" value="and" {% if c.mode == "and" %}checked{% endif %}>すべて届け出ている</label></div></div>
   </div>
-  <p class="hint">市区町村は、都道府県を選んで検索した後の画面で絞り込めます。届出を選ばずに検索すると、地域・名前だけで探せます。</p>
 
   <div class="yk-find">
     <label class="sx-field sx-grow"><span class="sx-flabel">届出を探す（略称・正式名称・説明）</span>
@@ -55,14 +54,13 @@
   </section>
   {% endfor %}
   </div>
-  <p class="muted small">略称は地方厚生局の名簿の受理記号です（カーソルを当てると正式名称と件数が出ます）。「説明つき」では区分（１・２など）だけが違う届出を1行にまとめ、件数を押すと都道府県別の数が見られます。</p>
 
   <div class="ct-bar">
     <span class="ct-count" id="sp-count">届出の指定なし</span>
     <button type="submit" class="btn">リストを抽出する</button>
   </div>
 </form>
-<div class="note small">「どんなものか」は、MedilenZが届出の内容を一般向けに短くまとめたもので、届出の要件（施設基準）そのものではありません。正式な定義は厚生労働省の告示・通知によります。</div>
+<p class="muted small">説明はMedilenZがまとめたもので、届出の要件そのものではありません。</p>
 
 <h2>都道府県から探す</h2>
 <ul class="pref-grid" data-ga-sec="{{ K.x }}_index_prefs">{% for p in prefs %}<li><a href="{{ K.pref_url(p.name) }}">{{ p.name }}<span class="muted small">（{{ "{:,}".format(p.n_facilities) }}）</span></a></li>{% endfor %}</ul>

@@ -43,7 +43,7 @@
   </tr>{% endfor %}</tbody>
 </table></div>
 {% endfor %}
-<p class="muted small">「どんなものか」はMedilenZが一般向けにまとめた説明で、届出の要件そのものではありません。</p>
+<p class="muted small">説明はMedilenZがまとめたもので、届出の要件そのものではありません。</p>
 {% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
 
 {% if kd %}
@@ -54,7 +54,7 @@
     <td class="nowrap"><span class="tag kd-{{ {'新規': 'new', '変更': 'chg', '取り下げ': 'drop'}[r.kind] }}">{{ {'新規': '新規', '変更': '区分の変更', '取り下げ': '取り下げ等'}[r.kind] }}</span></td>
     <td class="small">{% if r.kind == "変更" %}{{ r.prev_name }} → {% endif %}{{ r.kijun_name }}</td></tr>{% endfor %}</tbody>
 </table></div>
-<p class="small muted">前回と今回の地方厚生局の名簿を比べたものです（<a href="{{ K.base }}/changes">全国の{{ K.word }}の新規届出・取り下げ</a>）。</p>
+<p class="small"><a href="{{ K.base }}/changes">全国の{{ K.word }}の新規届出・取り下げ ›</a></p>
 {% endif %}
 
 {% if near %}

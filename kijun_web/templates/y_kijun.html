@@ -5,7 +5,7 @@
 <p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › {{ kj.name }}</p>
 <h1>{{ kj.name }}<span class="sym">{{ kj.symbol }}</span></h1>
 {% if desc %}<p class="summary">{{ desc }}</p>{% endif %}
-<p class="muted small">説明はMedilenZが一般向けにまとめたもので、届出の要件そのものではありません。正式な定義は厚生労働省の告示・通知によります。</p>
+<p class="muted small">説明はMedilenZがまとめたもので、届出の要件そのものではありません。</p>
 <div class="facts">
   <div class="fact"><div class="k">届け出ている{{ K.word }}（全国）</div><div class="v">{{ "{:,}".format(kj.n_facilities) }} <small>件</small></div></div>
   <div class="fact"><div class="k">施設基準の届出がある{{ K.word }}（全国）</div><div class="v">{{ "{:,}".format(n_total) }} <small>件</small></div></div>

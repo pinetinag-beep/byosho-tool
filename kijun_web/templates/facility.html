@@ -142,7 +142,7 @@
     {% for col in ['件数_手術有','件数_全身麻酔','件数_化学療法有','件数_放射線療法有','件数_救急車搬送有'] %}<td class="num">{{ "{:,}".format(t[col]) if t[col] is not none else '—' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}
-<p class="note small">※ DPC退院患者調査の件数は、DPC（診断群分類）のデータを提出している病院の、その年度の4月〜翌年3月に退院した患者の数です。病床機能報告とは対象の期間が異なります。</p>
+<p class="note small">※ DPC退院患者調査の件数は、その年度の4月〜翌年3月に退院した患者の数です（病床機能報告とは期間が異なります）。</p>
 <p class="source">出典：{{ d.sources }}（厚生労働省）（<a href="{{ mhlw_urls['DPC'] }}" rel="noopener">{{ mhlw_urls['DPC'] }}</a>）を加工して作成</p>
 {% endif %}
 
@@ -203,7 +203,7 @@
     <td class="nowrap"><span class="tag kd-{{ {'新規': 'new', '変更': 'chg', '取り下げ': 'drop'}[r.kind] }}">{{ {'新規': '新規', '変更': '区分の変更', '取り下げ': '取り下げ等'}[r.kind] }}</span></td>
     <td class="small">{% if r.kind == "変更" %}{{ r.prev_name }} → {% endif %}{{ r.kijun_name }}</td></tr>{% endfor %}</tbody>
 </table></div>
-<p class="small muted">前回と今回の地方厚生局の名簿を比べたものです（<a href="/changes">全国の新規届出・取り下げ</a>）。</p>
+<p class="small"><a href="/changes">全国の新規届出・取り下げ ›</a></p>
 {% endif %}
 
 {% if near.city_rows or near.area_rows %}
@@ -222,8 +222,8 @@
   <tbody>{% for r in near.area_rows %}<tr><td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td><td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td><td class="num">{{ r.n_kijun }}種類</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}
-<p class="muted small">許可病床数は厚生労働省「病床機能報告」（{{ meta.hstats_byosho_year and reiwa(meta.hstats_byosho_year|int) }}）による。病床機能報告と結びつけられなかった医療機関は「—」。病院を先に、病床数の多い順に並べています。</p>
+<p class="muted small">病院を先に病床数の多い順。許可病床数は厚生労働省「病床機能報告」（{{ meta.hstats_byosho_year and reiwa(meta.hstats_byosho_year|int) }}）による。</p>
 {% endif %}
 {% include "_ad.html" %}
-<p class="note small">区分・病棟の内訳は、一部の届出で公表されていない場合があります。その場合、一般病棟・療養病棟・障害者施設等などの入院基本料に限り、厚生労働省「病床機能報告」（{{ meta.kubun_ref_label }}の病棟の入院基本料）を加工して<span class="tag ref">参考</span>として補っています。算定開始日がそれより前の届出（出し直されていないもの）はほぼ一致しますが、その後に出し直された届出は区分が変わっている場合があります。最新の届出状況は各地方厚生局の公表資料でご確認ください。</p>
+<p class="note small"><span class="tag ref">参考</span>の区分は、区分が公表されていない届出に厚生労働省「病床機能報告」（{{ meta.kubun_ref_label }}の病棟の入院基本料）を加工して補った値です。その後に届出を出し直した場合は変わっていることがあります。</p>
 {% endblock %}

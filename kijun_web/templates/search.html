@@ -28,8 +28,7 @@
 
 {% if matched_kubun %}
 <div class="callout small">
-  「{{ cond.k }}」は施設基準の名称ではなく、入院基本料の<strong>区分</strong>です。次の区分に当てはまる医療機関を表示しています。
-  1つの区分だけに絞るには、名称をクリックしてください。
+  「{{ cond.k }}」は施設基準の名称ではなく、入院基本料の<strong>区分</strong>です。次の区分に当てはまる医療機関です（押すとその区分だけに絞れます）。
   <ul class="chips" style="margin-top:8px">
     {% for m in matched_kubun %}<li><a href="{{ kubun_url(m.id) }}">{{ m.name }}（{{ m.kijun }}）<span class="n">{{ "{:,}".format(m.n_facilities) }}</span></a></li>{% endfor %}
   </ul>
@@ -47,8 +46,7 @@
 
 {% if matched_kijun %}
 <div class="callout small">
-  「{{ cond.k }}」を含む施設基準 {{ matched_kijun|length }}{% if matched_kijun|length == 30 %}件以上{% else %}件{% endif %}のいずれかを届け出ている医療機関を表示しています。
-  特定の施設基準だけに絞るには、名称をクリックしてください。
+  「{{ cond.k }}」を含む施設基準 {{ matched_kijun|length }}{% if matched_kijun|length == 30 %}件以上{% else %}件{% endif %}のいずれかを届け出ている医療機関です（押すとその施設基準だけに絞れます）。
   <ul class="chips" style="margin-top:8px">
     {% for m in matched_kijun %}<li><a href="{{ narrow_url(m.name) }}">{{ m.name }}<span class="n">{{ "{:,}".format(m.n_facilities) }}</span></a></li>{% endfor %}
   </ul>

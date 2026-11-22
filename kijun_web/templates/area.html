@@ -20,7 +20,7 @@
   <div class="fact"><div class="k">許可病床数（病床機能報告の合計）</div><div class="v">{{ "{:,}".format(beds) }} <small>床</small></div></div>
   <div class="fact"><div class="k">医療機関（診療所を含む）</div><div class="v">{{ "{:,}".format(n_all) }} <small>件</small></div></div>
 </div>
-<p class="small muted">二次医療圏は、都道府県が入院医療の提供体制を考える単位として定めた地域です。圏内の市区町村：{% for c in cities %}<a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</p>
+<p class="small muted">圏内の市区町村：{% for c in cities %}<a href="{{ city_url(pref.name, c.city) }}">{{ c.city }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</p>
 
 {% if hosp %}
 <h2>{{ area }}医療圏の病院（{{ hosp|length }}件）</h2>

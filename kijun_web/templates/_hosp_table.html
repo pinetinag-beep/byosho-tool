@@ -10,4 +10,4 @@
     <td class="num">{% if r.dpc_total %}{{ "{:,}".format(r.dpc_total|int) }}件{% else %}—{% endif %}</td>
   </tr>{% endfor %}</tbody>
 </table></div>
-<p class="muted small">許可病床数・病床機能は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) if meta.hstats_byosho_year }}）、DPC退院患者数はDPC調査「退院患者調査」（{{ reiwa(meta.hstats_dpc_year|int) if meta.hstats_dpc_year }}、年間）を加工して作成。結びつけられなかった病院は「—」。病床数の多い順。</p>
+<p class="muted small">病床数の多い順。「—」はデータのない病院。出典：厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) if meta.hstats_byosho_year }}）・DPC調査「退院患者調査」（{{ reiwa(meta.hstats_dpc_year|int) if meta.hstats_dpc_year }}、年間）を加工して作成。</p>

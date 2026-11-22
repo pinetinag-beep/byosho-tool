@@ -48,7 +48,6 @@
           <input type="search" name="q" id="ct-q" value="{{ cond.q }}" placeholder="名前や住所の一部（例：近森、高知市）" role="combobox" aria-expanded="false" aria-controls="ct-sug">
           <ul class="sx-suggest" id="ct-sug" role="listbox" hidden></ul>
         </div>
-        <p class="ct-hint">名前を入れると候補が出ます。候補を選ぶとその医療機関の届出一覧が開きます。</p>
       </td>
     </tr>
   </table>
@@ -85,7 +84,7 @@
       <td><div class="ct-nums">
         {% for k, col, name, unit in h_nums %}<label><span>{{ name }}</span><input type="number" name="{{ k }}" min="0" step="{{ '0.1' if unit == '%' else '1' }}" inputmode="decimal" value="{{ fmt_num(cond.nums[k]) if k in cond.nums else '' }}"><em>{{ unit }}以上</em></label>{% endfor %}
       </div>
-      <p class="ct-hint">DPCの件数は、DPC（診断群分類）のデータを提出している病院の、その年度に退院した患者の数です。紹介率＝紹介患者数÷初診患者数（外来機能報告の定義）。</p></td>
+      <p class="ct-hint">DPCはその年度の退院患者数。紹介率＝紹介患者数÷初診患者数（外来機能報告の定義）。</p></td>
     </tr>
   </table>
   {% endif %}
