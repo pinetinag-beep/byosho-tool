@@ -143,8 +143,8 @@ templates.env.filters["jdate"] = jdate
 # CSSを変えた時にブラウザが古いCSSを使い続けないよう、URLに更新時刻を付ける
 templates.env.globals.update(y_url=ymod.y_url, y_pref_url=ymod.y_pref_url, y_city_url=ymod.y_city_url,
                              y_kijun_url=ymod.y_kijun_url, month_label=cmod.month_label)
-app.include_router(ymod.router)   # 薬局を探す（/yakkyoku/…）
-app.include_router(cmod.router)   # 新規届出・取り下げ（/changes）
+app.include_router(cmod.router)   # 新規届出・取り下げ（/changes・/shika/changes・/yakkyoku/changes。/shika/{id} より先に）
+app.include_router(ymod.router)   # 薬局・歯科を探す（/yakkyoku/…・/shika/…）
 templates.env.globals["css_version"] = int((HERE / "static" / "style.css").stat().st_mtime)
 templates.env.globals.update(
     kijun_url=kijun_url, facility_url=facility_url, city_url=city_url, area_url=area_url, streamlit_url=streamlit_url, streamlit_home=STREAMLIT_URL,
@@ -1442,8 +1442,13 @@ def sitemap_part(part: str):
     with db() as con:
         if part == "static":
             paths = ["/", "/guide", "/kijun", "/specialty", "/changes", "/about", "/operator", "/contact", "/privacy"]
-            for r in con.execute("SELECT DISTINCT pref_code FROM kdiff ORDER BY pref_code") if _has_kdiff(con) else []:
-                paths.append(f"/changes?pref={r[0]}")
+            for base, t in (("/changes", "kdiff"), ("/shika/changes", "d_kdiff"), ("/yakkyoku/changes", "y_kdiff")):
+                if not cmod.has_table(con, t):
+                    continue
+                if base != "/changes":
+                    paths.append(base)
+                for r in con.execute(f"SELECT DISTINCT pref_code FROM {t} ORDER BY pref_code"):
+                    paths.append(f"{base}?pref={r[0]}")
             paths += [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
             for r in con.execute(
                 """SELECT DISTINCT p.name AS pref, f.area, f.city FROM facilities f

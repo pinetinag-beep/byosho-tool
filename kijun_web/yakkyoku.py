@@ -172,7 +172,21 @@ def k_index(K: Kind, request: Request):
         prefs = _prefs(K, con)
         n = con.execute(f"SELECT COUNT(*) FROM {K.t('fac')}").fetchone()[0]
         as_of = con.execute(f"SELECT MIN(as_of_label), MAX(as_of_label) FROM {K.t('prefs')}").fetchone()
-    return A.render(request, "y_index.html", K=K, groups=groups, prefs=prefs, n_total=n, c=c, as_of=as_of)
+        kd_top = _kd_top(con, K)
+    return A.render(request, "y_index.html", K=K, groups=groups, prefs=prefs, n_total=n, c=c, as_of=as_of, kd_top=kd_top)
+
+
+def _has_kd(con, K: Kind) -> bool:
+    return bool(con.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (K.t("kdiff"),)).fetchone())
+
+
+def _kd_top(con, K: Kind):
+    """最新の月の新規届出・取り下げの件数（トップの案内用）。"""
+    if not _has_kd(con, K):
+        return None
+    t = K.t("kdiff")
+    return con.execute(f"""SELECT month, SUM(kind = '新規') AS n_new, SUM(kind = '取り下げ') AS n_drop FROM {t}
+                           WHERE month = (SELECT MAX(month) FROM {t})""").fetchone()
 
 
 def _count(con, K: Kind) -> int:
@@ -246,8 +260,16 @@ def k_kijun(K: Kind, request: Request, name: str):
             (kj["id"],)).fetchall()
         n_total = con.execute(f"SELECT COUNT(*) FROM {K.t('fac')}").fetchone()[0]
         groups = _kijun_groups(K, con, all_other=False)
+        kd = None
+        if _has_kd(con, K):
+            t = K.t("kdiff")
+            kd = con.execute(f"""SELECT month, SUM(kind = '新規') AS n_new, SUM(kind = '変更') AS n_chg,
+                                    SUM(kind = '取り下げ') AS n_drop FROM {t}
+                                 WHERE (kijun_name = ? OR prev_name = ?) AND month = (SELECT MAX(month) FROM {t})""",
+                             (kj["name"], kj["name"])).fetchone()
+            kd = kd if kd and kd["month"] else None
     return A.render(request, "y_kijun.html", K=K, kj=kj, desc=K.mod.DESC.get(kj["name"], ""), by_pref=by_pref,
-                    n_total=n_total, groups=groups)
+                    n_total=n_total, groups=groups, kd=kd)
 
 
 def k_pref(K: Kind, request: Request, pref_name: str):
@@ -315,6 +337,8 @@ def k_facility(K: Kind, request: Request, fid: str):
                WHERE f.pref_code = ? AND f.city = ? AND f.ftype = '病院'
                ORDER BY COALESCE(h.beds, 0) DESC, f.name LIMIT 10""",
             (f["pref_code"], f["city"])).fetchall() if f["city"] else []
+        kd = con.execute(f"SELECT * FROM {K.t('kdiff')} WHERE facility_id = ? ORDER BY month DESC, kind, kijun_name",
+                         (fid,)).fetchall() if _has_kd(con, K) else []
     filings = sorted(filings, key=lambda r: m.order_key(r["name"]))
     groups = []
     for key, label, _names in m.GROUPS + [(m.OTHER[0], m.OTHER[1], [])]:
@@ -322,7 +346,7 @@ def k_facility(K: Kind, request: Request, fid: str):
         if g:
             groups.append({"label": label, "rows": g})
     return A.render(request, "y_facility.html", K=K, f=f, pref=pref, groups=groups, n_filings=len(filings),
-                    near=near, n_near=n_near, hosp=hosp)
+                    near=near, n_near=n_near, hosp=hosp, kd=kd)
 
 
 def _register(K: Kind) -> None:

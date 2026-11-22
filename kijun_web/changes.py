@@ -1,11 +1,14 @@
-"""毎月の新規届出・取り下げ・区分の変更（/changes）。
+"""毎月の新規届出・取り下げ・区分の変更（病院・診療所 /changes、歯科 /shika/changes、薬局 /yakkyoku/changes）。
 
-データは build_kijun_diff.py が作る kijun_diff.parquet（前回と今回の名簿の比較）を、build_db._build_kdiff() が kdiff に入れたもの。
-都道府県ごとに名簿の時点が変わった県だけを比べているので、月によって対象の県が違う（月は「今回の名簿の時点」）。
+データは build_kijun_diff.py が作る kijun_diff*.parquet（前回と今回の名簿の比較）を、build_db._build_kdiff() が
+kdiff・d_kdiff・y_kdiff に入れたもの。都道府県ごとに名簿の時点が変わった県だけを比べているので、月によって対象の県が
+違う（月は「今回の名簿の時点」）。3種類は同じ関数・同じテンプレート（changes.html、テンプレートでは C）で出す。
 """
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from typing import Callable
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query, Request
@@ -19,6 +22,36 @@ KINDS = ("新規", "変更", "取り下げ")
 def _a():
     from . import app as A   # app.py がこのモジュールを読み込むので、使う時に読む
     return A
+
+
+@dataclass(frozen=True)
+class Cat:
+    key: str          # タブ・GA用
+    base: str         # URL
+    word: str         # 施設の呼び名
+    short: str        # タブの名前
+    table: str        # 比較結果のテーブル
+    fac: str          # 施設のテーブル（今の名簿にある施設）
+    facility_url: Callable[[str], str]
+    kijun_url: Callable[[str], str]
+    city_url: Callable[[str, str], str]
+    med: bool = False
+
+    def code10(self, r) -> str:   # 10桁の医療機関コード
+        return r["pref_code"] + "1" + r["facility_id"][2:] if self.med else r["facility_id"]
+
+
+def cats() -> list[Cat]:
+    A = _a()
+    from .yakkyoku import SHIKA, YAKKYOKU
+    return [Cat("med", "/changes", "病院・診療所", "病院・診療所", "kdiff", "facilities",
+                A.facility_url, A.kijun_url, A.city_url, med=True)] + [
+        Cat(K.x, f"{K.base}/changes", K.word, K.word, K.t("kdiff"), K.t("fac"), K.url, K.kijun_url, K.city_url)
+        for K in (SHIKA, YAKKYOKU)]
+
+
+def has_table(con, table: str) -> bool:
+    return bool(con.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (table,)).fetchone())
 
 
 def month_label(m: str) -> str:
@@ -66,72 +99,100 @@ class DCond:
         return bool(self.kind or self.q or self.kijun)
 
 
-def _pref_months(con) -> dict:
-    return dict(con.execute("SELECT pref_code, MAX(month) FROM kdiff GROUP BY pref_code").fetchall())
+def _pref_months(con, C: Cat) -> dict:
+    return dict(con.execute(f"SELECT pref_code, MAX(month) FROM {C.table} GROUP BY pref_code").fetchall())
 
 
-def _months(con) -> list[str]:
+def _months(con, C: Cat) -> list[str]:
     try:
-        return [r[0] for r in con.execute("SELECT DISTINCT month FROM kdiff ORDER BY month DESC")]
+        return [r[0] for r in con.execute(f"SELECT DISTINCT month FROM {C.table} ORDER BY month DESC")]
     except Exception:  # noqa: BLE001  （古いDB）
         return []
 
 
-_ROW_SQL = """SELECT k.*, f.id AS live_id, f.city FROM kdiff k LEFT JOIN facilities f ON f.id = k.facility_id"""
+def _row_sql(C: Cat) -> str:
+    return f"SELECT k.*, f.id AS live_id, f.city FROM {C.table} k LEFT JOIN {C.fac} f ON f.id = k.facility_id"
 
 
-@router.get("/changes", response_class=HTMLResponse)
-def changes(request: Request, page: int = Query(1, ge=1)):
+def _tabs(con, cur: Cat) -> list[dict]:
+    """ページ上のタブ（病院・診療所／歯科診療所／薬局）。最新の月の件数つき。"""
+    out = []
+    for C in cats():
+        n = con.execute(f"SELECT COUNT(*) FROM {C.table} WHERE month = (SELECT MAX(month) FROM {C.table})").fetchone()[0] \
+            if has_table(con, C.table) else 0
+        out.append({"C": C, "n": n, "cur": C.key == cur.key})
+    return out
+
+
+def changes(C: Cat, request: Request, page: int):
     A = _a()
     with A.db() as con:
-        months = _months(con)
-        c = DCond(request, months, _pref_months(con) if months else None)
+        months = _months(con, C)
+        c = DCond(request, months, _pref_months(con, C) if months else None)
+        tabs = _tabs(con, C)
         if not months:
-            return A.render(request, "changes.html", c=c, months=[], month_label=month_label, empty=True)
+            return A.render(request, "changes.html", C=C, tabs=tabs, c=c, months=[], month_label=month_label, empty=True)
         where, params = c.where(A.search_key)
-        total = con.execute(f"SELECT COUNT(*) FROM kdiff k{where}", params).fetchone()[0]
+        total = con.execute(f"SELECT COUNT(*) FROM {C.table} k{where}", params).fetchone()[0]
         pages = max(1, math.ceil(total / PAGE_SIZE))
         page = min(page, pages)
-        rows = con.execute(f"{_ROW_SQL}{where} ORDER BY k.pref_code, f.city, k.fac_name, k.kind LIMIT ? OFFSET ?",
+        rows = con.execute(f"{_row_sql(C)}{where} ORDER BY k.pref_code, f.city, k.fac_name, k.kind LIMIT ? OFFSET ?",
                            params + [PAGE_SIZE, (page - 1) * PAGE_SIZE]).fetchall()
         # 月全体（県で絞った時はその県）の集計
         base_w, base_p = "WHERE month = ?" + (" AND pref_code = ?" if c.pref else ""), [c.month] + ([c.pref] if c.pref else [])
-        counts = dict(con.execute(f"SELECT kind, COUNT(*) FROM kdiff {base_w} GROUP BY kind", base_p).fetchall())
+        counts = dict(con.execute(f"SELECT kind, COUNT(*) FROM {C.table} {base_w} GROUP BY kind", base_p).fetchall())
         fac_events = dict(con.execute(
-            f"SELECT fac_event, COUNT(DISTINCT facility_id) FROM kdiff {base_w} AND fac_event <> '' GROUP BY fac_event",
+            f"SELECT fac_event, COUNT(DISTINCT facility_id) FROM {C.table} {base_w} AND fac_event <> '' GROUP BY fac_event",
             base_p).fetchall())
         by_kijun = con.execute(f"""
             SELECT kijun_name AS name, kijun_id,
                    SUM(kind = '新規') AS n_new, SUM(kind = '変更') AS n_chg, SUM(kind = '取り下げ') AS n_drop
-            FROM kdiff {base_w} GROUP BY kijun_name ORDER BY COUNT(*) DESC LIMIT 40""", base_p).fetchall()
-        by_pref = con.execute("""
+            FROM {C.table} {base_w} GROUP BY kijun_name ORDER BY COUNT(*) DESC LIMIT 40""", base_p).fetchall()
+        by_pref = con.execute(f"""
             SELECT pref_code, pref_name, prev_month, SUM(kind = '新規') AS n_new, SUM(kind = '変更') AS n_chg,
                    SUM(kind = '取り下げ') AS n_drop
-            FROM kdiff WHERE month = ? GROUP BY pref_code ORDER BY pref_code""", (c.month,)).fetchall()
+            FROM {C.table} WHERE month = ? GROUP BY pref_code ORDER BY pref_code""", (c.month,)).fetchall()
         prefs = A._prefs(con)
     pref = next((p for p in by_pref if p["pref_code"] == c.pref), None)
     return A.render(
-        request, "changes.html", c=c, months=months, month_label=month_label, rows=rows, total=total, page=page,
+        request, "changes.html", C=C, tabs=tabs, c=c, months=months, month_label=month_label, rows=rows, total=total, page=page,
         pages=pages, counts=counts, fac_events=fac_events, by_kijun=by_kijun, by_pref=by_pref, prefs=prefs, pref=pref,
-        page_url=lambda p: "/changes?" + c.query(page=p if p > 1 else ""), csv_url="/changes.csv?" + c.query())
+        page_url=lambda p: f"{C.base}?" + c.query(page=p if p > 1 else ""), csv_url=f"{C.base}.csv?" + c.query())
 
 
-@router.get("/changes.csv")
-def changes_csv(request: Request):
+def changes_csv(C: Cat, request: Request):
     A = _a()
     con = A.sqlite3.connect(f"file:{A.DB_PATH}?mode=ro", uri=True, check_same_thread=False)
     con.row_factory = A.sqlite3.Row
-    months = _months(con)
-    c = DCond(request, months, _pref_months(con) if months else None)
+    months = _months(con, C)
+    c = DCond(request, months, _pref_months(con, C) if months else None)
     where, params = c.where(A.search_key)
-    rows = con.execute(f"{_ROW_SQL}{where} ORDER BY k.pref_code, f.city, k.fac_name, k.kind", params).fetchall()
+    rows = con.execute(f"{_row_sql(C)}{where} ORDER BY k.pref_code, f.city, k.fac_name, k.kind", params).fetchall()
     con.close()
-    header = ["名簿の時点（前回→今回）", "都道府県", "市区町村", "医療機関名", "所在地", "医療機関コード（10桁）", "施設の種類",
+    header = ["名簿の時点（前回→今回）", "都道府県", "市区町村", f"{'医療機関' if C.med else C.word}名", "所在地", "医療機関コード（10桁）", "施設の種類",
               "動き", "届出", "前の届出（区分の変更）", "受理記号", "受理番号", "算定開始年月日", "医療機関の動き"]
 
     def gen():
         for r in rows:
             yield [f"{month_label(r['prev_month'])}→{month_label(r['month'])}", r["pref_name"], r["city"] or "",
-                   r["fac_name"], r["address"], r["pref_code"] + "1" + r["facility_id"][2:], r["ftype"], r["kind"],
+                   r["fac_name"], r["address"], C.code10(r), r["ftype"], r["kind"],
                    r["kijun_name"], r["prev_name"], r["symbol"], r["juri_no"], r["start_date"] or "", r["fac_event"]]
-    return A._csv_response(header, gen(), f"施設基準の新規届出・取り下げ_{c.month}.csv")
+    name = "施設基準" if C.med else C.word
+    return A._csv_response(header, gen(), f"{name}の新規届出・取り下げ_{c.month}.csv")
+
+
+def _register(base: str, key: str) -> None:
+    def cat() -> Cat:
+        return next(C for C in cats() if C.key == key)
+
+    @router.get(base, response_class=HTMLResponse)
+    def page_(request: Request, page: int = Query(1, ge=1)):
+        return changes(cat(), request, page)
+
+    @router.get(base + ".csv")
+    def csv_(request: Request):
+        return changes_csv(cat(), request)
+
+
+for _b, _k in (("/changes", "med"), ("/shika/changes", "d"), ("/yakkyoku/changes", "y")):
+    _register(_b, _k)

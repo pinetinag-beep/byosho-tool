@@ -1,10 +1,13 @@
-"""施設基準届出（医科）の「前回の名簿」と「今回の名簿」を比べ、新規届出・取り下げ（失効・辞退など）・区分の変更を
-kijun_diff.parquet に足す（MedilenZ の /changes ページ用）。
+"""施設基準届出の「前回の名簿」と「今回の名簿」を比べ、新規届出・取り下げ（失効・辞退など）・区分の変更を
+kijun_diff*.parquet に足す（MedilenZ の /changes・/shika/changes・/yakkyoku/changes ページ用）。
 
-    python build_kijun_diff.py 旧.parquet            # 今の shisetsu_kijun_cache.parquet と比べる
+    python build_kijun_diff.py 旧.parquet                  # 医科：今の shisetsu_kijun_cache.parquet と比べる
     python build_kijun_diff.py 旧.parquet 新.parquet
+    python build_kijun_diff.py --kind 歯科 旧.parquet      # 歯科：今の shika_cache.parquet と比べる
+    python build_kijun_diff.py --kind 薬局 旧.parquet      # 薬局：今の yakkyoku_cache.parquet と比べる
 
-毎月の更新（fetch_kouseikyoku.py → build_shisetsu_kijun.py）の前に退避した shisetsu_kijun_cache.parquet を「旧」に渡す。
+毎月の更新（fetch_kouseikyoku.py → build_shisetsu_kijun.py / build_shika.py / build_yakkyoku.py）の前に退避した
+各 *_cache.parquet を「旧」に渡す。
 
 決まりごと:
 - 都道府県ごとに、名簿の時点（年月）が変わった県だけを比べる（同じ時点の名簿どうしは比べない。厚生局の出し直しなどで
@@ -27,8 +30,10 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
-NEW_DEFAULT = ROOT / "shisetsu_kijun_cache.parquet"
-OUT = ROOT / "kijun_diff.parquet"
+# 種類 → (今の名簿, 出力)
+KINDS = {"医科": (ROOT / "shisetsu_kijun_cache.parquet", ROOT / "kijun_diff.parquet"),
+         "歯科": (ROOT / "shika_cache.parquet", ROOT / "kijun_diff_shika.parquet"),
+         "薬局": (ROOT / "yakkyoku_cache.parquet", ROOT / "kijun_diff_yakkyoku.parquet")}
 COLS = ["都道府県コード", "都道府県名", "医療機関番号", "医療機関名称", "住所", "施設種別", "受理届出名称", "受理記号",
         "受理番号", "算定開始年月日", "年月"]
 KEY = ["都道府県名", "医療機関番号", "受理届出名称"]
@@ -43,8 +48,13 @@ def _base(name: str) -> str:
     return re.sub(r"[（(]\s*[)）]", "", _NUM.sub("", name))
 
 
-def _read(path: Path) -> pd.DataFrame:
-    d = pd.read_parquet(path, columns=COLS)
+def _read(path: Path, kind: str = "医科") -> pd.DataFrame:
+    if kind == "医科":
+        d = pd.read_parquet(path, columns=COLS)
+    else:   # 歯科・薬局の名簿は「時点」（2026-11-01）を持ち、施設種別は無い
+        d = pd.read_parquet(path, columns=[c for c in COLS if c not in ("年月", "施設種別")] + ["時点"])
+        d["年月"] = d["時点"].astype(str).str[:7]
+        d["施設種別"] = "歯科診療所" if kind == "歯科" else kind
     for c in COLS:
         d[c] = d[c].astype(str).replace({"nan": "", "None": ""})
     return d
@@ -93,12 +103,17 @@ def diff(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+    kind = "医科"
+    if args[:1] == ["--kind"] and len(args) > 1:
+        kind, args = args[1], args[2:]
+    if not args or kind not in KINDS:
         print(__doc__)
         return 1
-    old_p = Path(sys.argv[1])
-    new_p = Path(sys.argv[2]) if len(sys.argv) > 2 else NEW_DEFAULT
-    rows = diff(_read(old_p), _read(new_p))
+    new_default, OUT = KINDS[kind]
+    old_p = Path(args[0])
+    new_p = Path(args[1]) if len(args) > 1 else new_default
+    rows = diff(_read(old_p, kind), _read(new_p, kind))
     if OUT.exists():
         prev = pd.read_parquet(OUT)
         done = set(zip(rows["都道府県名"], rows["新年月"]))
@@ -109,7 +124,7 @@ def main() -> int:
     print(f"比べた都道府県（今回）: {cur['都道府県名'].nunique()}  "
           + "・".join(f"{k}{v:,}" for k, v in cur["種類"].value_counts().items()))
     print(f"医療機関の動き: " + "・".join(f"{k} {v:,}行" for k, v in cur["医療機関の動き"].value_counts().items() if k))
-    print(f"→ {OUT.name}（全{len(rows):,}行・{rows['新年月'].nunique()}か月分）")
+    print(f"［{kind}］→ {OUT.name}（全{len(rows):,}行・{rows['新年月'].nunique()}か月分）")
     return 0
 
 

@@ -4,7 +4,7 @@
 {% block content %}
 {% with cur = K.x %}{% include "_kind_tabs.html" %}{% endwith %}
 <h1>{{ K.word }}を探す</h1>
-<p class="lead">全国{{ "{:,}".format(n_total) }}件の{{ K.word }}が地方厚生局に届け出ている施設基準（{{ K.topics }}）から、条件に合う{{ K.word }}のリストを作れます。届出には説明を付けています。</p>
+<p class="lead">全国{{ "{:,}".format(n_total) }}件の{{ K.word }}が地方厚生局に届け出ている施設基準（{{ K.topics }}）から、条件に合う{{ K.word }}のリストを作れます。届出には説明を付けています。{% if kd_top and kd_top.month %}<a href="{{ K.base }}/changes" data-ga-sec="top_changes">{{ month_label(kd_top.month) }}の名簿で新たに届け出た{{ K.word }}（新規{{ "{:,}".format(kd_top.n_new) }}件）</a>も見られます。{% endif %}</p>
 
 <form id="sp" action="{{ K.base }}/search" method="get" autocomplete="off">
   <div class="sp-opts">

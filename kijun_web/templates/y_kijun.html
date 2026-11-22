@@ -11,6 +11,10 @@
   <div class="fact"><div class="k">施設基準の届出がある{{ K.word }}（全国）</div><div class="v">{{ "{:,}".format(n_total) }} <small>件</small></div></div>
 </div>
 <p><a class="btn" href="{{ K.base }}/search?item={{ kj.id }}">届け出ている{{ K.word }}のリストを見る</a></p>
+{% if kd and (kd.n_new or kd.n_chg or kd.n_drop) %}
+<p class="kd-box">{{ month_label(kd.month) }}の名簿で、新たに届け出た{{ K.word }} <b>{{ kd.n_new or 0 }}</b> 件・区分の変更 {{ kd.n_chg or 0 }} 件・取り下げ等 {{ kd.n_drop or 0 }} 件
+  <a href="{{ K.base }}/changes?kijun={{ kj.name|urlencode }}" data-ga-sec="kijun_changes">{{ K.word }}の一覧を見る</a></p>
+{% endif %}
 <h2>都道府県別</h2>
 <div class="table-wrap" data-ga-sec="{{ K.x }}_kijun_pref"><table>
   <thead><tr><th>都道府県</th><th class="num">届け出ている{{ K.word }}</th><th class="num">施設基準の届出がある{{ K.word }}</th></tr></thead>

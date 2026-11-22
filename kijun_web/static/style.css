@@ -456,3 +456,13 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
   .kd-table td:nth-child(4) { grid-column: 1 / 3; }
   .kd-table td:nth-child(5):empty { display: none; }
 }
+
+/* 新規届出・取り下げの種類（病院・診療所／歯科診療所／薬局） */
+.kd-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--brand); margin: 4px 0 18px; }
+.kd-tabs a { flex: 0 1 auto; padding: 8px 18px; text-decoration: none; color: var(--ink-muted); border: 1px solid var(--line);
+  border-bottom: none; border-radius: 8px 8px 0 0; margin-right: 4px; background: var(--card); font-size: .95rem; }
+.kd-tabs a:hover { border-color: var(--brand); color: var(--brand); }
+.kd-tabs a.cur, .kd-tabs a.cur:hover { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 600; }
+@media (max-width: 640px) { .kd-tabs a { flex: 1 1 0; text-align: center; padding: 8px 4px; font-size: .85rem; margin-right: 2px; } }
+.kd-sum td:first-child { min-width: 9em; }
+.kd-sum th.num { white-space: nowrap; }

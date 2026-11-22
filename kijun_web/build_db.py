@@ -53,6 +53,8 @@ YAKKYOKU_FETCHED = ROOT / "shisetsu_raw_yakkyoku" / "fetched.json"
 SHIKA = ROOT / "shika_cache.parquet"                        # 歯科の届出（build_shika.py が作る）
 SHIKA_FETCHED = ROOT / "shisetsu_raw_shika" / "fetched.json"
 KDIFF = ROOT / "kijun_diff.parquet"                         # 毎月の新規届出・取り下げ（build_kijun_diff.py が作る）
+KDIFF_SHIKA = ROOT / "kijun_diff_shika.parquet"             # 同・歯科（build_kijun_diff.py --kind 歯科）
+KDIFF_YAKKYOKU = ROOT / "kijun_diff_yakkyoku.parquet"       # 同・薬局（build_kijun_diff.py --kind 薬局）
 
 # 検索フォームで届出項目を並べる区分（略称一覧の見出しと同じ順）
 SECTION_ORDER = ["基本診療料", "特掲診療料", "入院時食事療養", "その他の届出", "先進医療"]
@@ -670,30 +672,31 @@ def _jlabel(iso: str) -> str:
         return ""
 
 
-def _build_kdiff(con) -> int:
-    """毎月の新規届出・取り下げ・区分の変更（kijun_diff.parquet）を kdiff に入れる（/changes ページ用）。
-    facility_id は医科の医療機関と同じ（都道府県コード2桁＋医療機関番号7桁）。名簿から無くなった医療機関は facilities に無い。"""
-    con.executescript("""
-        CREATE TABLE kdiff (month TEXT, prev_month TEXT, pref_code TEXT, pref_name TEXT, facility_id TEXT, fac_name TEXT,
+def _build_kdiff(con, table: str = "kdiff", path: Path = KDIFF, kijun_table: str = "kijun", digit: str = "") -> int:
+    """毎月の新規届出・取り下げ・区分の変更（kijun_diff*.parquet）を入れる（/changes・/shika/changes・/yakkyoku/changes 用）。
+    医科は kdiff（facility_id は都道府県コード2桁＋医療機関番号7桁）、歯科は d_kdiff・薬局は y_kdiff（間に「3」「4」を挟む10桁。
+    d_fac・y_fac の id と同じ）。名簿から無くなった医療機関は施設のテーブルに無い。"""
+    con.executescript(f"""
+        CREATE TABLE {table} (month TEXT, prev_month TEXT, pref_code TEXT, pref_name TEXT, facility_id TEXT, fac_name TEXT,
                             address TEXT, ftype TEXT, kind TEXT, kijun_name TEXT, prev_name TEXT, kijun_id INTEGER,
                             symbol TEXT, juri_no TEXT, start_date TEXT, fac_event TEXT);
     """)
-    if not KDIFF.exists():
+    if not path.exists():
         return 0
-    d = pd.read_parquet(KDIFF).fillna("")
-    d["facility_id"] = d["都道府県コード"].str.zfill(2) + d["医療機関番号"].str.zfill(7)
-    kid = dict(con.execute("SELECT name, id FROM kijun").fetchall())
+    d = pd.read_parquet(path).fillna("")
+    d["facility_id"] = d["都道府県コード"].str.zfill(2) + digit + d["医療機関番号"].str.zfill(7)
+    kid = dict(con.execute(f"SELECT name, id FROM {kijun_table}").fetchall())
     d["kijun_id"] = d["受理届出名称"].map(kid).astype("Int64")
     d["start_date"] = d["算定開始年月日"].map(wareki_to_iso)
     con.executemany(
-        "INSERT INTO kdiff VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         d[["新年月", "旧年月", "都道府県コード", "都道府県名", "facility_id", "医療機関名称", "住所", "施設種別", "種類",
            "受理届出名称", "前の届出名称", "kijun_id", "受理記号", "受理番号", "start_date", "医療機関の動き"]]
         .astype(object).where(d.notna(), None).itertuples(index=False, name=None))
-    con.executescript("""
-        CREATE INDEX ix_kd_month ON kdiff(month, pref_code);
-        CREATE INDEX ix_kd_fac ON kdiff(facility_id);
-        CREATE INDEX ix_kd_kijun ON kdiff(kijun_id, month);
+    con.executescript(f"""
+        CREATE INDEX ix_{table}_month ON {table}(month, pref_code);
+        CREATE INDEX ix_{table}_fac ON {table}(facility_id);
+        CREATE INDEX ix_{table}_kijun ON {table}(kijun_id, month);
     """)
     return len(d)
 
@@ -945,6 +948,8 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_yakkyoku = _build_yakkyoku(con)
     n_shika = _build_shika(con)
     n_kdiff = _build_kdiff(con)
+    n_kdiff_shika = _build_kdiff(con, "d_kdiff", KDIFF_SHIKA, "d_kijun", "3")
+    n_kdiff_yakkyoku = _build_kdiff(con, "y_kdiff", KDIFF_YAKKYOKU, "y_kijun", "4")
     con.executemany(
         "INSERT INTO kijun_pref VALUES (?,?,?)",
         kp[["kijun_id", "都道府県コード", "n"]].astype(object).itertuples(index=False, name=None),
@@ -966,6 +971,8 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_yakkyoku": str(n_yakkyoku),
         "n_shika": str(n_shika),
         "n_kdiff": str(n_kdiff),
+        "n_kdiff_shika": str(n_kdiff_shika),
+        "n_kdiff_yakkyoku": str(n_kdiff_yakkyoku),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",
         "item_order_agreement": f"{items.attrs.get('order_agreement', 0):.3f}",
         "area_unknown_facilities": str(int((fac["area"] == AREA_UNKNOWN).sum())),

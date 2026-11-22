@@ -545,3 +545,26 @@ def test_changes_pages():
     fid = con.execute("SELECT k.facility_id FROM kdiff k JOIN facilities f ON f.id = k.facility_id LIMIT 1").fetchone()[0]
     assert "届出の動き" in client.get(f"/facility/{fid}").text
     assert 'href="/changes"' in client.get("/").text
+
+
+def test_changes_shika_yakkyoku():
+    """歯科・薬局の新規届出・取り下げ（/shika/changes・/yakkyoku/changes）：件数・CSV・施設ページの「動き」・/shika/{id}と衝突しない。"""
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    con.row_factory = sqlite3.Row
+    for base, t, fac in (("/shika", "d_kdiff", "d_fac"), ("/yakkyoku", "y_kdiff", "y_fac")):
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (t,)).fetchone() or \
+                not con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]:
+            continue
+        month = con.execute(f"SELECT MAX(month) FROM {t}").fetchone()[0]
+        n_all = con.execute(f"SELECT COUNT(*) FROM {t} WHERE month = ?", (month,)).fetchone()[0]
+        r = client.get(f"{base}/changes")
+        assert r.status_code == 200 and 'class="cur" aria-current="page"' in r.text
+        assert int(re.search(r'class="count">([\d,]+) 件', r.text).group(1).replace(",", "")) == n_all
+        csv_text = client.get(f"{base}/changes.csv").content.decode("utf-8-sig")
+        import csv as _csv
+        import io
+        assert sum(1 for r in _csv.reader(io.StringIO(csv_text)) if len(r) > 5) == n_all + 1   # 末尾の出典の行は除く
+        fid = con.execute(f"SELECT k.facility_id FROM {t} k JOIN {fac} f ON f.id = k.facility_id LIMIT 1").fetchone()
+        if fid:
+            assert len(fid[0]) == 10 and "届出の動き" in client.get(f"{base}/{fid[0]}").text
