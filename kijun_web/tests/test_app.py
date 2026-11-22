@@ -571,14 +571,13 @@ def test_changes_shika_yakkyoku():
 
 
 def test_yk_index_merged_rows():
-    """歯科・薬局のトップ：区分だけ違う届出は1行にまとめ、区分ごとにも選べる（name="item" は区分ごと）。"""
+    """歯科・薬局のトップ：略称（受理記号）のチェックボックスで選び、「説明つき」の表は区分違いを1行にまとめて連動させる。"""
     for base in ("/shika", "/yakkyoku"):
         r = client.get(base)
         assert r.status_code == 200
-        if 'class="sp-grp"' not in r.text:
-            continue
-        assert 'id="yk-filter"' in r.text and "区分）" in r.text
-        # まとめた行の区分のチェックは、それぞれが検索に使える届出のid
-        ids = re.findall(r'name="item" value="(\d+)" data-grp=', r.text)
-        assert ids and all(i.isdigit() for i in ids)
+        ids = re.findall(r'name="item" value="(\d+)" data-label=', r.text)
+        assert ids and len(ids) == len(set(ids))   # 検索に送るチェックボックスは届出1つにつき1つ
+        assert 'id="yk-filter"' in r.text and 'data-view="d"' in r.text
+        for grp in re.findall(r'class="sp-grp" data-ids="([\d.]+)"', r.text):   # まとめた行の中身は略称の一覧にある
+            assert set(grp.split(".")) <= set(ids)
         assert client.get(f"{base}/search?item={ids[0]}").status_code == 200

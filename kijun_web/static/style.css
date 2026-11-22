@@ -476,3 +476,22 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .sp-table td.num a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-faint); }
 .sp-table td.num a:hover { color: var(--brand); border-color: var(--brand); }
 .ct-bar .ct-count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 歯科・薬局のトップ：表示のしかた（略称／正式名称／説明つき） */
+.yk-view { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.yk-view .sx-flabel { margin-right: 10px; }
+.yk-view button { font: inherit; font-size: 0.85rem; padding: 4px 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink-muted); cursor: pointer; margin-left: -1px; }
+.yk-view button:first-of-type { border-radius: 8px 0 0 8px; }
+.yk-view button:last-of-type { border-radius: 0 8px 8px 0; }
+.yk-view button.cur { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; position: relative; }
+.yk-list .yk-grid { margin: 6px 0 4px; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.yk-list .yk-desc { display: none; }
+.yk-list.view-d .yk-grid { display: none; }
+.yk-list.view-d .yk-desc { display: block; }
+.yk-list.view-f .yk-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.yk-list.view-f .yk-grid .s { display: none; }
+.yk-list.view-f .yk-grid .f { display: inline; font-size: 0.85rem; line-height: 1.5; }
+.yk-list.view-f .yk-grid label { align-items: flex-start; }
+.yk-list.view-f .yk-grid input { margin-top: 4px; }
+.yk-list .yk-grid label[hidden], .yk-list tr[hidden] { display: none; }
+.yk-sym { display: block; font-weight: 400; }
+@media (max-width: 760px) { .yk-list.view-f .yk-grid { grid-template-columns: 1fr; } }
