@@ -18,7 +18,6 @@
 </div>
 {% if loop.last and loop.index > navi_max %}</details>{% endif %}
 {% endfor %}
-{% if navi.url %}<p class="small">ホームページ：<a href="{{ navi.url }}" rel="nofollow noopener" target="_blank">{{ navi.url|truncate(60, true, "…") }}</a></p>{% endif %}
 <p class="note small">{{ '薬局' if kind_word == '薬局' else '医療機関' }}が都道府県に報告した内容で、変わっていることがあります。{{ '行く' if kind_word == '薬局' else '受診の' }}前に{{ '薬局' if kind_word == '薬局' else '医療機関' }}に確かめてください。</p>
 <p class="source">出典：「医療情報ネットのオープンデータ」（厚生労働省）（<a href="{{ mhlw_urls['医療情報ネット'] }}" rel="noopener">{{ mhlw_urls['医療情報ネット'] }}</a>）の{{ navi.as_of_label }}時点のデータを加工して作成</p>
 {% endif %}

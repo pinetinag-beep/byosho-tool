@@ -583,3 +583,9 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
 .pdf-link { margin: 12px 0 0; text-align: right; }
 .pdf-link .btn { font-size: 0.85rem; padding: 6px 14px; }
 @media (max-width: 640px) { .pdf-link { text-align: left; } }
+
+/* 医療機関名の下のホームページ（医療情報ネット） */
+.hp-link { margin: -4px 0 12px; font-size: 0.9rem; }
+.hp-link a { font-weight: 700; }
+.hp-link a::after { content: " ↗"; }
+.hp-link .u { margin-left: 8px; font-weight: 400; color: var(--ink-muted); font-size: 0.82rem; word-break: break-all; }

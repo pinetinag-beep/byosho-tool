@@ -123,10 +123,10 @@ def _qr(url: str, size: float) -> Drawing:
     return d
 
 
-def _header(name: str, sub: str, url: str):
+def _header(name: str, sub: str, url: str, hp: str = ""):
     qr = 26 * mm
     left = [Paragraph('<font color="#12886D">MedilenZ</font>', _st(9, BRAND, 12)), Spacer(1, 2),
-            _p(name, S_TITLE), Spacer(1, 3), _p(sub, S_SUB)]
+            _p(name, S_TITLE), Spacer(1, 3), _p(sub, S_SUB)] + ([_p(f"ホームページ：{hp}", S_SUB)] if hp else [])
     right = [_qr(url, qr), _p("スマホで読み取ると、このページの最新の内容を開けます", _st(6.2, MUTED, 8.5, alignment=1))]
     t = Table([[left, right]], colWidths=[BODY_W - qr - 8 * mm, qr + 8 * mm])
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -154,8 +154,6 @@ def _hours(navi: dict, word: str) -> list:
         block.append(_table([""] + list(days), rows, [1.1] + [2] * len(days), center_from=1))
         block.append(Spacer(1, 4))
         out.append(KeepTogether(block))
-    if navi.get("url"):
-        out.append(_p(f"ホームページ：{navi['url']}", S_SMALL))
     out.append(_p(f"{'薬局' if word == '薬局' else '医療機関'}が都道府県に報告した内容で、変わっていることがあります。"
                   f"{'行く' if word == '薬局' else '受診の'}前に確かめてください。", S_SMALL))
     out.append(_p(f"出典：「医療情報ネットのオープンデータ」（厚生労働省）（{navi['src_url']}）の"
@@ -190,7 +188,7 @@ def medical(c: dict, url: str, jdate, month_label, src_urls: dict) -> list:
     code10 = f"{f['pref_code']}1{f['code']}"
     area = f["area"] if f["area"] and not f["area"].startswith("（") else ""
     story = _header(f["name"], f"{f['ftype']}　{f['pref_name']}{f['address'] or ''}"
-                    + (f"（二次医療圏：{area}）" if area else ""), url)
+                    + (f"（二次医療圏：{area}）" if area else ""), url, (c["navi"] or {}).get("url", ""))
     story.append(_facts([("届け出ている施設基準", f"{f['n_kijun']} 種類"), ("医療機関コード（10桁）", code10),
                          (f"医療機関番号（{f['pref_name']}）", f["code"]), ("データ時点", c["pref"]["as_of_label"])]))
     story += _hours(c["navi"], "医療機関")
@@ -278,7 +276,7 @@ def medical(c: dict, url: str, jdate, month_label, src_urls: dict) -> list:
 # ── 歯科診療所・薬局 ───────────────────────────────────────
 def other(c: dict, url: str, jdate, month_label) -> list:
     K, f = c["K"], c["f"]
-    story = _header(f["name"], f"{K.word}　{f['pref_name']}{f['address'] or ''}", url)
+    story = _header(f["name"], f"{K.word}　{f['pref_name']}{f['address'] or ''}", url, (c["navi"] or {}).get("url", ""))
     story.append(_facts([(K.col1, K.v1(f["kihon"]) if f["kihon"] else "届出なし"),
                          (K.col2, K.v2(f["chiiki"]) if f["chiiki"] else "届出なし"),
                          ("医療機関コード（10桁）", f["id"]),

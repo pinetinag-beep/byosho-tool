@@ -602,6 +602,14 @@ def test_facility_pages_show_navi_hours():
     assert "営業時間" in p and ">営業<" in p
 
 
+def test_homepage_link_under_name():
+    """ホームページ（医療情報ネット）は医療機関名のすぐ下に出す。"""
+    with appmod.db() as con:
+        fid = con.execute("SELECT f.id FROM facilities f JOIN navi n ON n.facility_id = f.id WHERE n.url != '' LIMIT 1").fetchone()[0]
+    html = _get(f"/facility/{fid}")
+    assert html.index('class="hp-link"') < html.index('class="summary"')
+
+
 def test_facility_pdf_with_qr():
     """医科・歯科・薬局のページをPDFで出せる（ページへのリンクボタンがあり、robots.txtで巡回させない）。"""
     with appmod.db() as con:

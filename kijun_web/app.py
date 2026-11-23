@@ -977,7 +977,8 @@ def navi_ctx(con, fid: str) -> dict | None:
     return {"specs": [x for x in (r["specs"] or "").split("｜") if x], "groups": groups,
             "days": days, "closed": closed_label, "other": r["other_holiday"] or "",
             "url": r["url"] or "", "as_of": as_of, "as_of_label": jdate(as_of) if as_of else "",
-            "src_url": MHLW_URLS.get("医療情報ネット", "")}
+            "src_url": MHLW_URLS.get("医療情報ネット", ""),
+            "url_label": re.sub(r"^https?://", "", r["url"] or "").rstrip("/")}
 
 
 def meta_value(con, key: str) -> str:
