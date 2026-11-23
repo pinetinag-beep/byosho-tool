@@ -563,3 +563,18 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
   table.hours th, table.hours td { font-size: 0.72rem; padding: 4px 1px; }
   table.hours thead th:first-child, table.hours tbody th { width: 2.4em; }
 }
+
+/* 医療機関ページのタブ */
+.ftabs { display: flex; gap: 4px; margin: 28px 0 0; border-bottom: 2px solid var(--line); overflow-x: auto; }
+.ftabs [role="tab"] { appearance: none; border: 0; background: none; font: inherit; font-weight: 700; color: var(--ink-muted);
+  padding: 10px 16px; margin-bottom: -2px; border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap; }
+.ftabs [role="tab"][aria-selected="true"] { color: var(--brand-dark); border-bottom-color: var(--brand); }
+.ftabs [role="tab"]:hover { color: var(--ink); }
+.ftabs .n { display: inline-block; margin-left: 6px; font-size: 0.75rem; font-weight: 700; padding: 0 7px; border-radius: 999px;
+  background: var(--brand-soft); color: var(--brand-dark); }
+.ftab-panel > h2:first-child, .ftab-panel > .result-head:first-child { margin-top: 18px; }
+@media (max-width: 640px) {
+  .ftabs { gap: 0; }
+  .ftabs [role="tab"] { flex: 1 1 auto; padding: 10px 4px; font-size: 0.82rem; letter-spacing: 0; }
+  .ftabs .n { margin-left: 3px; padding: 0 5px; font-size: 0.68rem; }
+}

@@ -595,6 +595,8 @@ def test_facility_pages_show_navi_hours():
     assert 'id="hours"' in html and "休診日" in html and 'class="hours"' in html
     assert "医療情報ネットのオープンデータ" in html and "の診療時間・診療科・施設基準" in html
     assert "http://https" not in html
+    # 診療時間と施設基準はタブで分ける（パネルは両方HTMLに入っている）
+    assert 'data-tab="hours"' in html and 'data-panel="hours"' in html and 'data-panel="kijun"' in html
     assert 'id="hours"' in _get(f"/shika/{dent}")
     p = _get(f"/yakkyoku/{pharm}")
     assert "営業時間" in p and ">営業<" in p

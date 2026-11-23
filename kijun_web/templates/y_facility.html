@@ -30,8 +30,17 @@
   <div class="fact"><div class="k">医療機関コード（10桁）</div><div class="v small">{{ f.id }}</div></div>
 </div>
 
+{% if navi %}
+<nav class="ftabs" role="tablist" data-tabs>
+  <button type="button" role="tab" data-tab="hours">{{ "営業時間" if K.x == "y" else "診療時間・診療科" }}</button>
+  <button type="button" role="tab" data-tab="kijun">施設基準<span class="n">{{ n_filings }}</span></button>
+</nav>
+<section class="ftab-panel" data-panel="hours">
 {% with navi_max = 4, kind_word = K.word %}{% include "_navi.html" %}{% endwith %}
+</section>
+{% endif %}
 
+<section class="ftab-panel" data-panel="kijun">
 <h2>届け出ている施設基準（{{ n_filings }}種類）</h2>
 {% for g in groups %}
 <h3>{{ g.label }}</h3>
@@ -58,6 +67,7 @@
 </table></div>
 <p class="small"><a href="{{ K.base }}/changes">全国の{{ K.word }}の新規届出・取り下げ ›</a></p>
 {% endif %}
+</section>
 
 {% if near %}
 <h2>{{ f.city }}のほかの{{ K.word }}</h2>

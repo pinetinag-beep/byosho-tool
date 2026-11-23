@@ -57,8 +57,57 @@
   <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
 </div>
 
-{% with navi_max = 4, kind_word = "医療機関" %}{% include "_navi.html" %}{% endwith %}
+{%- set has_beds = byosho or dpc or gairai -%}
+{%- set has_hours = navi is not none -%}
+{% if has_hours or has_beds %}
+<nav class="ftabs" role="tablist" data-tabs>
+  {% if has_hours %}<button type="button" role="tab" data-tab="hours">診療時間・診療科</button>{% endif %}
+  <button type="button" role="tab" data-tab="kijun">施設基準<span class="n">{{ f.n_kijun }}</span></button>
+  {% if has_beds %}<button type="button" role="tab" data-tab="beds">病床・診療実績</button>{% endif %}
+</nav>
+{% endif %}
 
+{% if has_hours %}<section class="ftab-panel" data-panel="hours">
+{% with navi_max = 4, kind_word = "医療機関" %}{% include "_navi.html" %}{% endwith %}
+</section>{% endif %}
+
+<section class="ftab-panel" data-panel="kijun">
+<div class="result-head">
+  <h2 style="margin:0">施設基準の届出一覧</h2>
+  <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>
+</div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>施設基準（受理届出名称）</th><th>区分・内訳</th><th>病棟・病床</th><th>算定開始日</th><th>受理番号</th></tr></thead>
+  <tbody>
+  {% for x in filings %}
+    {% if loop.first or x.section != loop.previtem.section %}<tr class="sec-row"><th colspan="5">{{ x.section }}</th></tr>{% endif %}
+    <tr>
+      <td><a href="{{ kijun_url(x.kijun, f.pref_name) }}">{{ x.kijun }}</a> <span class="sym">{{ x.symbol }}</span></td>
+      <td>{% if x.kubun %}{{ x.kubun }}{% elif x.kubun_ref %}<span class="kubun-ref"><span class="tag ref">参考</span>{{ x.kubun_ref }}</span><br><span class="muted small">病床機能報告（{{ meta.kubun_ref_label }}）より{% set note = kubun_ref_note(x.kubun_ref, x.start_date, meta.kubun_ref_date) %}{% if note == "likely_changed" %}。この届出はその後に出し直されており、令和8年度改定で区分の体系が変わったため、現在は別の区分（急性期病院Ａ/Ｂ一般入院料など）の可能性が高い{% elif note == "changed" %}。この届出はその後に出し直されているため、区分が変わっている場合があります{% endif %}</span>{% endif %}{% if (x.kubun or x.kubun_ref) and x.other %}<br>{% endif %}<span class="muted small">{{ x.other }}</span></td>
+      <td class="small">{{ x.byoto }}{% if x.byosho_kubun %} {{ x.byosho_kubun }}{% endif %}{% if x.n_byoto %} {{ x.n_byoto }}病棟{% endif %}{% if x.n_byosho %} {{ x.n_byosho }}床{% endif %}</td>
+      <td class="nowrap">{{ x.start_date|jdate or x.start_raw }}</td>
+      <td class="nowrap">{{ x.symbol }}{{ x.juri_no }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
+
+{% if kd %}
+<h2>届出の動き（毎月の名簿の比較）</h2>
+<div class="table-wrap" data-ga-sec="facility_changes"><table>
+  <thead><tr><th>名簿の時点</th><th>動き</th><th>届出</th></tr></thead>
+  <tbody>{% for r in kd %}<tr><td class="small nowrap">{{ month_label(r.prev_month) }}→{{ month_label(r.month) }}</td>
+    <td class="nowrap"><span class="tag kd-{{ {'新規': 'new', '変更': 'chg', '取り下げ': 'drop'}[r.kind] }}">{{ {'新規': '新規', '変更': '区分の変更', '取り下げ': '取り下げ等'}[r.kind] }}</span></td>
+    <td class="small">{% if r.kind == "変更" %}{{ r.prev_name }} → {% endif %}{{ r.kijun_name }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="small"><a href="/changes">全国の新規届出・取り下げ ›</a></p>
+{% endif %}
+</section>
+
+{% if has_beds %}<section class="ftab-panel" data-panel="beds">{% endif %}
 {% if byosho %}{% set b = byosho %}
 <h2>病床・人員・設備（病床機能報告）</h2>
 <p class="muted small">{{ b.label }}（{{ b.year }}年7月1日時点）の病床機能報告による。{% if b.name != f.name %}病床機能報告での名称：{{ b.name }}{% endif %}</p>
@@ -177,39 +226,7 @@
 <p class="source">出典：「外来機能報告」（厚生労働省）（<a href="{{ mhlw_urls['外来機能報告'] }}" rel="noopener">{{ mhlw_urls['外来機能報告'] }}</a>）の{{ g.years }}分を加工して作成</p>
 {% endif %}
 
-<div class="result-head">
-  <h2 style="margin:0">施設基準の届出一覧</h2>
-  <a class="btn secondary" href="/facility/{{ f.id }}.csv">CSVダウンロード（無料）</a>
-</div>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>施設基準（受理届出名称）</th><th>区分・内訳</th><th>病棟・病床</th><th>算定開始日</th><th>受理番号</th></tr></thead>
-  <tbody>
-  {% for x in filings %}
-    {% if loop.first or x.section != loop.previtem.section %}<tr class="sec-row"><th colspan="5">{{ x.section }}</th></tr>{% endif %}
-    <tr>
-      <td><a href="{{ kijun_url(x.kijun, f.pref_name) }}">{{ x.kijun }}</a> <span class="sym">{{ x.symbol }}</span></td>
-      <td>{% if x.kubun %}{{ x.kubun }}{% elif x.kubun_ref %}<span class="kubun-ref"><span class="tag ref">参考</span>{{ x.kubun_ref }}</span><br><span class="muted small">病床機能報告（{{ meta.kubun_ref_label }}）より{% set note = kubun_ref_note(x.kubun_ref, x.start_date, meta.kubun_ref_date) %}{% if note == "likely_changed" %}。この届出はその後に出し直されており、令和8年度改定で区分の体系が変わったため、現在は別の区分（急性期病院Ａ/Ｂ一般入院料など）の可能性が高い{% elif note == "changed" %}。この届出はその後に出し直されているため、区分が変わっている場合があります{% endif %}</span>{% endif %}{% if (x.kubun or x.kubun_ref) and x.other %}<br>{% endif %}<span class="muted small">{{ x.other }}</span></td>
-      <td class="small">{{ x.byoto }}{% if x.byosho_kubun %} {{ x.byosho_kubun }}{% endif %}{% if x.n_byoto %} {{ x.n_byoto }}病棟{% endif %}{% if x.n_byosho %} {{ x.n_byosho }}床{% endif %}</td>
-      <td class="nowrap">{{ x.start_date|jdate or x.start_raw }}</td>
-      <td class="nowrap">{{ x.symbol }}{{ x.juri_no }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-{% with p = pref %}{% include "_kijun_source.html" %}{% endwith %}
-
-{% if kd %}
-<h2>届出の動き（毎月の名簿の比較）</h2>
-<div class="table-wrap" data-ga-sec="facility_changes"><table>
-  <thead><tr><th>名簿の時点</th><th>動き</th><th>届出</th></tr></thead>
-  <tbody>{% for r in kd %}<tr><td class="small nowrap">{{ month_label(r.prev_month) }}→{{ month_label(r.month) }}</td>
-    <td class="nowrap"><span class="tag kd-{{ {'新規': 'new', '変更': 'chg', '取り下げ': 'drop'}[r.kind] }}">{{ {'新規': '新規', '変更': '区分の変更', '取り下げ': '取り下げ等'}[r.kind] }}</span></td>
-    <td class="small">{% if r.kind == "変更" %}{{ r.prev_name }} → {% endif %}{{ r.kijun_name }}</td></tr>{% endfor %}</tbody>
-</table></div>
-<p class="small"><a href="/changes">全国の新規届出・取り下げ ›</a></p>
-{% endif %}
+{% if has_beds %}</section>{% endif %}
 
 {% if near.city_rows or near.area_rows %}
 <h2>近くの医療機関</h2>
