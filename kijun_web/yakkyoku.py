@@ -360,19 +360,43 @@ def k_city(K: Kind, request: Request, pref_name: str, city: str):
                     area=rows[0]["area"], sib=[(k, n) for k, n in sib if n])
 
 
-def k_facility(K: Kind, request: Request, fid: str):
-    A = _a()
+def _k_data(K: Kind, con, fid: str) -> dict:
+    """歯科・薬局のページとPDFで使う中身。"""
     if not (len(fid) == 10 and fid.isdigit()):
         raise HTTPException(404)
     m = K.mod
+    f = con.execute(f"SELECT * FROM {K.t('fac')} WHERE id = ?", (fid,)).fetchone()
+    if not f:
+        raise HTTPException(404)
+    filings = con.execute(
+        f"""SELECT k.name, fl.symbol, fl.juri_no, fl.start_date FROM {K.t('filings')} fl
+           JOIN {K.t('kijun')} k ON k.id = fl.kijun_id WHERE fl.facility_id = ?""", (fid,)).fetchall()
+    filings = sorted(filings, key=lambda r: m.order_key(r["name"]))
+    groups = []
+    for key, label, _names in m.GROUPS + [(m.OTHER[0], m.OTHER[1], [])]:
+        g = [dict(r, desc=m.DESC.get(r["name"], "")) for r in filings if m.group_of(r["name"]) == key]
+        if g:
+            groups.append({"label": label, "rows": g})
+    return {"K": K, "f": f, "groups": groups, "n_filings": len(filings),
+            "pref": con.execute(f"SELECT * FROM {K.t('prefs')} WHERE code = ?", (f["pref_code"],)).fetchone(),
+            "kd": con.execute(f"SELECT * FROM {K.t('kdiff')} WHERE facility_id = ? ORDER BY month DESC, kind, kijun_name",
+                              (fid,)).fetchall() if _has_kd(con, K) else [],
+            "navi": _a().navi_ctx(con, fid)}
+
+
+def k_facility_pdf(K: Kind, fid: str):
+    A = _a()
     with A.db() as con:
-        f = con.execute(f"SELECT * FROM {K.t('fac')} WHERE id = ?", (fid,)).fetchone()
-        if not f:
-            raise HTTPException(404)
-        pref = con.execute(f"SELECT * FROM {K.t('prefs')} WHERE code = ?", (f["pref_code"],)).fetchone()
-        filings = con.execute(
-            f"""SELECT k.name, fl.symbol, fl.juri_no, fl.start_date FROM {K.t('filings')} fl
-               JOIN {K.t('kijun')} k ON k.id = fl.kijun_id WHERE fl.facility_id = ?""", (fid,)).fetchall()
+        c = _k_data(K, con, fid)
+    url = A.SITE_URL + K.url(fid)
+    return A.pdf_response(lambda pm: pm.other(c, url, A.jdate, A.cmod.month_label), c["f"]["name"], f"{c['f']['name']}.pdf")
+
+
+def k_facility(K: Kind, request: Request, fid: str):
+    A = _a()
+    with A.db() as con:
+        c = _k_data(K, con, fid)
+        f = c["f"]
         near = con.execute(
             f"SELECT id, name, kihon, n_kijun FROM {K.t('fac')} WHERE pref_code = ? AND city = ? AND id <> ? ORDER BY name LIMIT 20",
             (f["pref_code"], f["city"], fid)).fetchall() if f["city"] else []
@@ -383,17 +407,7 @@ def k_facility(K: Kind, request: Request, fid: str):
                WHERE f.pref_code = ? AND f.city = ? AND f.ftype = '病院'
                ORDER BY COALESCE(h.beds, 0) DESC, f.name LIMIT 10""",
             (f["pref_code"], f["city"])).fetchall() if f["city"] else []
-        kd = con.execute(f"SELECT * FROM {K.t('kdiff')} WHERE facility_id = ? ORDER BY month DESC, kind, kijun_name",
-                         (fid,)).fetchall() if _has_kd(con, K) else []
-        navi = A.navi_ctx(con, fid)
-    filings = sorted(filings, key=lambda r: m.order_key(r["name"]))
-    groups = []
-    for key, label, _names in m.GROUPS + [(m.OTHER[0], m.OTHER[1], [])]:
-        g = [dict(r, desc=m.DESC.get(r["name"], "")) for r in filings if m.group_of(r["name"]) == key]
-        if g:
-            groups.append({"label": label, "rows": g})
-    return A.render(request, "y_facility.html", K=K, f=f, pref=pref, groups=groups, n_filings=len(filings),
-                    near=near, n_near=n_near, hosp=hosp, kd=kd, navi=navi)
+    return A.render(request, "y_facility.html", near=near, n_near=n_near, hosp=hosp, **c)
 
 
 def _register(K: Kind) -> None:
@@ -427,6 +441,10 @@ def _register(K: Kind) -> None:
     router.add_api_route(f"{b}/kijun/{{name}}", kijun, **html)
     router.add_api_route(f"{b}/pref/{{pref_name}}", pref, **html)
     router.add_api_route(f"{b}/city/{{pref_name}}/{{city}}", city, **html)
+    def facility_pdf(fid: str):
+        return k_facility_pdf(K, fid)
+
+    router.add_api_route(f"{b}/{{fid}}.pdf", facility_pdf, methods=["GET"])   # 「{fid}」より先に
     router.add_api_route(f"{b}/{{fid}}", facility, **html)
 
 

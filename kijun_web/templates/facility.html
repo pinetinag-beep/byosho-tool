@@ -56,6 +56,7 @@
   <div class="fact"><div class="k">医療機関番号（{{ f.pref_name }}）</div><div class="v">{{ f.code }}</div></div>
   <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
 </div>
+<p class="pdf-link"><a class="btn secondary" href="/facility/{{ f.id }}.pdf" target="_blank" rel="nofollow" data-pdf>PDFで保存（QRコード付き）</a></p>
 
 {%- set has_beds = byosho or dpc or gairai -%}
 {%- set has_hours = navi is not none -%}

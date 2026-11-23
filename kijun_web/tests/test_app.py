@@ -600,3 +600,18 @@ def test_facility_pages_show_navi_hours():
     assert 'id="hours"' in _get(f"/shika/{dent}")
     p = _get(f"/yakkyoku/{pharm}")
     assert "営業時間" in p and ">営業<" in p
+
+
+def test_facility_pdf_with_qr():
+    """医科・歯科・薬局のページをPDFで出せる（ページへのリンクボタンがあり、robots.txtで巡回させない）。"""
+    with appmod.db() as con:
+        fid = con.execute("SELECT id FROM facilities WHERE byosho_code IS NOT NULL LIMIT 1").fetchone()[0]
+        dent = con.execute("SELECT id FROM d_fac LIMIT 1").fetchone()[0]
+        pharm = con.execute("SELECT id FROM y_fac LIMIT 1").fetchone()[0]
+    for path in (f"/facility/{fid}.pdf", f"/shika/{dent}.pdf", f"/yakkyoku/{pharm}.pdf"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["content-type"] == "application/pdf", path
+        assert r.content.startswith(b"%PDF") and b"/FontFile2" in r.content   # 日本語フォントを埋め込んでいる
+    assert f'href="/facility/{fid}.pdf"' in client.get(f"/facility/{fid}").text
+    assert client.get("/facility/000000000.pdf").status_code == 404
+    assert "Disallow: /*.pdf" in client.get("/robots.txt").text

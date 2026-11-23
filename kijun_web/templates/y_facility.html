@@ -29,6 +29,7 @@
   <div class="fact"><div class="k">{{ K.col2 }}</div><div class="v small">{{ K.v2(f.chiiki) if f.chiiki else "届出なし" }}</div></div>
   <div class="fact"><div class="k">医療機関コード（10桁）</div><div class="v small">{{ f.id }}</div></div>
 </div>
+<p class="pdf-link"><a class="btn secondary" href="{{ K.url(f.id) }}.pdf" target="_blank" rel="nofollow" data-pdf>PDFで保存（QRコード付き）</a></p>
 
 {% if navi %}
 <nav class="ftabs" role="tablist" data-tabs>

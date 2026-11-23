@@ -903,28 +903,50 @@ def facility_csv(fid: str):
     return _csv_response(FACILITY_COLS + FILING_COLS, rows, f"施設基準届出_{f[0]}.csv")
 
 
+def _facility_data(con, fid: str) -> dict:
+    """医療機関ページとPDFで使う中身。"""
+    f = con.execute("SELECT * FROM facilities WHERE id = ?", (fid,)).fetchone()
+    if not f:
+        raise HTTPException(404)
+    # 厚生局の名簿と同じ順（基本診療料→特掲診療料…、各区分の中は略称一覧の順）に並べる
+    filings = con.execute(
+        """SELECT kj.name AS kijun, COALESCE(i.section, 'その他の届出') AS section, x.*
+           FROM filings x JOIN kijun kj ON kj.id = x.kijun_id LEFT JOIN items i ON i.id = x.item_id
+           WHERE x.facility_id = ? ORDER BY COALESCE(i.id, 1e9), x.start_date""",
+        (fid,),
+    ).fetchall()
+    return {"f": f, "filings": filings,
+            "pref": con.execute("SELECT * FROM prefs WHERE code = ?", (f["pref_code"],)).fetchone(),
+            "byosho": _byosho_ctx(con, f["byosho_code"]), "dpc": _dpc_ctx(con, f["byosho_code"]),
+            "gairai": _gairai_ctx(con, fid), "kd": _kdiff_rows(con, "facility_id = ?", (fid,)),
+            "navi": navi_ctx(con, fid)}
+
+
+def pdf_response(story_fn, title: str, filename: str) -> Response:
+    """施設ページのPDF。ファイル名は日本語のままダウンロードされるよう RFC 5987 で渡す。"""
+    from . import facility_pdf
+    data = facility_pdf.render(story_fn(facility_pdf), title, SITE_URL)
+    return Response(data, media_type="application/pdf", headers={
+        "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
+        "X-Robots-Tag": "noindex", "Cache-Control": "public, max-age=3600"})
+
+
+# 「/facility/{fid}」より先に定義すること
+@app.get("/facility/{fid}.pdf")
+def facility_pdf(fid: str):
+    with db() as con:
+        c = _facility_data(con, fid)
+    url = SITE_URL + facility_url(fid)
+    return pdf_response(lambda m: m.medical(c, url, jdate, cmod.month_label, MHLW_URLS),
+                        c["f"]["name"], f"{c['f']['name']}.pdf")
+
+
 @app.get("/facility/{fid}", response_class=HTMLResponse)
 def facility(request: Request, fid: str):
     with db() as con:
-        f = con.execute("SELECT * FROM facilities WHERE id = ?", (fid,)).fetchone()
-        if not f:
-            raise HTTPException(404)
-        # 厚生局の名簿と同じ順（基本診療料→特掲診療料…、各区分の中は略称一覧の順）に並べる
-        filings = con.execute(
-            """SELECT kj.name AS kijun, COALESCE(i.section, 'その他の届出') AS section, x.*
-               FROM filings x JOIN kijun kj ON kj.id = x.kijun_id LEFT JOIN items i ON i.id = x.item_id
-               WHERE x.facility_id = ? ORDER BY COALESCE(i.id, 1e9), x.start_date""",
-            (fid,),
-        ).fetchall()
-        pref = con.execute("SELECT * FROM prefs WHERE code = ?", (f["pref_code"],)).fetchone()
-        byosho = _byosho_ctx(con, f["byosho_code"])
-        dpc = _dpc_ctx(con, f["byosho_code"])
-        gairai = _gairai_ctx(con, fid)
-        near = _nearby(con, f)
-        kd = _kdiff_rows(con, "facility_id = ?", (fid,))
-        navi = navi_ctx(con, fid)
-    return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai, kd=kd,
-                  near=near, navi=navi)
+        c = _facility_data(con, fid)
+        near = _nearby(con, c["f"])
+    return render(request, "facility.html", near=near, **c)
 
 
 # ── 診療科・診療時間（医療情報ネットのオープンデータ。build_navi.py → navi テーブル） ─────────
@@ -954,12 +976,15 @@ def navi_ctx(con, fid: str) -> dict | None:
     as_of = meta_value(con, "navi_as_of")
     return {"specs": [x for x in (r["specs"] or "").split("｜") if x], "groups": groups,
             "days": days, "closed": closed_label, "other": r["other_holiday"] or "",
-            "url": r["url"] or "", "as_of": as_of, "as_of_label": jdate(as_of) if as_of else ""}
+            "url": r["url"] or "", "as_of": as_of, "as_of_label": jdate(as_of) if as_of else "",
+            "src_url": MHLW_URLS.get("医療情報ネット", "")}
 
 
 def meta_value(con, key: str) -> str:
     row = con.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row[0] if row else ""
+
+
 
 
 def _nearby(con, f) -> dict:
@@ -1437,6 +1462,7 @@ def robots():
         "User-agent: *\n"
         "Disallow: /search\n"
         "Disallow: /*.csv\n"
+        "Disallow: /*.pdf\n"
         f"Sitemap: {SITE_URL}/sitemap.xml\n"
     )
 

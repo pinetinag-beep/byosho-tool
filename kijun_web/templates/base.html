@@ -120,6 +120,10 @@ if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
 })();
 </script>
 <script>
+/* 医療機関ページのPDF（押された数を数える） */
+document.querySelectorAll("[data-pdf]").forEach(function (a) {
+  a.addEventListener("click", function () { if (window.gtag) gtag("event", "pdf_download", { link_url: a.getAttribute("href") }); });
+});
 /* 医療機関ページのタブ（診療時間／施設基準／病床・診療実績）。JSが無い時は全部並べて見せる */
 (function () {
   var nav = document.querySelector("[data-tabs]");

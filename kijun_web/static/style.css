@@ -578,3 +578,8 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
   .ftabs [role="tab"] { flex: 1 1 auto; padding: 10px 4px; font-size: 0.82rem; letter-spacing: 0; }
   .ftabs .n { margin-left: 3px; padding: 0 5px; font-size: 0.68rem; }
 }
+
+/* 医療機関ページのPDFボタン */
+.pdf-link { margin: 12px 0 0; text-align: right; }
+.pdf-link .btn { font-size: 0.85rem; padding: 6px 14px; }
+@media (max-width: 640px) { .pdf-link { text-align: left; } }
