@@ -41,4 +41,5 @@ MHLW_URLS = {
     "病床機能報告": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000055891.html",
     "DPC": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000049343.html",
     "外来機能報告": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/open_data_00021.html",
+    "医療情報ネット": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iryou/newpage_43373.html",
 }

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set place = f.pref_name ~ (f.city or "") %}
-{% block title %}{{ f.name|short_name }}（{{ place }}）の施設基準の届出{% endblock %}
+{% block title %}{{ f.name|short_name }}（{{ place }}）の{% if navi and navi.groups %}{{ "営業時間" if K.x == "y" else "診療時間" }}・{% endif %}施設基準の届出{% endblock %}
 {% block description %}{{ f.name }}（{{ f.address }}、医療機関コード{{ f.id }}）が地方厚生局に届け出ている施設基準{{ n_filings }}種類の一覧。{% if f.kihon %}{{ f.kihon }}{% endif %}{% if f.chiiki %}{% if f.kihon %}、{% endif %}{{ f.chiiki }}{% endif %}{% if f.kihon or f.chiiki %}など。{% endif %}{% endblock %}
 {% block head_extra %}
 <script type="application/ld+json">{{ {
@@ -22,13 +22,15 @@
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › <a href="{{ K.pref_url(f.pref_name) }}">{{ f.pref_name }}</a>{% if f.city %} › <a href="{{ K.city_url(f.pref_name, f.city) }}">{{ f.city }}</a>{% endif %} › {{ f.name }}</p>
 <h1>{{ f.name }}</h1>
-<p class="summary">{{ f.name }}は、{{ place }}にある{{ K.word }}です。地方厚生局に{{ n_filings }}種類の施設基準を届け出ています{% if pref %}（{{ pref.as_of_label }}時点）{% endif %}。{% if K.x == "y" and f.kihon %}調剤基本料の区分は「{{ f.kihon }}」{% if f.chiiki %}、「{{ f.chiiki }}」も届け出ています{% endif %}。{% elif K.x != "y" and (f.kihon or f.chiiki) %}{{ "「" ~ K.col1 ~ "」" if f.kihon }}{{ "「" ~ f.chiiki ~ "」" if f.chiiki }}を届け出ています。{% endif %}</p>
+<p class="summary">{{ f.name }}は、{{ place }}にある{{ K.word }}です。{% if navi and navi.closed %}{{ "定休日" if K.x == "y" else "休診日" }}は{{ navi.closed }}です。{% endif %}地方厚生局に{{ n_filings }}種類の施設基準を届け出ています{% if pref %}（{{ pref.as_of_label }}時点）{% endif %}。{% if K.x == "y" and f.kihon %}調剤基本料の区分は「{{ f.kihon }}」{% if f.chiiki %}、「{{ f.chiiki }}」も届け出ています{% endif %}。{% elif K.x != "y" and (f.kihon or f.chiiki) %}{{ "「" ~ K.col1 ~ "」" if f.kihon }}{{ "「" ~ f.chiiki ~ "」" if f.chiiki }}を届け出ています。{% endif %}</p>
 <div class="facts">
   <div class="fact"><div class="k">所在地</div><div class="v small">{{ f.address }}</div></div>
   <div class="fact"><div class="k">{{ K.col1 }}</div><div class="v small">{{ K.v1(f.kihon) if f.kihon else "届出なし" }}</div></div>
   <div class="fact"><div class="k">{{ K.col2 }}</div><div class="v small">{{ K.v2(f.chiiki) if f.chiiki else "届出なし" }}</div></div>
   <div class="fact"><div class="k">医療機関コード（10桁）</div><div class="v small">{{ f.id }}</div></div>
 </div>
+
+{% with navi_max = 4, kind_word = K.word %}{% include "_navi.html" %}{% endwith %}
 
 <h2>届け出ている施設基準（{{ n_filings }}種類）</h2>
 {% for g in groups %}

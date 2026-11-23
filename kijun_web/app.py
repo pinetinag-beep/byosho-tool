@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import math
+import json
 import os
 import re
 import sqlite3
@@ -921,8 +922,44 @@ def facility(request: Request, fid: str):
         gairai = _gairai_ctx(con, fid)
         near = _nearby(con, f)
         kd = _kdiff_rows(con, "facility_id = ?", (fid,))
+        navi = navi_ctx(con, fid)
     return render(request, "facility.html", f=f, filings=filings, pref=pref, byosho=byosho, dpc=dpc, gairai=gairai, kd=kd,
-                  near=near)
+                  near=near, navi=navi)
+
+
+# ── 診療科・診療時間（医療情報ネットのオープンデータ。build_navi.py → navi テーブル） ─────────
+NAVI_DAYS = ["月", "火", "水", "木", "金", "土", "日", "祝"]
+NAVI_MAX_GROUPS = 4   # 診療科ごとの時間表は、これより多い分を「ほかの診療科」で畳む
+
+
+def navi_ctx(con, fid: str) -> dict | None:
+    """医療機関ページに出す診療科・診療時間・休診日・ホームページ。医療情報ネットとつながっていなければ None。"""
+    try:
+        r = con.execute("SELECT * FROM navi WHERE facility_id = ?", (fid,)).fetchone()
+    except sqlite3.OperationalError:   # 古いDB（navi テーブルが無い）
+        return None
+    if not r:
+        return None
+    groups = []
+    for g in json.loads(r["sched"]) if r["sched"] else []:
+        rows = [("営業" if r["kind"] == "薬局" else "診療", x) for x in g.get("r", [])] or [("受付", x) for x in g.get("u", [])]
+        if rows:
+            groups.append({"specs": g.get("s", []), "rows": rows})
+    hol = any(x[1][7] for g in groups for x in g["rows"] if len(x[1]) > 7)
+    days = NAVI_DAYS if hol else NAVI_DAYS[:7]
+    for g in groups:
+        g["rows"] = [(lab, x[:len(days)]) for lab, x in g["rows"]]
+    closed = [d for d in (r["closed"] or "").split("・") if d]
+    closed_label = "・".join(("祝日" if d == "祝" else d + "曜") for d in closed)
+    as_of = meta_value(con, "navi_as_of")
+    return {"specs": [x for x in (r["specs"] or "").split("｜") if x], "groups": groups,
+            "days": days, "closed": closed_label, "other": r["other_holiday"] or "",
+            "url": r["url"] or "", "as_of": as_of, "as_of_label": jdate(as_of) if as_of else ""}
+
+
+def meta_value(con, key: str) -> str:
+    row = con.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else ""
 
 
 def _nearby(con, f) -> dict:

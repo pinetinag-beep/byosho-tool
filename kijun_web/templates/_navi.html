@@ -1,0 +1,24 @@
+{#- 診療科・診療時間（医療情報ネットのオープンデータ）。navi = navi_ctx() -#}
+{% if navi %}
+<h2 id="hours">{% if navi.specs %}診療科・{% endif %}{{ "営業時間" if kind_word == "薬局" else "診療時間" }}</h2>
+{% if navi.specs %}
+<p class="navi-specs">{% for s in navi.specs %}<span class="tag">{{ s }}</span>{% endfor %}</p>
+{% endif %}
+{% if navi.closed or navi.other %}
+<p class="navi-closed"><b>{{ "定休日" if kind_word == "薬局" else "休診日" }}</b>　{{ navi.closed or "—" }}{% if navi.other %}<span class="muted small">（{{ navi.other }}）</span>{% endif %}</p>
+{% endif %}
+{% for g in navi.groups %}
+{% if loop.index == navi_max + 1 %}<details class="navi-more"><summary>ほかの診療科の時間（{{ navi.groups|length - navi_max }}）</summary>{% endif %}
+<div class="navi-group">
+  {% if g.specs and (navi.groups|length > 1 or g.specs|length < navi.specs|length) %}<h3>{{ g.specs|join("・") }}</h3>{% endif %}
+  <div class="table-wrap"><table class="hours">
+    <thead><tr><th></th>{% for d in navi.days %}<th class="{% if d in ('土', '日', '祝') %}we{% endif %}">{{ d }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for lab, cells in g.rows %}<tr><th class="small">{{ lab }}</th>{% for c in cells %}<td>{% if c %}{% set t = c.split("-") %}{{ t[0] }}<wbr>〜{{ t[1] }}{% else %}<span class="muted">—</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% if loop.last and loop.index > navi_max %}</details>{% endif %}
+{% endfor %}
+{% if navi.url %}<p class="small">ホームページ：<a href="{{ navi.url }}" rel="nofollow noopener" target="_blank">{{ navi.url|truncate(60, true, "…") }}</a></p>{% endif %}
+<p class="note small">{{ '薬局' if kind_word == '薬局' else '医療機関' }}が都道府県に報告した内容で、変わっていることがあります。{{ '行く' if kind_word == '薬局' else '受診の' }}前に{{ '薬局' if kind_word == '薬局' else '医療機関' }}に確かめてください。</p>
+<p class="source">出典：「医療情報ネットのオープンデータ」（厚生労働省）（<a href="{{ mhlw_urls['医療情報ネット'] }}" rel="noopener">{{ mhlw_urls['医療情報ネット'] }}</a>）の{{ navi.as_of_label }}時点のデータを加工して作成</p>
+{% endif %}

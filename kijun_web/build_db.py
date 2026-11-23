@@ -54,6 +54,7 @@ SHIKA = ROOT / "shika_cache.parquet"                        # 歯科の届出（
 SHIKA_FETCHED = ROOT / "shisetsu_raw_shika" / "fetched.json"
 KDIFF = ROOT / "kijun_diff.parquet"                         # 毎月の新規届出・取り下げ（build_kijun_diff.py が作る）
 KDIFF_SHIKA = ROOT / "kijun_diff_shika.parquet"             # 同・歯科（build_kijun_diff.py --kind 歯科）
+NAVI = ROOT / "navi_cache.parquet"                          # 診療科・診療時間（医療情報ネット。build_navi.py が作る）
 KDIFF_YAKKYOKU = ROOT / "kijun_diff_yakkyoku.parquet"       # 同・薬局（build_kijun_diff.py --kind 薬局）
 
 # 検索フォームで届出項目を並べる区分（略称一覧の見出しと同じ順）
@@ -701,6 +702,18 @@ def _build_kdiff(con, table: str = "kdiff", path: Path = KDIFF, kijun_table: str
     return len(d)
 
 
+def _build_navi(con) -> tuple[int, str]:
+    """医療情報ネットの診療科・診療時間・休診日・ホームページ（医科・歯科・薬局。facility_id は各ページのIDと同じ）。"""
+    con.execute("""CREATE TABLE navi (facility_id TEXT PRIMARY KEY, kind TEXT, url TEXT, specs TEXT, sched TEXT,
+                   closed TEXT, other_holiday TEXT)""")
+    if not NAVI.exists():
+        return 0, ""
+    n = pd.read_parquet(NAVI, columns=["facility_id", "kind", "url", "specs", "sched", "closed", "other_holiday", "as_of"])
+    con.executemany("INSERT OR REPLACE INTO navi VALUES (?,?,?,?,?,?,?)",
+                    n.drop(columns="as_of").astype(str).itertuples(index=False, name=None))
+    return len(n), str(n["as_of"].astype(str).max())
+
+
 def _build_yakkyoku(con) -> int:
     """薬局の届出（yakkyoku_cache.parquet）を y_* のテーブルに入れる（/yakkyoku/… のページ用）。"""
     return _build_other(con, "y", YAKKYOKU, YAKKYOKU_FETCHED, "4", r"(特別)?調剤基本料", r"地域支援")
@@ -948,6 +961,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_yakkyoku = _build_yakkyoku(con)
     n_shika = _build_shika(con)
     n_kdiff = _build_kdiff(con)
+    n_navi, navi_as_of = _build_navi(con)
     n_kdiff_shika = _build_kdiff(con, "d_kdiff", KDIFF_SHIKA, "d_kijun", "3")
     n_kdiff_yakkyoku = _build_kdiff(con, "y_kdiff", KDIFF_YAKKYOKU, "y_kijun", "4")
     con.executemany(
@@ -971,6 +985,8 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_yakkyoku": str(n_yakkyoku),
         "n_shika": str(n_shika),
         "n_kdiff": str(n_kdiff),
+        "n_navi": str(n_navi),
+        "navi_as_of": navi_as_of,
         "n_kdiff_shika": str(n_kdiff_shika),
         "n_kdiff_yakkyoku": str(n_kdiff_yakkyoku),
         "items_in_abbr": f"{items['symbol'].map(_place_key).isin({_place_key(a['symbol']) for a in json.loads(ABBR.read_text(encoding='utf-8'))}).mean():.3f}" if ABBR.exists() else "0",

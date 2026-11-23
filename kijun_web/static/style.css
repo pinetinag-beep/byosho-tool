@@ -546,3 +546,20 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
 .survey-opts button:hover { border-color: var(--brand); background: var(--brand-soft); }
 .survey-thx { margin: 4px 0; color: var(--brand-dark); font-weight: 700; }
 @media (max-width: 640px) { .survey { right: 8px; left: 8px; width: auto; max-width: none; bottom: 8px; } .survey.up { bottom: 84px; } }
+
+/* 診療科・診療時間（医療情報ネット） */
+.navi-specs { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0 10px; }
+.navi-specs .tag { font-size: 0.8rem; font-weight: 500; color: var(--ink); }
+.navi-closed { margin: 0 0 10px; }
+.navi-group h3 { font-size: 0.95rem; margin: 14px 0 6px; }
+table.hours { width: 100%; table-layout: fixed; }
+table.hours th, table.hours td { text-align: center; padding: 6px 2px; font-size: 0.85rem; line-height: 1.35; }
+table.hours thead th:first-child, table.hours tbody th { width: 3.2em; color: var(--ink-muted); font-weight: 500; }
+table.hours th.we { color: var(--ink-muted); }
+table.hours td { font-variant-numeric: tabular-nums; }
+details.navi-more { margin: 10px 0; }
+details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-weight: 700; }
+@media (max-width: 640px) {
+  table.hours th, table.hours td { font-size: 0.72rem; padding: 4px 1px; }
+  table.hours thead th:first-child, table.hours tbody th { width: 2.4em; }
+}

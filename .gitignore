@@ -26,6 +26,7 @@ __pycache__/
 !gairai_form1_annual.parquet
 !gairai_form1_monthly.parquet
 !gairai_form2.parquet
+!navi_cache.parquet
 
 # 更新スクリプトが作る一時バックアップ
 *.parquet.bak
@@ -82,3 +83,6 @@ shisetsu_fetch/
 shisetsu_raw_yakkyoku/*.xlsx
 # 歯科の名簿の生データ（同じく shika_cache.parquet と fetched.json だけを管理する）
 shisetsu_raw_shika/*.xlsx
+
+# 医療情報ネットのオープンデータ（生CSV。build_navi.py が navi_cache.parquet にまとめる）
+navi_*/

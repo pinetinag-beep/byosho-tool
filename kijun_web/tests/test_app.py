@@ -370,8 +370,9 @@ def test_facility_seo_title_jsonld_and_nearby():
     assert [x["position"] for x in crumbs["itemListElement"]] == [1, 2, 3, 4]   # トップ・県・市区町村・医療機関
     assert "近くの医療機関" in html and html.count('href="/facility/') > 1
     assert f'href="/facility/{fid}"' not in html.split("近くの医療機関")[1]   # 自分自身は出さない
-    # 病床機能報告と結びつかない診療所：従来のタイトル、MedicalClinic
-    cid = con.execute("SELECT id FROM facilities WHERE ftype = '無床診療所' LIMIT 1").fetchone()[0]
+    # 病床機能報告とも医療情報ネットとも結びつかない診療所：従来のタイトル、MedicalClinic
+    cid = con.execute("""SELECT id FROM facilities WHERE ftype = '無床診療所'
+                         AND id NOT IN (SELECT facility_id FROM navi WHERE sched != '') LIMIT 1""").fetchone()[0]
     html = client.get(f"/facility/{cid}").text
     assert "の施設基準届出一覧｜MedilenZ</title>" in html and '"MedicalClinic"' in html
 
@@ -581,3 +582,19 @@ def test_yk_index_merged_rows():
         for grp in re.findall(r'class="sp-grp" data-ids="([\d.]+)"', r.text):   # まとめた行の中身は略称の一覧にある
             assert set(grp.split(".")) <= set(ids)
         assert client.get(f"{base}/search?item={ids[0]}").status_code == 200
+
+
+def test_facility_pages_show_navi_hours():
+    """医療情報ネットとつながった医科・歯科・薬局のページに、診療科・診療時間・休診日と出典が出る。"""
+    with appmod.db() as con:
+        clinic = con.execute("""SELECT f.id FROM facilities f JOIN navi n ON n.facility_id = f.id
+                                WHERE f.ftype = '無床診療所' AND n.sched != '' AND n.closed != '' LIMIT 1""").fetchone()[0]
+        dent = con.execute("SELECT f.id FROM d_fac f JOIN navi n ON n.facility_id = f.id WHERE n.sched != '' LIMIT 1").fetchone()[0]
+        pharm = con.execute("SELECT f.id FROM y_fac f JOIN navi n ON n.facility_id = f.id WHERE n.sched != '' LIMIT 1").fetchone()[0]
+    html = _get(f"/facility/{clinic}")
+    assert 'id="hours"' in html and "休診日" in html and 'class="hours"' in html
+    assert "医療情報ネットのオープンデータ" in html and "の診療時間・診療科・施設基準" in html
+    assert "http://https" not in html
+    assert 'id="hours"' in _get(f"/shika/{dent}")
+    p = _get(f"/yakkyoku/{pharm}")
+    assert "営業時間" in p and ">営業<" in p
