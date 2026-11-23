@@ -76,5 +76,48 @@ if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
     <p class="copy">© MedilenZ</p>
   </div>
 </footer>
+{# 来訪者アンケート（1問）。一部の人にだけ、少し経ってから右下に出す。答え・閉じたらそのブラウザには二度と出さない。
+   答えはアナリティクスの survey_answer イベント（visitor_role）で集める。個人が分かる情報は取らない。?survey=1 で必ず出す（確認用） #}
+<div class="survey" id="survey" role="dialog" aria-labelledby="survey-q" hidden>
+  <button type="button" class="survey-x" aria-label="閉じる">×</button>
+  <p class="survey-q" id="survey-q">このサイトをどんな目的で見ていますか？<span>（1問だけのアンケート）</span></p>
+  <div class="survey-opts">
+    <button type="button" data-v="patient">患者・家族として医療機関を調べている</button>
+    <button type="button" data-v="medical_staff">看護師・医師など医療職（転職先を調べるなど）</button>
+    <button type="button" data-v="facility_staff">医療機関の職員（自院や近くの医療機関を調べる）</button>
+    <button type="button" data-v="business">営業・コンサルなどの仕事</button>
+    <button type="button" data-v="other">行政・研究・その他</button>
+  </div>
+  <p class="survey-thx" hidden>ありがとうございました。</p>
+</div>
+<script>
+(() => {
+  const KEY = "ml_survey_v1", RATE = 0.2, DELAY = 10000;
+  const el = document.getElementById("survey");
+  const ls = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } };
+  const ss = (k, v) => { try { return v === undefined ? sessionStorage.getItem(k) : sessionStorage.setItem(k, v); } catch (e) { return null; } };
+  const ga = (name, params) => { if (window.gtag) gtag("event", name, Object.assign({ content_group: {{ ga_page|tojson }} }, params || {})); };
+  const force = new URLSearchParams(location.search).get("survey") === "1";
+  if (!force) {
+    if (ls(KEY)) return;                       // もう答えた・閉じた
+    let roll = ss(KEY);                        // 出すかどうかはセッションごとに1回だけ決める
+    if (!roll) { roll = Math.random() < RATE ? "show" : "skip"; ss(KEY, roll); }
+    if (roll !== "show") return;
+  }
+  const close = (state) => { ls(KEY, state); setTimeout(() => { el.hidden = true; }, state === "answered" ? 1500 : 0); };
+  setTimeout(() => {
+    if (document.querySelector(".ct-bar")) el.classList.add("up");   // 下に固定のバーがあるページはその上に出す
+    el.hidden = false;
+    ga("survey_shown");
+  }, force ? 0 : DELAY);
+  el.querySelector(".survey-x").addEventListener("click", () => { ga("survey_close"); close("closed"); });
+  el.querySelectorAll(".survey-opts button").forEach(b => b.addEventListener("click", () => {
+    ga("survey_answer", { visitor_role: b.dataset.v });
+    el.querySelector(".survey-opts").hidden = true;
+    el.querySelector(".survey-thx").hidden = false;
+    close("answered");
+  }));
+})();
+</script>
 </body>
 </html>

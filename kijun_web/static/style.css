@@ -531,3 +531,18 @@ a.kind-tab:hover { border-color: var(--brand); color: var(--brand); }
   table.trend td { white-space: nowrap; }
 }
 .pref-t td:first-child { white-space: nowrap; }
+
+/* 来訪者アンケート（右下の小さなカード） */
+.survey { position: fixed; right: 16px; bottom: 16px; z-index: 50; width: 330px; max-width: calc(100vw - 32px);
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 12px;
+  box-shadow: 0 8px 28px rgba(38,37,31,0.16); font-size: 0.88rem; }
+.survey.up { bottom: 96px; }
+.survey-q { margin: 0 22px 10px 0; font-weight: 700; line-height: 1.5; }
+.survey-q span { display: block; font-weight: 400; font-size: 0.75rem; color: var(--ink-muted); }
+.survey-x { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 1.1rem; color: var(--ink-faint); cursor: pointer; padding: 4px 6px; line-height: 1; }
+.survey-x:hover { color: var(--ink); }
+.survey-opts { display: grid; gap: 6px; }
+.survey-opts button { font: inherit; font-size: 0.84rem; text-align: left; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); cursor: pointer; line-height: 1.45; }
+.survey-opts button:hover { border-color: var(--brand); background: var(--brand-soft); }
+.survey-thx { margin: 4px 0; color: var(--brand-dark); font-weight: 700; }
+@media (max-width: 640px) { .survey { right: 8px; left: 8px; width: auto; max-width: none; bottom: 8px; } .survey.up { bottom: 84px; } }
