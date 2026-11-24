@@ -1457,6 +1457,32 @@ def ads_txt():
     return f"google.com, {pub}, DIRECT, f08c47fec0942fa0\n"
 
 
+# ファビコン（検索結果の左の丸いアイコン・ブラウザのタブ・スマホのホーム画面）。
+# Google やブラウザはサイト直下の /favicon.ico・/apple-touch-icon.png も見に行くので、直下でも返す
+_STATIC = HERE / "static"
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon_ico():
+    return Response((_STATIC / "favicon.ico").read_bytes(), media_type="image/x-icon",
+                    headers={"Cache-Control": "public, max-age=604800"})
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+def apple_touch_icon():
+    return Response((_STATIC / "apple-touch-icon.png").read_bytes(), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=604800"})
+
+
+@app.get("/site.webmanifest", include_in_schema=False)
+def webmanifest():
+    return JSONResponse({"name": "MedilenZ", "short_name": "MedilenZ", "start_url": "/", "display": "browser",
+                         "theme_color": "#0B4F40", "background_color": "#F7F6F2",
+                         "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                                   {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"}]},
+                        media_type="application/manifest+json")
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     return (

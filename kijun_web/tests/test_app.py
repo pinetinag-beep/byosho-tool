@@ -623,3 +623,14 @@ def test_facility_pdf_with_qr():
     assert f'href="/facility/{fid}.pdf"' in client.get(f"/facility/{fid}").text
     assert client.get("/facility/000000000.pdf").status_code == 404
     assert "Disallow: /*.pdf" in client.get("/robots.txt").text
+
+
+def test_favicon_and_site_name():
+    """ファビコン（直下とstatic）と、トップのサイト名の構造化データ。"""
+    assert client.get("/favicon.ico").headers["content-type"] == "image/x-icon"
+    assert client.get("/apple-touch-icon.png").status_code == 200
+    assert client.get("/static/favicon.svg").status_code == 200
+    assert client.get("/site.webmanifest").json()["name"] == "MedilenZ"
+    top = client.get("/").text
+    assert 'rel="icon" href="/favicon.ico"' in top and '"@type": "WebSite"' in top and '"name": "MedilenZ"' in top
+    assert '"@type": "WebSite"' not in client.get("/about").text   # サイト名の構造化データはトップだけ
