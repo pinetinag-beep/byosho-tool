@@ -54,5 +54,6 @@
 <p class="note">条件に合う{{ K.word }}はありませんでした。</p>
 {% endif %}
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況（届出受理医療機関名簿・{{ K.roster }}）」を加工して作成（各ページのURLと利用した日は<a href="/about#sources">データの出典と利用条件</a>）</p>
+{% if total %}{% include "_survey_inline.html" %}{% endif %}
 {% include "_ad.html" %}
 {% endblock %}

@@ -606,3 +606,6 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
 .ct-grid label.ex:has(input:checked) { background: var(--bg); color: var(--ink-muted); }
 .ct-grid label.ex .s, .ct-grid label.ex .f { text-decoration: line-through; }
 .ct-grid label.ex::after { content: "なし"; margin-left: auto; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; font-size: .72em; font-weight: 700; color: var(--ink); text-decoration: none; }
+.survey-inline { margin: 20px 0; padding: 14px 16px; border: 1px solid var(--brand-line); border-radius: var(--radius); background: var(--brand-soft); }
+.survey-inline .survey-opts { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.survey-inline .survey-opts button { background: var(--card); }

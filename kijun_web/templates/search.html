@@ -122,6 +122,7 @@
 <p class="note">条件に合う医療機関は見つかりませんでした。届出項目を「いずれか」にする、地域を広げるなどして探してみてください。</p>
 {% endif %}
 {% if hosp_cols %}<p class="note small">病床・職員・設備・救急車の受入件数は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) }}）、DPCの件数は「{{ dpc_source(meta.hstats_dpc_year|int) }}」、紹介率・逆紹介率は「外来機能報告」（{{ reiwa(meta.hstats_gairai_year|int) }}）の値です（いずれも厚生労働省、加工して作成）。{% if has_occ %}病床稼働率は病床機能報告の定義どおり在棟延べ数÷（許可病床数×365）で、在棟延べ数は前年度1年間の実績、許可病床数は7月1日時点です。{% endif %}病床機能報告に載っていない医療機関（多くの診療所）は「—」になり、病床・設備・実績を条件にした場合は結果に出ません。「—」は報告されていない、または公表されていない値です。</p>{% endif %}
+{% if total %}{% include "_survey_inline.html" %}{% endif %}
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（各厚生局のページと利用した日は<a href="/about#sources">データについて</a>）</p>
 {% include "_ad.html" %}
 {% endblock %}

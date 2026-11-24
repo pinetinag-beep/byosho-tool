@@ -83,11 +83,11 @@ if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
     <p class="copy">© MedilenZ</p>
   </div>
 </footer>
-{# 来訪者アンケート（1問）。一部の人にだけ、少し経ってから右下に出す。答え・閉じたらそのブラウザには二度と出さない。
-   答えはアナリティクスの survey_answer イベント（visitor_role）で集める。個人が分かる情報は取らない。?survey=1 で必ず出す（確認用） #}
-<div class="survey" id="survey" role="dialog" aria-labelledby="survey-q" hidden>
-  <button type="button" class="survey-x" aria-label="閉じる">×</button>
-  <p class="survey-q" id="survey-q">このサイトをどんな目的で見ていますか？<span>（1問だけのアンケート）</span></p>
+{# 来訪者アンケート（1問）。答えはアナリティクスの survey_answer イベント（visitor_role、出した場所は survey_place）。
+   出す場面は3つ：①同じ訪問で2ページ目以降を見た人に右下のカード（popup）、②CSVをダウンロードした直後に右下のカード（csv）、
+   ③検索結果の表の下に埋め込み（inline、_survey_inline.html）。答え・閉じたらそのブラウザには二度と出さない。
+   個人が分かる情報は取らない。?survey=1 で右下のカードを必ず出す（確認用） #}
+{% set survey_opts %}
   <div class="survey-opts">
     <button type="button" data-v="patient">患者・家族として医療機関を調べている</button>
     <button type="button" data-v="medical_staff">看護師・医師など医療職（転職先を調べるなど）</button>
@@ -96,34 +96,70 @@ if (/(^|\.)medilenz\.jp$/.test(location.hostname)) {
     <button type="button" data-v="other">行政・研究・その他</button>
   </div>
   <p class="survey-thx" hidden>ありがとうございました。</p>
+{% endset %}
+<div class="survey" id="survey" role="dialog" aria-labelledby="survey-q" hidden>
+  <button type="button" class="survey-x" aria-label="閉じる">×</button>
+  <p class="survey-q" id="survey-q"><span class="survey-lead" hidden>ダウンロードありがとうございます。</span>このサイトをどんな目的で使っていますか？<span>（1問だけのアンケート）</span></p>
+  {{ survey_opts }}
 </div>
 <script>
 (() => {
-  const KEY = "ml_survey_v1", RATE = 0.2, DELAY = 10000;
-  const el = document.getElementById("survey");
+  const KEY = "ml_survey_v1", PV = "ml_pv", DELAY = 5000;
+  const pop = document.getElementById("survey");
+  const inline = document.querySelector("[data-survey-inline]");
   const ls = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } };
   const ss = (k, v) => { try { return v === undefined ? sessionStorage.getItem(k) : sessionStorage.setItem(k, v); } catch (e) { return null; } };
   const ga = (name, params) => { if (window.gtag) gtag("event", name, Object.assign({ content_group: {{ ga_page|tojson }} }, params || {})); };
   const force = new URLSearchParams(location.search).get("survey") === "1";
-  if (!force) {
-    if (ls(KEY)) return;                       // もう答えた・閉じた
-    let roll = ss(KEY);                        // 出すかどうかはセッションごとに1回だけ決める
-    if (!roll) { roll = Math.random() < RATE ? "show" : "skip"; ss(KEY, roll); }
-    if (roll !== "show") return;
+  const pv = (parseInt(ss(PV) || "0", 10) || 0) + 1;   // この訪問で何ページ目か
+  ss(PV, String(pv));
+  let done = !!ls(KEY) && !force;                         // もう答えた・閉じた
+  let place = "popup";
+  const finish = (box, state) => {
+    done = true; ls(KEY, state);
+    if (state === "answered") {
+      box.querySelector(".survey-opts").hidden = true;
+      box.querySelector(".survey-thx").hidden = false;
+    }
+    if (box === pop) setTimeout(() => { pop.hidden = true; }, state === "answered" ? 1500 : 0);
+    if (box !== pop && !pop.hidden) pop.hidden = true;
+    if (box === pop && inline && state === "answered") inline.hidden = true;
+  };
+  const wire = (box, where) => {
+    box.querySelectorAll(".survey-opts button").forEach(b => b.addEventListener("click", () => {
+      ga("survey_answer", { visitor_role: b.dataset.v, survey_place: where() });
+      finish(box, "answered");
+    }));
+  };
+  wire(pop, () => place);
+  pop.querySelector(".survey-x").addEventListener("click", () => { ga("survey_close", { survey_place: place }); finish(pop, "closed"); });
+  const showPop = (where) => {
+    if (done || !pop.hidden) return;
+    place = where;
+    pop.querySelector(".survey-lead").hidden = where !== "csv";
+    if (document.querySelector(".ct-bar")) pop.classList.add("up");   // 下に固定のバーがあるページはその上に出す
+    pop.hidden = false;
+    ga("survey_shown", { survey_place: where });
+  };
+  // ③ 検索結果の下の埋め込み。答えていない人にだけ出す（このページでは右下のカードは出さない）
+  if (inline) {
+    if (done) inline.remove();
+    else {
+      inline.hidden = false;
+      wire(inline, () => "inline");
+      const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => {
+        if (es.some(e => e.isIntersecting)) { ga("survey_shown", { survey_place: "inline" }); io.disconnect(); }
+      }) : null;
+      if (io) io.observe(inline);
+    }
   }
-  const close = (state) => { ls(KEY, state); setTimeout(() => { el.hidden = true; }, state === "answered" ? 1500 : 0); };
-  setTimeout(() => {
-    if (document.querySelector(".ct-bar")) el.classList.add("up");   // 下に固定のバーがあるページはその上に出す
-    el.hidden = false;
-    ga("survey_shown");
-  }, force ? 0 : DELAY);
-  el.querySelector(".survey-x").addEventListener("click", () => { ga("survey_close"); close("closed"); });
-  el.querySelectorAll(".survey-opts button").forEach(b => b.addEventListener("click", () => {
-    ga("survey_answer", { visitor_role: b.dataset.v });
-    el.querySelector(".survey-opts").hidden = true;
-    el.querySelector(".survey-thx").hidden = false;
-    close("answered");
-  }));
+  // ② CSVのダウンロード直後
+  document.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest('a[href*=".csv"]')) setTimeout(() => showPop("csv"), 800);
+  });
+  // ① 2ページ目以降（埋め込みのあるページを除く）
+  if (force) showPop("popup");
+  else if (!done && !inline && pv >= 2) setTimeout(() => showPop("popup"), DELAY);
 })();
 </script>
 <script>

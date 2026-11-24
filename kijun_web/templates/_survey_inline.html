@@ -1,0 +1,12 @@
+{#- 検索結果の下に埋め込むアンケート（base.html の来訪者アンケートと同じ1問。答えた人には出さない） -#}
+<div class="survey-inline" data-survey-inline hidden>
+  <p class="survey-q">よろしければ教えてください：このサイトをどんな目的で使っていますか？<span>（1問だけのアンケート。今後の改善に使います）</span></p>
+  <div class="survey-opts">
+    <button type="button" data-v="patient">患者・家族として医療機関を調べている</button>
+    <button type="button" data-v="medical_staff">看護師・医師など医療職（転職先を調べるなど）</button>
+    <button type="button" data-v="facility_staff">医療機関の職員（自院や近くの医療機関を調べる）</button>
+    <button type="button" data-v="business">営業・コンサルなどの仕事</button>
+    <button type="button" data-v="other">行政・研究・その他</button>
+  </div>
+  <p class="survey-thx" hidden>ありがとうございました。</p>
+</div>
