@@ -14,6 +14,8 @@ sudo -u kijun git fetch --depth 1 origin "$BRANCH"
 if [ "$(sudo -u kijun git rev-parse HEAD)" != "$(sudo -u kijun git rev-parse FETCH_HEAD)" ]; then
   echo "更新あり: $(sudo -u kijun git rev-parse --short FETCH_HEAD)"
   sudo -u kijun git reset --hard FETCH_HEAD
+  # 2026年11月24日に止めた「同じIPからのアクセスの集計」の記録が残っていれば消す
+  rm -f "$REPO_DIR"/kijun_web/data/visits.sqlite*
   sudo -u kijun "$APP/venv/bin/pip" install -q -r kijun_web/requirements.txt
   # DBは一時ファイルに作ってから置き換えるので、作り直し中もサイトは古いDBで動き続ける
   sudo -u kijun "$APP/venv/bin/python" kijun_web/build_db.py
