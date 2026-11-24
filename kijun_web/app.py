@@ -774,6 +774,15 @@ def _sel_columns(con, c: Cond, where: str, params: list, fac_ids: list[str] | No
     return cols, marks
 
 
+def _ex_columns(con, c: Cond) -> list[dict]:
+    """「届け出ていない」にした項目も結果の列に出す（結果はどれも届け出ていないので、印は付かない）。"""
+    cols = [{"key": f"i{r['id']}", "head": r["symbol"] or r["kijun"], "title": f"{r['kijun']}（届け出ていない条件）",
+             "label": f"{r['symbol']}（{r['kijun']}）", "kubun": False, "ex": True} for r in _selected_items(con, c.ex_items)]
+    cols += [{"key": f"b{r['id']}", "head": r["name"], "title": f"{r['kijun']}の区分（当てはまらない条件）",
+              "label": f"区分：{r['name']}（{r['kijun']}）", "kubun": True, "ex": True} for r in _kubun_rows(con, c.ex_kubuns)]
+    return cols
+
+
 def _ex_labels(con, c: Cond) -> list[dict]:
     """届け出ていない条件の表示名（{head, title}）。"""
     out = [{"head": r["symbol"] or r["kijun"], "title": r["kijun"]} for r in _selected_items(con, c.ex_items)]
@@ -799,7 +808,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
         ).fetchall()
         ids = [r["id"] for r in rows]
         sel_cols, marks = _sel_columns(con, c, where, params, ids)
-        ex_labels = _ex_labels(con, c)
+        ex_labels, ex_cols = _ex_labels(con, c), _ex_columns(con, c)
         hosp_cols = _hosp_cols(c)
         hosp_vals = _hosp_values(con, ids) if hosp_cols else {}
         hits: dict[str, list[str]] = {}
@@ -829,7 +838,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
     pref_name = "・".join(p["name"] for p in ctx["prefs"] if p["code"] in c.prefs)
     return render(
         request, "search.html",
-        rows=rows, hits=hits, sel_cols=sel_cols, marks=marks, total=total,
+        rows=rows, hits=hits, sel_cols=sel_cols, table_cols=sel_cols + ex_cols, marks=marks, total=total,
         hosp_cols=hosp_cols, hosp_vals=hosp_vals, hosp_fmt=_hosp_fmt, page=page, pages=pages,
         pref_name=pref_name, cond=c, matched_kijun=matched_kijun, matched_kubun=matched_kubun,
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
@@ -905,8 +914,9 @@ def search_csv(request: Request):
     where, params, kwhere, kparams = _search_sql(con, c)
     fac_sql = f"""SELECT f.id, f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area, f.n_kijun
                   FROM facilities f WHERE {where} ORDER BY f.pref_code, f.name"""
-    if c.items or c.kubuns:
+    if c.items or c.kubuns or c.ex_items or c.ex_kubuns:
         cols, marks = _sel_columns(con, c, where, params)
+        cols += _ex_columns(con, c)
         header = FACILITY_COLS + [col["label"] for col in cols]
         text = {"ok": "○", "ref": "○（参考）", "ref_changed": "○（参考・出し直しあり）",
                 "ref_likely_changed": "○（参考・改定で変更の可能性大）"}
