@@ -23,7 +23,7 @@ from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -181,7 +181,7 @@ GA_PAGE = {
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
-    "404.html": "ページが見つかりません", "changes.html": "新規届出・取り下げ", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
+    "404.html": "ページが見つかりません", "gone.html": "名簿から削除された医療機関", "changes.html": "新規届出・取り下げ", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
     "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
     # 歯科（/shika）も同じ y_*.html を使い、render() で「薬局」を「歯科」に置き換える
 }
@@ -997,6 +997,18 @@ def facility_csv(fid: str):
     return _csv_response(FACILITY_COLS + FILING_COLS, rows, f"施設基準届出_{f[0]}.csv")
 
 
+def _gone_facility(con, fid: str) -> sqlite3.Row | None:
+    """今の名簿に無く、新規届出・取り下げの記録で「名簿から削除」になっている医療機関。"""
+    if con.execute("SELECT 1 FROM facilities WHERE id = ?", (fid,)).fetchone():
+        return None
+    try:
+        return con.execute(
+            """SELECT fac_name, address, pref_code, pref_name, ftype, month FROM kdiff
+               WHERE facility_id = ? AND kind = '取り下げ' ORDER BY month DESC LIMIT 1""", (fid,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+
+
 def _facility_data(con, fid: str) -> dict:
     """医療機関ページとPDFで使う中身。"""
     f = con.execute("SELECT * FROM facilities WHERE id = ?", (fid,)).fetchone()
@@ -1038,6 +1050,11 @@ def facility_pdf(fid: str):
 @app.get("/facility/{fid}", response_class=HTMLResponse)
 def facility(request: Request, fid: str):
     with db() as con:
+        gone = _gone_facility(con, fid)
+        if gone:
+            # 名簿から消えた医療機関（廃止・休止など）。Googleに覚えられたURLから来た人に事情を伝え、
+            # 検索結果からは外してもらう（410）
+            return render(request, "gone.html", g=gone, status_code=410)
         c = _facility_data(con, fid)
         near = _nearby(con, c["f"])
     return render(request, "facility.html", near=near, **c)
@@ -1434,6 +1451,18 @@ def city_page(request: Request, pref_name: str, city: str):
     clinics = [r for r in rows if r["ftype"] != "病院"]
     return render(request, "city.html", pref=pref, city=city, hosp=hosp, clinics=clinics, areas=areas, others=others,
                   sib=sib)
+
+
+# 2026年11月21日に作ってすぐ消した「地域医療構想」のページ（/vision/…）は、一時サイトマップに載って
+# Googleに覚えられているので、二次医療圏のページへ転送する
+@app.get("/vision")
+def vision_gone():
+    return RedirectResponse("/", status_code=301)
+
+
+@app.get("/vision/{pref_name}/{area}")
+def vision_area_gone(pref_name: str, area: str):
+    return RedirectResponse(f"/area/{quote(pref_name)}/{quote(area)}", status_code=301)
 
 
 @app.get("/area/{pref_name}/{area}", response_class=HTMLResponse)

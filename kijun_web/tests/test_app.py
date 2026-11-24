@@ -688,3 +688,18 @@ def test_search_exclude_show_mode():
     r = client.get("/search", params=base + [("nxmode", "show")])
     assert "列だけ表示" in r.text and "未届出の施設だけにする" in r.text
     assert 'value="show" checked' in client.get("/", params=base + [("nxmode", "show")]).text
+
+
+def test_gone_and_old_urls():
+    """消したページ（/vision）は転送、名簿から消えた医療機関は410で事情を出す、ほかの404はGAに記録。"""
+    import sqlite3
+    r = client.get("/vision/高知県/中央", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"].startswith("/area/")
+    con = sqlite3.connect(str(appmod.DB_PATH))
+    row = con.execute("""SELECT facility_id FROM kdiff WHERE kind = '取り下げ'
+                         AND facility_id NOT IN (SELECT id FROM facilities) LIMIT 1""").fetchone()
+    if row:
+        r = client.get(f"/facility/{row[0]}")
+        assert r.status_code == 410 and "名簿から削除されました" in r.text
+    r = client.get("/no-such-page")
+    assert r.status_code == 404 and "page_not_found" in r.text

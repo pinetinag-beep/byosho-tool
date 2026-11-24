@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ g.fac_name }}（名簿から削除）{% endblock %}
+{% block robots %}<meta name="robots" content="noindex">{% endblock %}
+{% block ga_events %}
+  gtag("event", "page_not_found", { missing_path: location.pathname, reason: "facility_removed" });
+{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › {{ g.pref_name }}</p>
+<h1>{{ g.fac_name }}</h1>
+<p class="lead">この{{ g.ftype or '医療機関' }}は、{{ g.month[:4] }}年{{ g.month[5:]|int }}月の地方厚生局の名簿から削除されました（廃止・休止・移転などで保険医療機関でなくなった場合などです。理由は名簿からは分かりません）。</p>
+<p class="muted">所在地（削除前）：{{ g.pref_name }}{{ g.address or '' }}</p>
+<ul class="chips">
+  <li><a href="/changes?pref={{ g.pref_code }}&amp;q={{ g.fac_name|urlencode }}">この医療機関の届出の動き</a></li>
+  <li><a href="/search?pref={{ g.pref_code }}">{{ g.pref_name }}の医療機関を探す</a></li>
+  <li><a href="/">トップへ</a></li>
+</ul>
+{% endblock %}

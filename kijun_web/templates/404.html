@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}ページが見つかりません{% endblock %}
 {% block robots %}<meta name="robots" content="noindex">{% endblock %}
+{% block ga_events %}
+  gtag("event", "page_not_found", { missing_path: location.pathname + location.search, referrer: document.referrer });
+{% endblock %}
 {% block content %}
 <h1>ページが見つかりません</h1>
 <p class="lead">お探しのページは、データの更新で名称が変わったか、削除された可能性があります。</p>
