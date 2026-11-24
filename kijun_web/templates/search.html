@@ -24,7 +24,8 @@
   {% if sel_cols|length == 1 %}<span class="v">{% if sel_cols[0].kubun %}区分{% else %}届出項目{% endif %}：<abbr title="{{ sel_cols[0].title }}">{{ sel_cols[0].head }}</abbr></span>
   {% elif sel_cols %}<span class="v">{{ sel_cols|length }}件の{% if cond.mode == 'or' %}いずれか{% else %}すべて{% endif %}に当てはまる：
     {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
-  {% if ex_labels %}<span class="v ex">届け出ていない：{% for s in ex_labels %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+  {% if ex_labels %}<span class="v ex">{% if cond.ex_show %}列だけ表示（絞り込まない）{% else %}届け出ていない{% endif %}：{% for s in ex_labels %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>
+  <a class="cs-edit" href="{{ ex_toggle_url }}">{% if cond.ex_show %}未届出の施設だけにする{% else %}届け出ている施設も出す{% endif %}</a>{% endif %}
   <a class="cs-edit" href="/?{{ cond.query() }}">条件を変更する</a>
 </div>
 

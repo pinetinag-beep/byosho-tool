@@ -670,3 +670,21 @@ def test_search_exclude_items():
     assert "届け出ていない" in r.text
     assert "どれも届け出ていない" in client.get("/search.csv", params=base + [("nx", b)]).text
     assert f'name="nx" value="{b}" checked' in client.get("/", params=base + [("nx", b)]).text
+
+
+def test_search_exclude_show_mode():
+    """nxmode=show なら「届け出ていない」項目で絞り込まず、届け出ている施設に○を付ける。"""
+    import sqlite3
+    con = sqlite3.connect(str(appmod.DB_PATH))
+    a, b = [r[0] for r in con.execute("SELECT id FROM items ORDER BY n_facilities DESC LIMIT 2")]
+    base = [("pref", "13"), ("ftype", "病院"), ("item", a), ("nx", b)]
+
+    def n(q):
+        return int(re.search(r"([\d,]+) 件", client.get("/search", params=q).text).group(1).replace(",", ""))
+
+    assert n(base + [("nxmode", "show")]) == n([("pref", "13"), ("ftype", "病院"), ("item", a)])
+    t = client.get("/search.csv", params=base + [("nxmode", "show")]).text.lstrip("﻿").splitlines()
+    assert any(line.endswith(",○,○") for line in t) and any(line.endswith(",○,") for line in t)
+    r = client.get("/search", params=base + [("nxmode", "show")])
+    assert "列だけ表示" in r.text and "未届出の施設だけにする" in r.text
+    assert 'value="show" checked' in client.get("/", params=base + [("nxmode", "show")]).text

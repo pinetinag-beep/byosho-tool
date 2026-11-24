@@ -17,7 +17,7 @@ import re
 import sqlite3
 import unicodedata
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -256,6 +256,7 @@ class Cond:
     mode: str = "and"          # 届出項目・区分を「すべて」届け出ている(and) / 「いずれか」(or)
     ex_items: list[int] = field(default_factory=list)   # 届け出ていない届出項目（どれも届け出ていない施設）
     ex_kubuns: list[int] = field(default_factory=list)  # 当てはまらない区分
+    ex_show: bool = False      # True なら「届け出ていない」項目で絞り込まず、届け出ている施設も出して列で見分ける
     k: str = ""                # 施設基準名称の一部（施設基準ページの「条件を足して検索」など、従来のリンク用）
     kx: str = ""               # 施設基準名称の完全一致（施設基準ページのCSVリンク用）
     # 病床・設備・実績（病院。病床機能報告・DPC・外来機能報告の最新年度の値で絞り込む）
@@ -293,6 +294,7 @@ class Cond:
             mode="or" if qp.get("mode") == "or" else "and",
             ex_items=[i for i in dict.fromkeys(ex_items) if i not in items],
             ex_kubuns=[i for i in dict.fromkeys(ex_kubuns) if i not in kubuns],
+            ex_show=qp.get("nxmode") == "show",
             k=qp.get("k", "").strip(),
             kx=qp.get("kx", "").strip(),
             bmin=_pos_num(qp.get("bmin")),
@@ -311,6 +313,8 @@ class Cond:
         pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
         pairs += [("kb", i) for i in self.kubuns]
         pairs += [("nx", i) for i in self.ex_items] + [("nkb", i) for i in self.ex_kubuns]
+        if self.ex_show and (self.ex_items or self.ex_kubuns):
+            pairs.append(("nxmode", "show"))
         if self.n_selected > 1 and self.mode == "or":
             pairs.append(("mode", "or"))
         pairs += [("k", self.k), ("kx", self.kx)]
@@ -471,10 +475,10 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
         where.append("(" + (" OR " if c.mode == "or" else " AND ").join(sel) + ")")
         params += sel_params
     # 届け出ていない（どれも届け出ていない）
-    if c.ex_items:
+    if c.ex_items and not c.ex_show:
         where.append(f"f.id NOT IN (SELECT facility_id FROM filings WHERE item_id IN ({','.join('?' * len(c.ex_items))}))")
         params += c.ex_items
-    if c.ex_kubuns:
+    if c.ex_kubuns and not c.ex_show:
         where.append(f"f.id NOT IN (SELECT facility_id FROM fac_kubun WHERE kubun_id IN ({','.join('?' * len(c.ex_kubuns))}))")
         params += c.ex_kubuns
     if c.has_hosp:
@@ -759,11 +763,13 @@ def _sel_columns(con, c: Cond, where: str, params: list, fac_ids: list[str] | No
     marks: dict[str, dict[str, str]] = {}
     if fac_ids == []:
         return cols, marks
-    for fid, got in _item_hits(con, c.items, where, params, fac_ids).items():
+    ex_items = c.ex_items if c.ex_show else []
+    ex_kubuns = c.ex_kubuns if c.ex_show else []
+    for fid, got in _item_hits(con, c.items + ex_items, where, params, fac_ids).items():
         marks.setdefault(fid, {}).update({f"i{i}": "ok" for i in got})
     ref_date = _meta(con).get("kubun_ref_date")
-    kb_of = {r["id"]: r for r in kbs}
-    for fid, got in _kubun_hits(con, c.kubuns, where, params, fac_ids).items():
+    kb_of = {r["id"]: r for r in kbs + _kubun_rows(con, ex_kubuns)}
+    for fid, got in _kubun_hits(con, c.kubuns + ex_kubuns, where, params, fac_ids).items():
         m = marks.setdefault(fid, {})
         for kid, h in got.items():
             if not h["ref"]:
@@ -776,9 +782,9 @@ def _sel_columns(con, c: Cond, where: str, params: list, fac_ids: list[str] | No
 
 def _ex_columns(con, c: Cond) -> list[dict]:
     """「届け出ていない」にした項目も結果の列に出す（結果はどれも届け出ていないので、印は付かない）。"""
-    cols = [{"key": f"i{r['id']}", "head": r["symbol"] or r["kijun"], "title": f"{r['kijun']}（届け出ていない条件）",
+    cols = [{"key": f"i{r['id']}", "head": r["symbol"] or r["kijun"], "title": r["kijun"] + ("" if c.ex_show else "（届け出ていない条件）"),
              "label": f"{r['symbol']}（{r['kijun']}）", "kubun": False, "ex": True} for r in _selected_items(con, c.ex_items)]
-    cols += [{"key": f"b{r['id']}", "head": r["name"], "title": f"{r['kijun']}の区分（当てはまらない条件）",
+    cols += [{"key": f"b{r['id']}", "head": r["name"], "title": f"{r['kijun']}の区分" + ("" if c.ex_show else "（当てはまらない条件）"),
               "label": f"区分：{r['name']}（{r['kijun']}）", "kubun": True, "ex": True} for r in _kubun_rows(con, c.ex_kubuns)]
     return cols
 
@@ -843,7 +849,8 @@ def search(request: Request, page: int = Query(1, ge=1)):
         pref_name=pref_name, cond=c, matched_kijun=matched_kijun, matched_kubun=matched_kubun,
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
-        ex_labels=ex_labels, add_groups=H_ADD_GROUPS, add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
+        ex_labels=ex_labels, add_groups=H_ADD_GROUPS,
+        ex_toggle_url="/search?" + replace(c, ex_show=not c.ex_show).query(), add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
         has_occ=any(h["col"] == "occ" for h in hosp_cols),
         page_url=lambda p: "/search?" + c.query(page=p),
         narrow_url=lambda name: "/search?" + Cond(prefs=c.prefs, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
@@ -949,7 +956,8 @@ def search_csv(request: Request):
     else:
         rows = (r[1:] for r in rows)
     ex = _ex_labels(con, c)
-    notes = ["条件：次のどれも届け出ていない医療機関 … " + "、".join(
+    notes = [("次の項目は絞り込まず、届け出ている施設に○を付けた … " if c.ex_show
+              else "条件：次のどれも届け出ていない医療機関 … ") + "、".join(
         x["title"] if x["head"] == x["title"] else f"{x['head']}（{x['title']}）" for x in ex)] if ex else None
     if ex and name == "医療機関一覧":
         name = "届出なし" + "・".join(x["head"] for x in ex[:3])
