@@ -589,3 +589,13 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
 .hp-link a { font-weight: 700; }
 .hp-link a::after { content: " ↗"; }
 .hp-link .u { margin-left: 8px; font-weight: 400; color: var(--ink-muted); font-size: 0.82rem; word-break: break-all; }
+
+/* 検索結果「列を追加する」 */
+.add-cols { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.add-cols > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; color: var(--brand); }
+.add-cols > summary .n { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 10px; background: var(--brand); color: var(--card); font-size: .8em; }
+.add-cols form { padding: 0 14px 12px; }
+.add-cols fieldset { border: 0; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.add-cols legend { width: 100%; font-size: .8em; font-weight: 700; color: var(--ink-muted); padding: 0; margin-bottom: 2px; }
+.add-cols label { display: inline-flex; align-items: center; gap: 4px; font-size: .9em; white-space: nowrap; }
+.add-cols-foot { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }

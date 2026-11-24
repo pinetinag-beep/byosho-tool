@@ -635,3 +635,19 @@ def test_favicon_and_site_name():
     assert 'rel="icon" href="/favicon.ico"' in top and '"@type": "WebSite"' in top and '"name": "MedilenZ"' in top
     assert '"@type": "WebSite"' not in client.get("/about").text   # サイト名の構造化データはトップだけ
 
+
+
+def test_search_add_columns():
+    """検索結果に「列を追加する」で病床数・稼働率・医師数などを足せ、CSVにも同じ列が入る。"""
+    q = [("pref", "39"), ("ftype", "病院"), ("add", "beds"), ("add", "occ"), ("add", "doc")]
+    r = client.get("/search", params=q)
+    assert r.status_code == 200
+    assert "列を追加する" in r.text and "病床稼働率" in r.text and "常勤医師数" in r.text
+    assert 'name="add" value="occ" checked' in r.text
+    t = client.get("/search.csv", params=q).text
+    head = t.lstrip("﻿").splitlines()[0]
+    assert head.endswith("許可病床数（床）,病床稼働率（%）,常勤医師数（人）")
+    assert "在棟延べ数÷（許可病床数×365）" in t
+    # 施設基準名で探した「届出1行ずつ」のCSVにも足せる
+    t = client.get("/search.csv", params=[("pref", "39"), ("kx", "急性期看護補助体制加算"), ("add", "beds")]).text
+    assert t.lstrip("﻿").splitlines()[0].endswith("許可病床数（床）")

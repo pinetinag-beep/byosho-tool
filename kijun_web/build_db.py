@@ -574,8 +574,14 @@ def _build_hstats(con) -> int:
                COALESCE(b."PET台数", 0) + COALESCE(b."PETCT台数", 0) + COALESCE(b."PETMRI台数", 0) AS pet,
                b."血管連続撮影装置台数" AS angio, b."内視鏡手術支援機器台数" AS robot, b."IMRT台数" AS imrt,
                b."救急搬送件数" AS amb,
+               CASE WHEN b."合計_許可病床数" > 0 AND b."合計_在棟延べ数" > 0
+                    THEN ROUND(b."合計_在棟延べ数" * 100.0 / (b."合計_許可病床数" * 365), 1) END AS occ,
+               b."常勤医師数" AS doc, b."非常勤医師数" AS doc_p, b."常勤看護師数" AS nurse, b."非常勤看護師数" AS nurse_p,
+               b."常勤薬剤師数" AS pharm, b."常勤理学療法士数" AS pt, b."常勤作業療法士数" AS ot, b."常勤言語聴覚士数" AS st,
                d."件数_総数" AS dpc_total, d."件数_手術有" AS dpc_surg,
-               g.referral_rate AS referral
+               d."件数_化学療法有" AS dpc_chemo, d."件数_放射線療法有" AS dpc_rad,
+               d."件数_救急車搬送有" AS dpc_amb, d."件数_全身麻酔" AS dpc_ga,
+               g.referral_rate AS referral, g.back_rate AS back_ref
         FROM facilities f
         JOIN byosho_hosp b ON b.code = substr('0000000000' || f.byosho_code, -10) AND b.year = ?
         LEFT JOIN dpc_hosp d ON d.code = b.code AND d.year = ?

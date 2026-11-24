@@ -209,6 +209,29 @@ H_NUMS = [  # (パラメータ, hstats の列, 表示名, 単位)
     ("dsurg", "dpc_surg", "DPC手術ありの件数", "件"), ("ref", "referral", "紹介率", "%"),
 ]
 
+# 検索結果・CSVに足せる列（「列を追加する」）。(グループ, パラメータ, hstats の列, 表示名, 単位)
+H_ADD = [
+    ("病床", "beds", "beds", "許可病床数", "床"),
+    ("病床", "b_hk", "b_hk", "高度急性期の病床数", "床"), ("病床", "b_ak", "b_ak", "急性期の病床数", "床"),
+    ("病床", "b_kf", "b_kf", "回復期の病床数", "床"), ("病床", "b_mk", "b_mk", "慢性期の病床数", "床"),
+    ("病床", "occ", "occ", "病床稼働率", "%"),
+    ("職員", "doc", "doc", "常勤医師数", "人"), ("職員", "doc_p", "doc_p", "非常勤医師数（常勤換算）", "人"),
+    ("職員", "nurse", "nurse", "常勤看護師数", "人"), ("職員", "nurse_p", "nurse_p", "非常勤看護師数（常勤換算）", "人"),
+    ("職員", "pharm", "pharm", "常勤薬剤師数", "人"), ("職員", "pt", "pt", "常勤理学療法士数", "人"),
+    ("職員", "ot", "ot", "常勤作業療法士数", "人"), ("職員", "st", "st", "常勤言語聴覚士数", "人"),
+    ("設備", "ct", "ct", "CT", "台"), ("設備", "mri", "mri", "MRI", "台"), ("設備", "pet", "pet", "PET（PET-CT等を含む）", "台"),
+    ("設備", "angio", "angio", "血管連続撮影装置", "台"), ("設備", "robot", "robot", "手術支援ロボット", "台"),
+    ("設備", "imrt", "imrt", "IMRT", "台"),
+    ("実績", "amb", "amb", "救急車の受入件数", "件"),
+    ("実績", "dpc", "dpc_total", "DPC退院患者数", "件"), ("実績", "dsurg", "dpc_surg", "DPC手術あり", "件"),
+    ("実績", "dga", "dpc_ga", "DPC全身麻酔", "件"), ("実績", "dchemo", "dpc_chemo", "DPC化学療法あり", "件"),
+    ("実績", "drad", "dpc_rad", "DPC放射線療法あり", "件"), ("実績", "damb", "dpc_amb", "DPC救急車搬送あり", "件"),
+    ("実績", "ref", "referral", "紹介率", "%"), ("実績", "bref", "back_ref", "逆紹介率", "%"),
+]
+H_ADD_KEYS = {k for _, k, _, _, _ in H_ADD}
+H_ADD_GROUPS = [(g, [{"key": k, "label": n} for gg, k, _, n, _ in H_ADD if gg == g])
+                for g in dict.fromkeys(g for g, *_ in H_ADD)]
+
 
 def _pos_num(v: str | None) -> float | None:
     try:
@@ -239,6 +262,7 @@ class Cond:
     funcs: list[str] = field(default_factory=list)   # 持っている病床機能（H_FUNCS のキー。いずれも持つ）
     eqs: list[str] = field(default_factory=list)     # 持っている設備（H_EQUIP のキー。いずれも持つ）
     nums: dict = field(default_factory=dict)         # 実績の下限（H_NUMS のキー → 値）
+    adds: list[str] = field(default_factory=list)    # 結果・CSVに足す列（H_ADD のキー。絞り込みには使わない）
 
     def __post_init__(self):
         if self.pref and not self.prefs:
@@ -270,9 +294,13 @@ class Cond:
             funcs=[v for v in dict.fromkeys(qp.getlist("fn")) if v in {k for k, _, _ in H_FUNCS}],
             eqs=[v for v in dict.fromkeys(qp.getlist("eq")) if v in {k for k, _, _ in H_EQUIP}],
             nums={k: n for k, _, _, _ in H_NUMS if (n := _pos_num(qp.get(k))) is not None},
+            adds=[v for v in dict.fromkeys(qp.getlist("add")) if v in H_ADD_KEYS],
         )
 
     def query(self, **extra) -> str:
+        return urlencode(self.pairs(**extra))
+
+    def pairs(self, add: bool = True, **extra) -> list[tuple[str, str]]:
         pairs = [("pref", p) for p in self.prefs] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
         pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
         pairs += [("kb", i) for i in self.kubuns]
@@ -281,8 +309,11 @@ class Cond:
         pairs += [("k", self.k), ("kx", self.kx)]
         pairs += [("bmin", _fmt_num(self.bmin)), ("bmax", _fmt_num(self.bmax))]
         pairs += [("fn", f) for f in self.funcs] + [("eq", e) for e in self.eqs]
-        pairs += [(k, _fmt_num(v)) for k, v in self.nums.items()] + list(extra.items())
-        return urlencode([(k, v) for k, v in pairs if v not in ("", None)])
+        pairs += [(k, _fmt_num(v)) for k, v in self.nums.items()]
+        if add:
+            pairs += [("add", a) for a in self.adds]
+        pairs += list(extra.items())
+        return [(k, v) for k, v in pairs if v not in ("", None)]
 
     @property
     def n_selected(self) -> int:
@@ -345,13 +376,19 @@ def _hosp_sql(c: Cond) -> tuple[str, list]:
 
 
 def _hosp_cols(c: Cond) -> list[dict]:
-    """検索結果・CSVに足す列（条件に使った値。CLAUDE.md「検索条件に使ったデータは結果とCSVに出す」）。"""
-    if not c.has_hosp:
-        return []
-    cols = [{"col": "beds", "label": "許可病床数", "unit": "床"}]
-    cols += [{"col": col, "label": f"{n}の病床数", "unit": "床"} for k, col, n in H_FUNCS if k in c.funcs]
-    cols += [{"col": col, "label": n, "unit": "台"} for k, col, n in H_EQUIP if k in c.eqs]
-    cols += [{"col": col, "label": n, "unit": unit} for k, col, n, unit in H_NUMS if k in c.nums]
+    """検索結果・CSVに足す列。条件に使った値（CLAUDE.md「検索条件に使ったデータは結果とCSVに出す」）と、
+    「列を追加する」で選んだ値。同じ列は1回だけ。"""
+    cols = []
+    if c.has_hosp:
+        cols = [{"col": "beds", "label": "許可病床数", "unit": "床"}]
+        cols += [{"col": col, "label": f"{n}の病床数", "unit": "床"} for k, col, n in H_FUNCS if k in c.funcs]
+        cols += [{"col": col, "label": n, "unit": "台"} for k, col, n in H_EQUIP if k in c.eqs]
+        cols += [{"col": col, "label": n, "unit": unit} for k, col, n, unit in H_NUMS if k in c.nums]
+    have = {x["col"] for x in cols}
+    for _, k, col, n, unit in H_ADD:
+        if k in c.adds and col not in have:
+            cols.append({"col": col, "label": n, "unit": unit})
+            have.add(col)
     return cols
 
 
@@ -740,7 +777,8 @@ def search(request: Request, page: int = Query(1, ge=1)):
         ).fetchall()
         ids = [r["id"] for r in rows]
         sel_cols, marks = _sel_columns(con, c, where, params, ids)
-        hosp_cols, hosp_vals = _hosp_cols(c), _hosp_values(con, ids) if c.has_hosp else {}
+        hosp_cols = _hosp_cols(c)
+        hosp_vals = _hosp_values(con, ids) if hosp_cols else {}
         hits: dict[str, list[str]] = {}
         if kwhere and ids:
             for h in con.execute(
@@ -773,6 +811,8 @@ def search(request: Request, page: int = Query(1, ge=1)):
         pref_name=pref_name, cond=c, matched_kijun=matched_kijun, matched_kubun=matched_kubun,
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
+        add_groups=H_ADD_GROUPS, add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
+        has_occ=any(h["col"] == "occ" for h in hosp_cols),
         page_url=lambda p: "/search?" + c.query(page=p),
         narrow_url=lambda name: "/search?" + Cond(prefs=c.prefs, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
                                                   q=c.q, k=name).query(),
@@ -810,10 +850,13 @@ def _csv_response(header: list[str], rows, filename: str, hosp_years: dict | Non
                         "区分が分からない届出は結果に含まれません"])
         if hosp_years:
             by, dy, gy = (hosp_years.get(f"hstats_{k}_year", "") for k in ("byosho", "dpc", "gairai"))
-            w.writerow([f"病床・設備・救急車の受入件数：厚生労働省「病床機能報告」（{reiwa(int(by)) if by else ''}）、"
+            w.writerow([f"病床・職員・設備・救急車の受入件数：厚生労働省「病床機能報告」（{reiwa(int(by)) if by else ''}）、"
                         f"DPC：厚生労働省「{dpc_source(int(dy)) if dy else 'DPC退院患者調査'}」、"
-                        f"紹介率：厚生労働省「外来機能報告」（{reiwa(int(gy)) if gy else ''}）を加工して作成。"
-                        "病床機能報告に載っていない医療機関（多くの診療所）は、これらの条件では結果に含まれません"])
+                        f"紹介率・逆紹介率：厚生労働省「外来機能報告」（{reiwa(int(gy)) if gy else ''}）を加工して作成。"
+                        "病床機能報告に載っていない医療機関（多くの診療所）は空欄で、病床・設備・実績を条件にした場合は結果に含まれません"])
+            if "病床稼働率（%）" in header:
+                w.writerow(["病床稼働率：病床機能報告の定義どおり在棟延べ数÷（許可病床数×365）×100。"
+                            "在棟延べ数は前年度1年間の実績、許可病床数は7月1日時点"])
         w.writerow(["出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（MedilenZ）。"
                     f"各厚生局のページのURLと利用した日は {SITE_URL}/about#sources"])
         yield buf.getvalue()
@@ -841,13 +884,13 @@ def search_csv(request: Request):
         header = FACILITY_COLS + [col["label"] for col in cols]
         text = {"ok": "○", "ref": "○（参考）", "ref_changed": "○（参考・出し直しあり）",
                 "ref_likely_changed": "○（参考・改定で変更の可能性大）"}
-        rows = ([*r][1:8] + [text.get(marks.get(r["id"], {}).get(col["key"], ""), "") for col in cols]
+        rows = ([*r][:8] + [text.get(marks.get(r["id"], {}).get(col["key"], ""), "") for col in cols]
                 for r in con.execute(fac_sql, params))
         name = "届出項目" + "・".join(col["head"] for col in cols[:3]) + ("ほか" if len(cols) > 3 else "")
     elif kwhere:
         header = FACILITY_COLS + FILING_COLS
         rows = con.execute(
-            f"""SELECT f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area,
+            f"""SELECT f.id, f.pref_name, f.code, f.name, f.ftype, f.address, f.city, f.area,
                        kj.name, x.symbol, x.juri_no, COALESCE(NULLIF(x.start_date, ''), x.start_raw),
                        x.byoto, x.byosho_kubun, x.n_byoto, x.n_byosho, x.kubun, x.other, x.kubun_ref
                 FROM facilities f JOIN filings x ON x.facility_id = f.id JOIN kijun kj ON kj.id = x.kijun_id
@@ -858,25 +901,25 @@ def search_csv(request: Request):
         name = c.kx or c.k
     else:
         header = FACILITY_COLS + ["届出している施設基準の数"]
-        rows = ([*r][1:] for r in con.execute(fac_sql, params))
+        rows = con.execute(fac_sql, params)
         name = c.q or "医療機関一覧"
-    if c.has_hosp:
-        # 病床・設備・実績の条件に使った値を列に足す（医療機関ごとの行の時）
-        hcols = _hosp_cols(c)
+    # ここまでの rows は、どの形も先頭が医療機関のID
+    hcols = _hosp_cols(c)
+    if hcols:
+        # 病床・設備・実績の列（条件に使った値と「列を追加する」で選んだ値）を足す
         hv = _hosp_values(con, None, where, params)
-        ids_sql = f"SELECT f.id FROM facilities f WHERE {where} ORDER BY f.pref_code, f.name"
-        if c.items or c.kubuns or not kwhere:
-            ids = [r[0] for r in con.execute(ids_sql, params)]
-            header = header + [f"{h['label']}（{h['unit']}）" for h in hcols]
-            rows = ([*r] + [_csv_num(hv.get(fid), h["col"]) for h in hcols] for fid, r in zip(ids, rows))
-    return _csv_response(header, rows, f"施設基準届出_{name}.csv", hosp_years=_hosp_years(con) if c.has_hosp else None)
+        header = header + [f"{h['label']}（{h['unit']}）" for h in hcols]
+        rows = ([*r[1:]] + [_csv_num(hv.get(r[0]), h["col"]) for h in hcols] for r in rows)
+    else:
+        rows = (r[1:] for r in rows)
+    return _csv_response(header, rows, f"施設基準届出_{name}.csv", hosp_years=_hosp_years(con) if hcols else None)
 
 
 def _csv_num(r, col):
     if r is None or r[col] is None:
         return ""
     v = r[col]
-    return round(v, 1) if col == "referral" else int(v)
+    return round(v, 1) if not float(v).is_integer() else int(v)
 
 
 def _hosp_years(con) -> dict[str, str]:

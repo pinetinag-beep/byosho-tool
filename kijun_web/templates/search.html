@@ -5,7 +5,8 @@
 {% block ga_events %}
   gtag("event", "search", {
     search_term: {{ [pref_name or "全国", cond.ftypes|join("・"), sel_cols|map(attribute="head")|join("・"), cond.k, cond.q, cond.hosp_labels|join("・")]|select|join(" ")|tojson }},
-    results: {{ total }}, n_items: {{ sel_cols|length }}, hosp_conditions: {{ cond.hosp_labels|length }}
+    results: {{ total }}, n_items: {{ sel_cols|length }}, hosp_conditions: {{ cond.hosp_labels|length }},
+    added_columns: {{ cond.adds|join(",")|tojson }}
   });
 {% endblock %}
 {% block content %}
@@ -58,6 +59,22 @@
   {% if total > 0 %}<a class="btn secondary" href="{{ csv_url }}">CSVダウンロード（無料）</a>{% endif %}
 </div>
 
+{% if total > 0 %}
+<details class="add-cols"{% if cond.adds %} open{% endif %}>
+  <summary>列を追加する（病床数・稼働率・医師数など）{% if cond.adds %}<span class="n">{{ cond.adds|length }}</span>{% endif %}</summary>
+  <form method="get" action="/search" data-ga-sec="add_cols">
+    {% for k, v in add_hidden %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% for g, items in add_groups %}
+    <fieldset><legend>{{ g }}</legend>
+      {% for a in items %}<label><input type="checkbox" name="add" value="{{ a.key }}"{% if a.key in cond.adds %} checked{% endif %}>{{ a.label }}</label>{% endfor %}
+    </fieldset>
+    {% endfor %}
+    <p class="add-cols-foot"><button type="submit" class="btn">列を表示する</button>
+      <span class="muted small">CSVにも同じ列が入ります。値は病院の最新の公表データ（病床機能報告・DPC・外来機能報告）です。</span></p>
+  </form>
+</details>
+{% endif %}
+
 {% if rows %}
 {% set item_cols = sel_cols|length <= 12 %}
 <div class="table-wrap">
@@ -102,7 +119,7 @@
 {% else %}
 <p class="note">条件に合う医療機関は見つかりませんでした。届出項目を「いずれか」にする、地域を広げるなどして探してみてください。</p>
 {% endif %}
-{% if hosp_cols %}<p class="note small">病床・設備・救急車の受入件数は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) }}）、DPCの件数は「{{ dpc_source(meta.hstats_dpc_year|int) }}」、紹介率は「外来機能報告」（{{ reiwa(meta.hstats_gairai_year|int) }}）の値です（いずれも厚生労働省、加工して作成）。病床機能報告に載っていない医療機関（多くの診療所）は、これらの条件では結果に出ません。「—」は報告されていない、または公表されていない値です。</p>{% endif %}
+{% if hosp_cols %}<p class="note small">病床・職員・設備・救急車の受入件数は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) }}）、DPCの件数は「{{ dpc_source(meta.hstats_dpc_year|int) }}」、紹介率・逆紹介率は「外来機能報告」（{{ reiwa(meta.hstats_gairai_year|int) }}）の値です（いずれも厚生労働省、加工して作成）。{% if has_occ %}病床稼働率は病床機能報告の定義どおり在棟延べ数÷（許可病床数×365）で、在棟延べ数は前年度1年間の実績、許可病床数は7月1日時点です。{% endif %}病床機能報告に載っていない医療機関（多くの診療所）は「—」になり、病床・設備・実績を条件にした場合は結果に出ません。「—」は報告されていない、または公表されていない値です。</p>{% endif %}
 <p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（各厚生局のページと利用した日は<a href="/about#sources">データについて</a>）</p>
 {% include "_ad.html" %}
 {% endblock %}
