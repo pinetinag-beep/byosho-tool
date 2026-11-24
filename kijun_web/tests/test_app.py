@@ -651,3 +651,22 @@ def test_search_add_columns():
     # 施設基準名で探した「届出1行ずつ」のCSVにも足せる
     t = client.get("/search.csv", params=[("pref", "39"), ("kx", "急性期看護補助体制加算"), ("add", "beds")]).text
     assert t.lstrip("﻿").splitlines()[0].endswith("許可病床数（床）")
+
+
+def test_search_exclude_items():
+    """「これがあって、あれがない」：item で届け出ている、nx で届け出ていない項目を指定できる。"""
+    import sqlite3
+    con = sqlite3.connect(str(appmod.DB_PATH))
+    a, b = [r[0] for r in con.execute("SELECT id FROM items ORDER BY n_facilities DESC LIMIT 2")]
+    base = [("pref", "13"), ("ftype", "病院")]
+
+    def n(q):
+        return int(re.search(r"([\d,]+) 件", client.get("/search", params=q).text).group(1).replace(",", ""))
+
+    has_a, has_ab = n(base + [("item", a)]), n(base + [("item", a), ("item", b)])
+    assert n(base + [("item", a), ("nx", b)]) == has_a - has_ab
+    assert n(base) - n(base + [("nx", a)]) == has_a
+    r = client.get("/search", params=base + [("item", a), ("nx", b)])
+    assert "届け出ていない" in r.text
+    assert "どれも届け出ていない" in client.get("/search.csv", params=base + [("nx", b)]).text
+    assert f'name="nx" value="{b}" checked' in client.get("/", params=base + [("nx", b)]).text

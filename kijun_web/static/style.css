@@ -599,3 +599,10 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
 .add-cols legend { width: 100%; font-size: .8em; font-weight: 700; color: var(--ink-muted); padding: 0; margin-bottom: 2px; }
 .add-cols label { display: inline-flex; align-items: center; gap: 4px; font-size: .9em; white-space: nowrap; }
 .add-cols-foot { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+
+/* 届出項目の「届け出ていない」 */
+.ct-pick { color: var(--ink-muted); display: inline-flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.ct-pick label { color: var(--ink); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.ct-grid label.ex:has(input:checked) { background: var(--bg); color: var(--ink-muted); }
+.ct-grid label.ex .s, .ct-grid label.ex .f { text-decoration: line-through; }
+.ct-grid label.ex::after { content: "なし"; margin-left: auto; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; font-size: .72em; font-weight: 700; color: var(--ink); text-decoration: none; }

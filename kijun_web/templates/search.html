@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{% if sel_cols %}{{ sel_cols|map(attribute='head')|join('・') }}{% elif cond.kx %}{{ cond.kx }}{% elif cond.k %}「{{ cond.k }}」{% endif %}{% if cond.q %} {{ cond.q }}{% endif %}{% if pref_name %} {{ pref_name }}{% endif %} の検索結果{% endblock %}
+{% block title %}{% if ex_labels and not sel_cols %}{{ ex_labels|map(attribute='head')|join('・') }}なし{% elif sel_cols %}{{ sel_cols|map(attribute='head')|join('・') }}{% elif cond.kx %}{{ cond.kx }}{% elif cond.k %}「{{ cond.k }}」{% endif %}{% if cond.q %} {{ cond.q }}{% endif %}{% if pref_name %} {{ pref_name }}{% endif %} の検索結果{% endblock %}
 {% block robots %}<meta name="robots" content="noindex,follow">{% endblock %}
 {% block canonical %}/search{% endblock %}
 {% block ga_events %}
   gtag("event", "search", {
-    search_term: {{ [pref_name or "全国", cond.ftypes|join("・"), sel_cols|map(attribute="head")|join("・"), cond.k, cond.q, cond.hosp_labels|join("・")]|select|join(" ")|tojson }},
-    results: {{ total }}, n_items: {{ sel_cols|length }}, hosp_conditions: {{ cond.hosp_labels|length }},
+    search_term: {{ [pref_name or "全国", cond.ftypes|join("・"), sel_cols|map(attribute="head")|join("・"), cond.k, cond.q, cond.hosp_labels|join("・"), ("なし:" ~ ex_labels|map(attribute="head")|join("・")) if ex_labels else ""]|select|join(" ")|tojson }},
+    results: {{ total }}, n_items: {{ sel_cols|length }}, hosp_conditions: {{ cond.hosp_labels|length }}, n_excluded: {{ ex_labels|length }},
     added_columns: {{ cond.adds|join(",")|tojson }}
   });
 {% endblock %}
@@ -24,6 +24,7 @@
   {% if sel_cols|length == 1 %}<span class="v">{% if sel_cols[0].kubun %}区分{% else %}届出項目{% endif %}：<abbr title="{{ sel_cols[0].title }}">{{ sel_cols[0].head }}</abbr></span>
   {% elif sel_cols %}<span class="v">{{ sel_cols|length }}件の{% if cond.mode == 'or' %}いずれか{% else %}すべて{% endif %}に当てはまる：
     {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+  {% if ex_labels %}<span class="v ex">届け出ていない：{% for s in ex_labels %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
   <a class="cs-edit" href="/?{{ cond.query() }}">条件を変更する</a>
 </div>
 

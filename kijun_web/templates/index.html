@@ -97,9 +97,13 @@
   <div class="ct-tools">
     <input type="search" id="ct-filter" placeholder="記号・正式名称で絞り込む（例：地域包括、がん）">
     <label class="ct-toggle"><input type="checkbox" id="ct-full">正式名称で表示</label>
-    <span class="ct-mode">選んだ項目の
+    <span class="ct-mode">届け出ている項目の
       <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべてを届け出ている</label>
       <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
+    </span>
+    <span class="ct-pick" role="radiogroup" aria-label="チェックした項目の意味">チェックすると
+      <label><input type="radio" name="_pick" value="in" checked>届け出ている</label>
+      <label><input type="radio" name="_pick" value="ex" id="ct-pick-ex">届け出ていない</label>
     </span>
   </div>
 
@@ -107,24 +111,24 @@
     {% for sec, items in sections %}
     <tr data-sec>
       <th scope="row">{{ sec }}<small>{{ items|length }}項目</small></th>
-      {% set nsel = items|selectattr('id', 'in', sel_items)|list|length %}
+      {% set nsel = items|selectattr('id', 'in', sel_items)|list|length + items|selectattr('id', 'in', ex_items)|list|length %}
       <td><details class="ct-acc" {% if nsel %}open{% endif %}>
         <summary><span class="ct-acc-open">{{ items|length }}項目を表示する</span><span class="ct-acc-close">閉じる</span><span class="ct-acc-n" {% if not nsel %}hidden{% endif %}>{{ nsel }}件選択中</span></summary>
         <div class="ct-grid">
-        {% for it in items %}<label title="{{ it.kijun }}（{{ "{:,}".format(it.n_facilities) }}施設）" data-k="{{ (it.symbol ~ ' ' ~ it.kijun)|lower }}"><input type="checkbox" name="item" value="{{ it.id }}" {% if it.id in sel_items %}checked{% endif %}><span class="s">{{ it.symbol or it.kijun }}</span><span class="f">{{ it.kijun }}</span></label>{% endfor %}
+        {% for it in items %}<label title="{{ it.kijun }}（{{ "{:,}".format(it.n_facilities) }}施設）" data-k="{{ (it.symbol ~ ' ' ~ it.kijun)|lower }}"><input type="checkbox" name="{{ 'nx' if it.id in ex_items else 'item' }}" value="{{ it.id }}" {% if it.id in sel_items or it.id in ex_items %}checked{% endif %}><span class="s">{{ it.symbol or it.kijun }}</span><span class="f">{{ it.kijun }}</span></label>{% endfor %}
       </div></details></td>
     </tr>
     {% if loop.first and kubun_groups %}
     <tr data-sec>
       <th scope="row">入院基本料の区分<small>看護の基準が高い順</small></th>
-      {% set ksel = namespace(n=0) %}{% for kijun, rows in kubun_groups %}{% for b in rows %}{% if b.id in sel_kubuns %}{% set ksel.n = ksel.n + 1 %}{% endif %}{% endfor %}{% endfor %}
+      {% set ksel = namespace(n=0) %}{% for kijun, rows in kubun_groups %}{% for b in rows %}{% if b.id in sel_kubuns or b.id in ex_kubuns %}{% set ksel.n = ksel.n + 1 %}{% endif %}{% endfor %}{% endfor %}
       <td><details class="ct-acc" {% if ksel.n %}open{% endif %}>
         <summary><span class="ct-acc-open">区分を表示する（{{ kubun_groups|map(attribute=1)|map('length')|sum }}区分）</span><span class="ct-acc-close">閉じる</span><span class="ct-acc-n" {% if not ksel.n %}hidden{% endif %}>{{ ksel.n }}件選択中</span></summary>
         {% for kijun, rows in kubun_groups %}
         <div class="ct-kgroup">
           <span class="ct-kname">{{ kijun|replace('入院基本料', '') }}</span>
           <div class="ct-grid ct-grid-wide">
-          {% for b in rows %}<label title="{{ kijun }}の区分（{{ "{:,}".format(b.n_facilities) }}施設）" data-k="{{ (b.name ~ ' ' ~ kijun)|lower }}"><input type="checkbox" name="kb" value="{{ b.id }}" {% if b.id in sel_kubuns %}checked{% endif %}><span class="s">{{ b.name }}</span><span class="f">{{ b.name }}（{{ kijun }}）</span></label>{% endfor %}
+          {% for b in rows %}<label title="{{ kijun }}の区分（{{ "{:,}".format(b.n_facilities) }}施設）" data-k="{{ (b.name ~ ' ' ~ kijun)|lower }}"><input type="checkbox" name="{{ 'nkb' if b.id in ex_kubuns else 'kb' }}" value="{{ b.id }}" {% if b.id in sel_kubuns or b.id in ex_kubuns %}checked{% endif %}><span class="s">{{ b.name }}</span><span class="f">{{ b.name }}（{{ kijun }}）</span></label>{% endfor %}
           </div>
         </div>
         {% endfor %}
@@ -227,12 +231,24 @@
     if (n("input[name=ftype]")) parts.push(`施設の種類 ${n("input[name=ftype]")}`);
     const items = n("input[name=item]") + n("input[name=kb]");
     if (items) parts.push(`届出項目 ${items}`);
+    const exs = n("input[name=nx]") + n("input[name=nkb]");
+    if (exs) parts.push(`届け出ていない ${exs}`);
     if (document.getElementById("ct-q").value.trim()) parts.push("名前・住所");
     const hosp = n("input[name=fn]") + n("input[name=eq]") +
       [...form.querySelectorAll("#ct-hosp input[type=number]")].filter((i) => i.value !== "").length;
     if (hosp) parts.push(`病床・設備・実績 ${hosp}`);
     bar.textContent = parts.length ? "選択中：" + parts.join("・") : "条件の指定なし（すべての医療機関）";
   }
+  // 「届け出ていない」を選んでいる時にチェックした項目は、除外の条件（nx / nkb）にする
+  const pickEx = document.getElementById("ct-pick-ex");
+  table.addEventListener("change", (e) => {
+    const i = e.target;
+    if (i.type !== "checkbox" || !i.closest(".ct-grid")) return;
+    const kb = i.name === "kb" || i.name === "nkb";
+    i.name = i.checked && pickEx.checked ? (kb ? "nkb" : "nx") : (kb ? "kb" : "item");
+    i.closest("label").classList.toggle("ex", i.name === "nx" || i.name === "nkb");
+  });
+  table.querySelectorAll("input[name=nx], input[name=nkb]").forEach((i) => i.closest("label").classList.add("ex"));
   table.addEventListener("change", count);
   const hospTable = document.getElementById("ct-hosp");
   if (hospTable) { hospTable.addEventListener("change", count); hospTable.addEventListener("input", count); }
@@ -279,10 +295,11 @@
   // 送信時、空の名前欄はURLに付けない
   form.addEventListener("submit", () => {
     if (!q.value.trim()) q.disabled = true;
+    form.querySelectorAll("input[name=_pick]").forEach((i) => { i.disabled = true; });
     // 空の数値欄はURLに載せない
     form.querySelectorAll("#ct-hosp input[type=number]").forEach((i) => { if (i.value === "") i.disabled = true; });
   });
-  window.addEventListener("pageshow", () => { q.disabled = false; });
+  window.addEventListener("pageshow", () => { q.disabled = false; form.querySelectorAll("input[name=_pick]").forEach((i) => { i.disabled = false; }); });
 
   renderAreas(true);
   count();

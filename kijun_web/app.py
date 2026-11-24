@@ -254,6 +254,8 @@ class Cond:
     items: list[int] = field(default_factory=list)
     kubuns: list[int] = field(default_factory=list)   # 入院基本料の区分（急性期一般入院料１など、kubuns.id）
     mode: str = "and"          # 届出項目・区分を「すべて」届け出ている(and) / 「いずれか」(or)
+    ex_items: list[int] = field(default_factory=list)   # 届け出ていない届出項目（どれも届け出ていない施設）
+    ex_kubuns: list[int] = field(default_factory=list)  # 当てはまらない区分
     k: str = ""                # 施設基準名称の一部（施設基準ページの「条件を足して検索」など、従来のリンク用）
     kx: str = ""               # 施設基準名称の完全一致（施設基準ページのCSVリンク用）
     # 病床・設備・実績（病院。病床機能報告・DPC・外来機能報告の最新年度の値で絞り込む）
@@ -278,6 +280,8 @@ class Cond:
         # item=12.13.14 のように「.」でまとめた値も受け付ける（「診療科から探す」の1行＝複数の届出項目）
         items = [int(x) for v in qp.getlist("item") for x in v.split(".") if x.isdigit()]
         kubuns = [int(v) for v in qp.getlist("kb") if v.isdigit()]
+        ex_items = [int(x) for v in qp.getlist("nx") for x in v.split(".") if x.isdigit()]
+        ex_kubuns = [int(v) for v in qp.getlist("nkb") if v.isdigit()]
         return cls(
             prefs=[v.strip() for v in qp.getlist("pref") if v.strip()],
             areas=[v for v in qp.getlist("area") if v],
@@ -287,6 +291,8 @@ class Cond:
             items=list(dict.fromkeys(items)),
             kubuns=list(dict.fromkeys(kubuns)),
             mode="or" if qp.get("mode") == "or" else "and",
+            ex_items=[i for i in dict.fromkeys(ex_items) if i not in items],
+            ex_kubuns=[i for i in dict.fromkeys(ex_kubuns) if i not in kubuns],
             k=qp.get("k", "").strip(),
             kx=qp.get("kx", "").strip(),
             bmin=_pos_num(qp.get("bmin")),
@@ -304,6 +310,7 @@ class Cond:
         pairs = [("pref", p) for p in self.prefs] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
         pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
         pairs += [("kb", i) for i in self.kubuns]
+        pairs += [("nx", i) for i in self.ex_items] + [("nkb", i) for i in self.ex_kubuns]
         if self.n_selected > 1 and self.mode == "or":
             pairs.append(("mode", "or"))
         pairs += [("k", self.k), ("kx", self.kx)]
@@ -349,7 +356,7 @@ class Cond:
     @property
     def empty(self) -> bool:
         return not (self.prefs or self.ftypes or self.q or self.items or self.kubuns or self.k or self.kx
-                    or self.has_hosp)
+                    or self.has_hosp or self.ex_items or self.ex_kubuns)
 
 
 def _fmt_num(v: float | None) -> str:
@@ -463,6 +470,13 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
     if sel:
         where.append("(" + (" OR " if c.mode == "or" else " AND ").join(sel) + ")")
         params += sel_params
+    # 届け出ていない（どれも届け出ていない）
+    if c.ex_items:
+        where.append(f"f.id NOT IN (SELECT facility_id FROM filings WHERE item_id IN ({','.join('?' * len(c.ex_items))}))")
+        params += c.ex_items
+    if c.ex_kubuns:
+        where.append(f"f.id NOT IN (SELECT facility_id FROM fac_kubun WHERE kubun_id IN ({','.join('?' * len(c.ex_kubuns))}))")
+        params += c.ex_kubuns
     if c.has_hosp:
         hw, hp = _hosp_sql(c)
         where.append(f"f.id IN (SELECT facility_id FROM hstats WHERE {hw})")
@@ -663,7 +677,8 @@ def index(request: Request):
         kd_top = con.execute("""SELECT month, SUM(kind = '新規') AS n_new, SUM(kind = '取り下げ') AS n_drop FROM kdiff
                                 WHERE month = (SELECT MAX(month) FROM kdiff)""").fetchone() if _has_kdiff(con) else None
     return render(request, "index.html", cond=cond, kd_top=kd_top, examples=examples, type_counts=type_counts, hosp_counts=hosp_counts,
-                  sel_items=set(cond.items), sel_kubuns=set(cond.kubuns), **ctx)
+                  sel_items=set(cond.items), sel_kubuns=set(cond.kubuns),
+                  ex_items=set(cond.ex_items), ex_kubuns=set(cond.ex_kubuns), **ctx)
 
 
 @app.get("/facilities/suggest.json")
@@ -759,6 +774,13 @@ def _sel_columns(con, c: Cond, where: str, params: list, fac_ids: list[str] | No
     return cols, marks
 
 
+def _ex_labels(con, c: Cond) -> list[dict]:
+    """届け出ていない条件の表示名（{head, title}）。"""
+    out = [{"head": r["symbol"] or r["kijun"], "title": r["kijun"]} for r in _selected_items(con, c.ex_items)]
+    out += [{"head": r["name"], "title": f"{r['kijun']}の区分"} for r in _kubun_rows(con, c.ex_kubuns)]
+    return out
+
+
 @app.get("/search", response_class=HTMLResponse)
 def search(request: Request, page: int = Query(1, ge=1)):
     c = Cond.from_request(request)
@@ -777,6 +799,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
         ).fetchall()
         ids = [r["id"] for r in rows]
         sel_cols, marks = _sel_columns(con, c, where, params, ids)
+        ex_labels = _ex_labels(con, c)
         hosp_cols = _hosp_cols(c)
         hosp_vals = _hosp_values(con, ids) if hosp_cols else {}
         hits: dict[str, list[str]] = {}
@@ -811,7 +834,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
         pref_name=pref_name, cond=c, matched_kijun=matched_kijun, matched_kubun=matched_kubun,
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
-        add_groups=H_ADD_GROUPS, add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
+        ex_labels=ex_labels, add_groups=H_ADD_GROUPS, add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
         has_occ=any(h["col"] == "occ" for h in hosp_cols),
         page_url=lambda p: "/search?" + c.query(page=p),
         narrow_url=lambda name: "/search?" + Cond(prefs=c.prefs, areas=c.areas, cities=c.cities, ftypes=c.ftypes,
@@ -827,7 +850,8 @@ FILING_COLS = ["受理届出名称", "受理記号", "受理番号", "算定開�
                "病棟数", "病床数", "区分", "内訳その他", "区分（参考：病床機能報告）"]
 
 
-def _csv_response(header: list[str], rows, filename: str, hosp_years: dict | None = None) -> StreamingResponse:
+def _csv_response(header: list[str], rows, filename: str, hosp_years: dict | None = None,
+                  notes: list[str] | None = None) -> StreamingResponse:
     def gen():
         buf = io.StringIO()
         w = csv.writer(buf)
@@ -840,6 +864,8 @@ def _csv_response(header: list[str], rows, filename: str, hosp_years: dict | Non
                 buf.seek(0)
                 buf.truncate()
         w.writerow([])
+        for n in notes or []:
+            w.writerow([n])
         if "区分（参考：病床機能報告）" in header:
             w.writerow(["区分（参考：病床機能報告）：厚生局が区分を公表していない届出について、"
                         "厚生労働省「病床機能報告」（7月1日時点の病棟の入院基本料）を加工して補ったもの。"
@@ -912,7 +938,13 @@ def search_csv(request: Request):
         rows = ([*r[1:]] + [_csv_num(hv.get(r[0]), h["col"]) for h in hcols] for r in rows)
     else:
         rows = (r[1:] for r in rows)
-    return _csv_response(header, rows, f"施設基準届出_{name}.csv", hosp_years=_hosp_years(con) if hcols else None)
+    ex = _ex_labels(con, c)
+    notes = ["条件：次のどれも届け出ていない医療機関 … " + "、".join(
+        x["title"] if x["head"] == x["title"] else f"{x['head']}（{x['title']}）" for x in ex)] if ex else None
+    if ex and name == "医療機関一覧":
+        name = "届出なし" + "・".join(x["head"] for x in ex[:3])
+    return _csv_response(header, rows, f"施設基準届出_{name}.csv", hosp_years=_hosp_years(con) if hcols else None,
+                         notes=notes)
 
 
 def _csv_num(r, col):
