@@ -32,6 +32,7 @@ from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
 from .specialties import build as build_specialties
 from . import yakkyoku as ymod
 from . import changes as cmod
+from . import visits as vmod
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -60,6 +61,17 @@ AD_PREVIEW = os.environ.get("AD_PREVIEW", "") == "1"             # 見た目の�
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # トップと検索結果は届出項目のチェックボックス（約1,300個）を含み350KB程度になるので圧縮して返す
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# 同じIPアドレスからのアクセスを数える（会社などで使われているかを知るため。kijun_web/visits.py）
+@app.middleware("http")
+async def _count_visit(request: Request, call_next):
+    response = await call_next(request)
+    if (request.method == "GET" and response.status_code == 200
+            and response.headers.get("content-type", "").startswith("text/html")
+            and not request.url.path.startswith("/admin")):
+        vmod.record(request.client.host if request.client else None, request.headers.get("user-agent", ""))
+    return response
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -1483,6 +1495,26 @@ def webmanifest():
                         media_type="application/manifest+json")
 
 
+# 管理用の集計ページの鍵。鍵そのものはコードに置かず、SHA-256 だけを置く（サーバーの ADMIN_KEY があればそれも使える）
+ADMIN_KEY_SHA256 = "efba15bc7a9041e91cd5a985bd57d267bbea10a9371229eefd116a6f4f4618d6"
+
+
+def _admin_ok(key: str) -> bool:
+    import hashlib, hmac
+    if not key:
+        return False
+    env = os.environ.get("ADMIN_KEY", "")
+    return (hmac.compare_digest(hashlib.sha256(key.encode()).hexdigest(), ADMIN_KEY_SHA256)
+            or bool(env and hmac.compare_digest(key, env)))
+
+
+@app.get("/admin/visits", response_class=HTMLResponse, include_in_schema=False)
+def admin_visits(request: Request, key: str = "", days: int = Query(30, ge=1, le=60)):
+    if not _admin_ok(key):
+        raise HTTPException(404)
+    return render(request, "admin_visits.html", s=vmod.summary(days), key=key)
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     return (
@@ -1490,6 +1522,7 @@ def robots():
         "Disallow: /search\n"
         "Disallow: /*.csv\n"
         "Disallow: /*.pdf\n"
+        "Disallow: /admin\n"
         f"Sitemap: {SITE_URL}/sitemap.xml\n"
     )
 

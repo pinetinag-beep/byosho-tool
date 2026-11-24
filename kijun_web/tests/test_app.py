@@ -634,3 +634,36 @@ def test_favicon_and_site_name():
     top = client.get("/").text
     assert 'rel="icon" href="/favicon.ico"' in top and '"@type": "WebSite"' in top and '"name": "MedilenZ"' in top
     assert '"@type": "WebSite"' not in client.get("/about").text   # サイト名の構造化データはトップだけ
+
+
+def test_visit_counting_and_admin_page(monkeypatch, tmp_path):
+    """ページを開いたアクセスをIPごとに数え、管理用の集計ページは鍵が無いと開けない。"""
+    from kijun_web import visits
+    monkeypatch.setattr(visits, "DB_PATH", tmp_path / "v.sqlite")
+    monkeypatch.setattr(visits, "_ready", False)
+    monkeypatch.setattr(visits, "_lookup", lambda ips, budget=8.0: None)   # テストでは逆引きしない
+    ua = {"user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/130"}
+    client.get("/about", headers=ua)
+    client.get("/guide", headers=ua)
+    client.get("/about", headers={"user-agent": "Mozilla/5.0 (iPhone) Safari/604"})
+    client.get("/about", headers={"user-agent": "Googlebot/2.1"})              # ボットは数えない
+    client.get("/robots.txt", headers=ua)                                        # HTML以外は数えない
+    s = visits.summary(30)
+    assert s["total"] == 1 and s["multi_dev"] == 1 and s["detail"][0]["pv"] == 3
+    assert s["detail"][0]["ip"].endswith(".x") or s["detail"][0]["ip"].endswith("::") or s["detail"][0]["ip"] == "?"
+    assert client.get("/admin/visits").status_code == 404
+    assert client.get("/admin/visits?key=wrong").status_code == 404
+    monkeypatch.setenv("ADMIN_KEY", "test-key")
+    r = client.get("/admin/visits?key=test-key")
+    assert r.status_code == 200 and "アクセス元の集計" in r.text and "noindex" in r.text
+    assert "Disallow: /admin" in client.get("/robots.txt").text
+
+
+def test_visit_kind_guess():
+    from kijun_web import visits
+    assert visits.kind("") == "不明（逆引きなし）"
+    assert visits.kind("p1234-ipngn.tokyo.ocn.ne.jp") == "個人向け回線・携帯"
+    assert visits.kind("gw.example-pharma.co.jp") == "企業・団体"
+    assert visits.kind("proxy.pref.kochi.lg.jp") == "行政"
+    assert visits.kind("vpn.u-tokyo.ac.jp") == "大学・研究・学校"
+    assert visits.org_domain("gw.example-pharma.co.jp") == "example-pharma.co.jp"
