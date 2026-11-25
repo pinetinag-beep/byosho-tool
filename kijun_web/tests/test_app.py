@@ -730,3 +730,10 @@ def test_grouped_items_any_within_group():
     assert n(base + [("item", g)]) == n(base + [("item", g), ("mode", "or")]) > 0
     assert n(base + [("item", str(i)) for i in ids]) < n(base + [("item", g)])
     assert f"item={g.replace('.', '.')}" in client.get("/search", params=base + [("item", g)]).text.replace("%2E", ".")
+
+
+def test_ga_events_have_no_raw_template_code():
+    """GAのイベントのJSに、Jinjaの式が{{ }}の外でそのまま出ていない（歯科・薬局の検索で一度あった）。"""
+    for u in ["/shika/search?pref=39", "/yakkyoku/search?pref=13", "/search?pref=39"]:
+        t = client.get(u).text
+        assert "K.word ~" not in t and "content_group: K." not in t

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ K.word }}の検索結果{% if pref %}（{{ pref.name }}{{ c.city }}）{% endif %}{% endblock %}
 {% block robots %}<meta name="robots" content="noindex">{% endblock %}
-{% block ga_events %}gtag("event", "search", { search_term: {{ (K.word ~ " " ~ (pref.name if pref else "全国") ~ " " ~ c.city ~ " " ~ (sel|map(attribute="name")|join("・")) ~ " " ~ c.q)|trim|tojson }}, results: {{ total }}, content_group: K.word ~ "の検索結果" });{% endblock %}
+{% block ga_events %}gtag("event", "search", { search_term: {{ (K.word ~ " " ~ (pref.name if pref else "全国") ~ " " ~ c.city ~ " " ~ (sel|map(attribute="name")|join("・")) ~ " " ~ c.q)|trim|tojson }}, results: {{ total }}, content_group: {{ (K.word ~ "の検索結果")|tojson }} });{% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="{{ K.base }}">{{ K.word }}を探す</a> › 検索結果</p>
 <h1>{{ K.word }}の検索結果</h1>
