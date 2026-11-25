@@ -672,22 +672,24 @@ def test_search_exclude_items():
     assert f'name="nx" value="{b}" checked' in client.get("/", params=base + [("nx", b)]).text
 
 
-def test_search_exclude_show_mode():
-    """nxmode=show なら「届け出ていない」項目で絞り込まず、届け出ている施設に○を付ける。"""
+def test_search_show_only_columns():
+    """「列を追加する」の届出の列（sx）：絞り込まず、届け出ている施設に○。古い nxmode=show のURLも同じ意味で読む。"""
     import sqlite3
     con = sqlite3.connect(str(appmod.DB_PATH))
     a, b = [r[0] for r in con.execute("SELECT id FROM items ORDER BY n_facilities DESC LIMIT 2")]
-    base = [("pref", "13"), ("ftype", "病院"), ("item", a), ("nx", b)]
+    base = [("pref", "13"), ("ftype", "病院"), ("item", a)]
 
     def n(q):
         return int(re.search(r"([\d,]+) 件", client.get("/search", params=q).text).group(1).replace(",", ""))
 
-    assert n(base + [("nxmode", "show")]) == n([("pref", "13"), ("ftype", "病院"), ("item", a)])
-    t = client.get("/search.csv", params=base + [("nxmode", "show")]).text.lstrip("﻿").splitlines()
+    assert n(base + [("sx", b)]) == n(base) == n(base + [("nx", b), ("nxmode", "show")])
+    t = client.get("/search.csv", params=base + [("sx", b)]).text.lstrip("\ufeff").splitlines()
     assert any(line.endswith(",○,○") for line in t) and any(line.endswith(",○,") for line in t)
-    r = client.get("/search", params=base + [("nxmode", "show")])
-    assert "列だけ表示" in r.text and "未届出の施設だけにする" in r.text
-    assert 'value="show" checked' in client.get("/", params=base + [("nxmode", "show")]).text
+    assert "列だけ表示した届出" in "\n".join(t)
+    r = client.get("/search", params=base + [("sx", b)])
+    assert 'name="sx" value="%d"' % b in r.text
+    j = client.get("/items/suggest.json", params={"q": "地域包括"}).json()
+    assert j and all(x["key"][0] in "ib" for x in j)
 
 
 def test_gone_and_old_urls():

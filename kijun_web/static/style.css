@@ -637,3 +637,38 @@ input[type=search] {
   padding-left: 36px !important;
 }
 .ct-flabel { font-size: 0.78rem; font-weight: 700; color: var(--ink-muted); flex-basis: 100%; margin-bottom: -4px; }
+
+/* 検索結果「列を追加する」の届出の列 */
+.add-kijun-body { flex: 1 1 100%; display: grid; gap: 6px; }
+.add-kijun-in { position: relative; max-width: 560px; }
+.add-kijun-in input { width: 100%; padding: 8px 12px; border: 1px solid var(--field-line); border-radius: 8px; }
+.add-kijun-in .sx-suggest li { padding: 0; }
+.add-kijun-in .sx-suggest li a { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px; color: var(--ink); text-decoration: none; }
+.add-kijun-in .sx-suggest li a:hover { background: var(--brand-soft); }
+.add-kijun-in .sx-suggest .nm small { display: block; color: var(--ink-faint); font-size: 0.75rem; }
+.add-kijun-in .sx-suggest .ct { color: var(--ink-faint); font-size: 0.78rem; white-space: nowrap; }
+.add-kijun-in .sx-suggest li.none { padding: 8px 10px; color: var(--ink-muted); }
+.add-kijun-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.add-kijun-chips:empty { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--brand-line); border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-size: 0.85rem; font-weight: 700; }
+.chip-x { border: 0; background: none; color: var(--ink-muted); font-size: 0.95rem; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 999px; }
+.chip-x:hover { background: var(--card); color: var(--ink); }
+
+/* トップの下のバー：選んだ届出のチップ（あり／なし）と「すべて／いずれか」 */
+.ct-bar { flex-direction: column; align-items: stretch; }
+.ct-bar-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
+.ct-tray { display: grid; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line); max-height: 34vh; overflow: auto; }
+.ct-tray[hidden] { display: none; }
+.ct-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip2 { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--brand-line); border-radius: 999px; background: var(--brand-soft); font-size: 0.85rem; }
+.chip2-name { font-weight: 700; color: var(--brand-dark); }
+.chip2.ex { background: var(--bg); border-color: var(--field-line); }
+.chip2.ex .chip2-name { color: var(--ink-muted); text-decoration: line-through; }
+.seg { display: inline-flex; border: 1px solid var(--field-line); border-radius: 999px; overflow: hidden; background: var(--card); }
+.seg button { border: 0; background: none; font: inherit; font-size: 0.78rem; padding: 2px 9px; cursor: pointer; color: var(--ink-muted); }
+.seg button[aria-pressed="true"] { background: var(--brand); color: var(--card); font-weight: 700; }
+.chip2.ex .seg button[aria-pressed="true"] { background: var(--ink-muted); }
+.ct-mode2 { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-size: 0.85rem; color: var(--ink-muted); }
+.ct-mode2[hidden] { display: none; }
+.ct-mode2 label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); cursor: pointer; }
+.ct-mode2 input { accent-color: var(--brand); }

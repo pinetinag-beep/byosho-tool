@@ -99,23 +99,6 @@
     <input type="search" id="ct-filter" placeholder="例：地域包括、がん、緩和ケア">
     <label class="ct-toggle"><input type="checkbox" id="ct-full">正式名称で表示</label>
   </div>
-  <dl class="ct-modes">
-    <dt>チェックすると</dt>
-    <dd role="radiogroup" aria-label="チェックした項目の意味">
-      <label><input type="radio" name="_pick" value="in" checked>届け出ている</label>
-      <label><input type="radio" name="_pick" value="ex" id="ct-pick-ex">届け出ていない</label>
-    </dd>
-    <dt>届け出ている項目が複数のとき</dt>
-    <dd>
-      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべてを届け出ている</label>
-      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
-    </dd>
-    <dt class="ct-nx" {% if not (ex_items or ex_kubuns) %}hidden{% endif %}>届け出ていない項目は</dt>
-    <dd class="ct-nx" id="ct-nxmode" {% if not (ex_items or ex_kubuns) %}hidden{% endif %}>
-      <label><input type="radio" name="nxmode" value="only" {% if not cond.ex_show %}checked{% endif %}>未届出の施設だけ出す</label>
-      <label><input type="radio" name="nxmode" value="show" {% if cond.ex_show %}checked{% endif %}>届け出ている施設も出す（列で見分ける）</label>
-    </dd>
-  </dl>
 
   <table class="ct ct-items" id="ct-items">
     {% for sec, items in sections %}
@@ -151,8 +134,18 @@
 
   {% if cond.k %}<p class="ct-hint">施設基準名「{{ cond.k }}」の条件も引き続き使います。<label><input type="checkbox" name="k" value="{{ cond.k }}" checked> この条件を使う</label></p>{% endif %}
   <div class="ct-bar" id="ct-bar">
-    <span class="ct-count" id="ct-count">条件の指定なし（すべての医療機関）</span>
-    <span class="ct-bar-act"><a class="ct-clear" href="/">条件をクリア</a><button type="submit" class="btn">リストを抽出する</button></span>
+    {# 選んだ届出項目・区分のチップ。チップごとに「あり／なし」を切り替える（なし＝届け出ていない医療機関に絞る） #}
+    <div class="ct-tray" id="ct-tray" hidden>
+      <div class="ct-chips" id="ct-chips" aria-label="選んだ届出"></div>
+      <div class="ct-mode2" id="ct-mode2" hidden>「あり」の届出が複数のとき
+        <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべて届け出ている</label>
+        <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
+      </div>
+    </div>
+    <div class="ct-bar-row">
+      <span class="ct-count" id="ct-count">条件の指定なし（すべての医療機関）</span>
+      <span class="ct-bar-act"><a class="ct-clear" href="/">条件をクリア</a><button type="submit" class="btn">リストを抽出する</button></span>
+    </div>
   </div>
 </form>
 
@@ -249,22 +242,40 @@
     if (hosp) parts.push(`病床・設備・実績 ${hosp}`);
     bar.textContent = parts.length ? "選択中：" + parts.join("・") : "条件の指定なし（すべての医療機関）";
   }
-  // 「届け出ていない」を選んでいる時にチェックした項目は、除外の条件（nx / nkb）にする
-  const pickEx = document.getElementById("ct-pick-ex");
+  // ── 選んだ届出のチップ（下のバー）。チップごとに「あり／なし」、×で外す ──
+  const tray = document.getElementById("ct-tray"), chipsBox = document.getElementById("ct-chips"),
+        mode2 = document.getElementById("ct-mode2");
+  const isKb = (i) => i.name === "kb" || i.name === "nkb";
+  const isEx = (i) => i.name === "nx" || i.name === "nkb";
+  const setEx = (i, ex) => { i.name = isKb(i) ? (ex ? "nkb" : "kb") : (ex ? "nx" : "item"); i.closest("label").classList.toggle("ex", ex); };
+  const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  function renderChips() {
+    const on = [...table.querySelectorAll(".ct-grid input:checked")];
+    chipsBox.innerHTML = on.map((i, n) => {
+      const lab = i.closest("label"), ex = isEx(i);
+      return `<span class="chip2${ex ? " ex" : ""}" data-n="${n}" title="${escH(lab.title)}"><span class="chip2-name">${escH(lab.querySelector(".s").textContent)}</span>` +
+        `<span class="seg" role="group" aria-label="この届出の条件"><button type="button" data-v="in" aria-pressed="${!ex}">あり</button><button type="button" data-v="ex" aria-pressed="${ex}">なし</button></span>` +
+        `<button type="button" class="chip-x" aria-label="外す">×</button></span>`;
+    }).join("");
+    chipsBox._inputs = on;
+    tray.hidden = !on.length;
+    mode2.hidden = on.filter((i) => !isEx(i)).length < 2;
+  }
+  chipsBox.addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip2"); if (!chip) return;
+    const inp = chipsBox._inputs[+chip.dataset.n];
+    if (e.target.classList.contains("chip-x")) { inp.checked = false; setEx(inp, false); }
+    else if (e.target.dataset.v) setEx(inp, e.target.dataset.v === "ex");
+    else return;
+    inp.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   table.addEventListener("change", (e) => {
     const i = e.target;
-    if (i.type !== "checkbox" || !i.closest(".ct-grid")) return;
-    const kb = i.name === "kb" || i.name === "nkb";
-    i.name = i.checked && pickEx.checked ? (kb ? "nkb" : "nx") : (kb ? "kb" : "item");
-    i.closest("label").classList.toggle("ex", i.name === "nx" || i.name === "nkb");
+    if (i.type === "checkbox" && i.closest(".ct-grid") && !i.checked) setEx(i, false);
+    renderChips();
   });
   table.querySelectorAll("input[name=nx], input[name=nkb]").forEach((i) => i.closest("label").classList.add("ex"));
-  // 「届け出ていない」を1つでも選んだら、その扱い（未届出だけ／届け出ている施設も）を出す
-  const nxBox = document.getElementById("ct-nxmode");
-  table.addEventListener("change", () => {
-    const on = !!table.querySelector("input[name=nx]:checked, input[name=nkb]:checked");
-    document.querySelectorAll(".ct-nx").forEach((e) => { e.hidden = !on; });
-  });
+  renderChips();
   table.addEventListener("change", count);
   const hospTable = document.getElementById("ct-hosp");
   if (hospTable) { hospTable.addEventListener("change", count); hospTable.addEventListener("input", count); }
@@ -311,12 +322,10 @@
   // 送信時、空の名前欄はURLに付けない
   form.addEventListener("submit", () => {
     if (!q.value.trim()) q.disabled = true;
-    form.querySelectorAll("input[name=_pick]").forEach((i) => { i.disabled = true; });
-    if (nxBox.hidden) nxBox.querySelectorAll("input").forEach((i) => { i.disabled = true; });
     // 空の数値欄はURLに載せない
     form.querySelectorAll("#ct-hosp input[type=number]").forEach((i) => { if (i.value === "") i.disabled = true; });
   });
-  window.addEventListener("pageshow", () => { q.disabled = false; form.querySelectorAll("input[name=_pick], input[name=nxmode]").forEach((i) => { i.disabled = false; }); });
+  window.addEventListener("pageshow", () => { q.disabled = false; });
 
   renderAreas(true);
   count();
