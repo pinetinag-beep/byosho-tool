@@ -8,6 +8,7 @@
   --ink-muted: #6E6A5E;
   --ink-faint: #9C9890;
   --line: #E8E4DB;
+  --field-line: #BDB6A6;   /* 入力欄の枠。背景と見分けがつく濃さ */
   --bg: #FAF8F4;
   --card: #FFFFFF;
   --radius: 10px;
@@ -101,7 +102,7 @@ h2 { font-size: 1.15rem; font-weight: 700; margin: 36px 0 12px; padding-left: 10
 .sx-grow { flex: 1 1 140px; }
 .sx-flabel { font-size: 0.75rem; font-weight: 700; color: var(--ink-muted); }
 .sx-field select, .sx-field input[type=text], .sx-pop > summary {
-  font: inherit; font-size: 0.92rem; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+  font: inherit; font-size: 0.92rem; height: 40px; padding: 0 12px; border: 1px solid var(--field-line); border-radius: 10px; background: var(--card); color: var(--ink);
 }
 .sx-field input[type=text] { width: 100%; }
 .sx-field select:focus, .sx-field input:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
@@ -206,7 +207,7 @@ td.nowrap { white-space: nowrap; }
 .fact .v { font-size: 1.05rem; font-weight: 700; }
 .note { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; font-size: 0.88rem; color: var(--ink-muted); }
 .callout { background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: var(--radius); padding: 12px 16px; font-size: 0.9rem; }
-.filter { width: 100%; max-width: 420px; font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; margin: 0 0 12px; }
+.filter { width: 100%; max-width: 420px; font: inherit; padding: 9px 11px; border: 1px solid var(--field-line); border-radius: 8px; margin: 0 0 12px; }
 .source { font-size: 0.75rem; color: var(--ink-faint); text-align: right; margin: 6px 0 0; overflow-wrap: anywhere; }
 
 @media (max-width: 760px) {
@@ -269,7 +270,7 @@ td.nowrap { white-space: nowrap; }
 .ct-wait { margin: 0; color: var(--warn); font-size: 0.82rem; }
 .ct-hint { margin: 6px 0 0; font-size: 0.78rem; color: var(--ink-faint); }
 .ct-name { position: relative; max-width: 560px; }
-.ct-name input { width: 100%; font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.ct-name input { width: 100%; font: inherit; padding: 9px 12px; border: 1px solid var(--field-line); border-radius: 8px; }
 .ct-name input:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
 .ct-name .sx-suggest li { padding: 0; }
 .ct-name .sx-suggest li a { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; width: 100%; }
@@ -277,7 +278,7 @@ td.nowrap { white-space: nowrap; }
 .ct-name .sx-suggest .nm small { display: block; color: var(--ink-faint); font-size: 0.75rem; }
 h2.ct-h { margin-top: 32px; }
 .ct-tools { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; margin: 10px 0 12px; font-size: 0.88rem; }
-.ct-tools input[type=search] { flex: 1 1 280px; max-width: 420px; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.ct-tools input[type=search] { flex: 1 1 280px; max-width: 420px; font: inherit; padding: 8px 12px; border: 1px solid var(--field-line); border-radius: 8px; }
 .ct-toggle, .ct-mode label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .ct-mode { color: var(--ink-muted); display: inline-flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
 .ct-mode label { color: var(--ink); }
@@ -368,7 +369,7 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 
 /* トップ：病床・設備・実績（病院） */
 .ct-range { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.ct-range input, .ct-nums input { width: 7em; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--card); text-align: right; }
+.ct-range input, .ct-nums input { width: 7em; padding: 6px 8px; border: 1px solid var(--field-line); border-radius: 8px; font: inherit; background: var(--card); text-align: right; }
 .ct-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 16px; }
 .ct-nums em, .ct-range { font-style: normal; white-space: nowrap; }
 .ct-nums label { display: flex; align-items: center; gap: 6px; }
@@ -379,7 +380,7 @@ table.mdc .hbar { display: block; height: 10px; border-radius: 0 4px 4px 0; back
 
 /* 診療科から探す（/specialty） */
 .sp-opts { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; margin: 18px 0 10px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
-.sp-select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.sp-select { font: inherit; padding: 7px 10px; border: 1px solid var(--field-line); border-radius: 8px; background: var(--card); }
 .sp-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 .sp-toc a { font-size: 0.82rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); text-decoration: none; color: var(--ink); }
 .sp-toc a:hover { border-color: var(--brand); color: var(--brand-dark); }
@@ -618,3 +619,21 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
 .ct-modes label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--ink); }
 .ct-modes input[type=radio] { accent-color: var(--brand); }
 @media (max-width: 640px) { .ct-modes { grid-template-columns: 1fr; gap: 2px 0; } .ct-modes dt { margin-top: 6px; } .ct-modes dt:first-child { margin-top: 0; } }
+
+
+/* ── 入力欄をサイト全体でそろえる（2026年11月25日、「入力する箇所がわかりにくい」） ──
+   白地・濃い枠・高さ40px・押した時の緑の枠。ページの中を絞り込む欄（type=search）には虫めがね。 */
+input[type=text], input[type=search], input[type=number], select {
+  min-height: 40px; background-color: var(--card); color: var(--ink); font: inherit;
+}
+input[type=text]:hover, input[type=search]:hover, input[type=number]:hover, select:hover { border-color: var(--ink-faint); }
+input[type=text]:focus, input[type=search]:focus, input[type=number]:focus, select:focus {
+  outline: 2px solid var(--brand); outline-offset: -1px; border-color: var(--brand);
+}
+::placeholder { color: var(--ink-faint); opacity: 1; }
+input[type=search] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236E6A5E' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 12px center; background-size: 16px;
+  padding-left: 36px !important;
+}
+.ct-flabel { font-size: 0.78rem; font-weight: 700; color: var(--ink-muted); flex-basis: 100%; margin-bottom: -4px; }

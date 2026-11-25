@@ -20,7 +20,7 @@
   <label class="sx-field"><span class="sx-flabel">市区町村で絞り込む</span>
     <select name="city" class="sp-select" onchange="this.form.submit()"><option value="">{{ pref.name }}のすべて</option>
       {% for ct in cities %}<option value="{{ ct.city }}" {% if ct.city == c.city %}selected{% endif %}>{{ ct.city }}（{{ ct.n }}）</option>{% endfor %}</select></label>
-  <label class="sx-field sx-grow"><span class="sx-flabel">{{ K.word }}名・住所</span><input type="text" name="q" value="{{ c.q }}" class="sp-select"></label>
+  <label class="sx-field sx-grow"><span class="sx-flabel">{{ K.word }}名・住所</span><input type="text" name="q" value="{{ c.q }}" class="sp-select" placeholder="一部でOK（例：中央、本町）"></label>
   <button type="submit" class="btn">絞り込む</button>
 </form>
 {% endif %}
