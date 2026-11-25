@@ -609,3 +609,12 @@ details.navi-more > summary { cursor: pointer; color: var(--brand-dark); font-we
 .survey-inline { margin: 20px 0; padding: 14px 16px; border: 1px solid var(--brand-line); border-radius: var(--radius); background: var(--brand-soft); }
 .survey-inline .survey-opts { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .survey-inline .survey-opts button { background: var(--card); }
+
+/* 届出項目の選び方（チェックの意味・複数のとき・届け出ていない項目）を1行ずつ、見出しの幅をそろえて並べる */
+.ct-modes { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; align-items: center; margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 0.88rem; }
+.ct-modes dt { color: var(--ink-muted); }
+.ct-modes dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.ct-modes dt[hidden], .ct-modes dd[hidden] { display: none; }
+.ct-modes label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--ink); }
+.ct-modes input[type=radio] { accent-color: var(--brand); }
+@media (max-width: 640px) { .ct-modes { grid-template-columns: 1fr; gap: 2px 0; } .ct-modes dt { margin-top: 6px; } .ct-modes dt:first-child { margin-top: 0; } }

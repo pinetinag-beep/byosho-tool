@@ -97,19 +97,24 @@
   <div class="ct-tools">
     <input type="search" id="ct-filter" placeholder="記号・正式名称で絞り込む（例：地域包括、がん）">
     <label class="ct-toggle"><input type="checkbox" id="ct-full">正式名称で表示</label>
-    <span class="ct-mode">届け出ている項目の
-      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべてを届け出ている</label>
-      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
-    </span>
-    <span class="ct-pick" role="radiogroup" aria-label="チェックした項目の意味">チェックすると
+  </div>
+  <dl class="ct-modes">
+    <dt>チェックすると</dt>
+    <dd role="radiogroup" aria-label="チェックした項目の意味">
       <label><input type="radio" name="_pick" value="in" checked>届け出ている</label>
       <label><input type="radio" name="_pick" value="ex" id="ct-pick-ex">届け出ていない</label>
-    </span>
-    <span class="ct-pick" id="ct-nxmode" {% if not (ex_items or ex_kubuns) %}hidden{% endif %}>届け出ていない項目は
+    </dd>
+    <dt>届け出ている項目が複数のとき</dt>
+    <dd>
+      <label><input type="radio" name="mode" value="and" {% if cond.mode != 'or' %}checked{% endif %}>すべてを届け出ている</label>
+      <label><input type="radio" name="mode" value="or" {% if cond.mode == 'or' %}checked{% endif %}>いずれかを届け出ている</label>
+    </dd>
+    <dt class="ct-nx" {% if not (ex_items or ex_kubuns) %}hidden{% endif %}>届け出ていない項目は</dt>
+    <dd class="ct-nx" id="ct-nxmode" {% if not (ex_items or ex_kubuns) %}hidden{% endif %}>
       <label><input type="radio" name="nxmode" value="only" {% if not cond.ex_show %}checked{% endif %}>未届出の施設だけ出す</label>
       <label><input type="radio" name="nxmode" value="show" {% if cond.ex_show %}checked{% endif %}>届け出ている施設も出す（列で見分ける）</label>
-    </span>
-  </div>
+    </dd>
+  </dl>
 
   <table class="ct ct-items" id="ct-items">
     {% for sec, items in sections %}
@@ -255,7 +260,10 @@
   table.querySelectorAll("input[name=nx], input[name=nkb]").forEach((i) => i.closest("label").classList.add("ex"));
   // 「届け出ていない」を1つでも選んだら、その扱い（未届出だけ／届け出ている施設も）を出す
   const nxBox = document.getElementById("ct-nxmode");
-  table.addEventListener("change", () => { nxBox.hidden = !table.querySelector("input[name=nx]:checked, input[name=nkb]:checked"); });
+  table.addEventListener("change", () => {
+    const on = !!table.querySelector("input[name=nx]:checked, input[name=nkb]:checked");
+    document.querySelectorAll(".ct-nx").forEach((e) => { e.hidden = !on; });
+  });
   table.addEventListener("change", count);
   const hospTable = document.getElementById("ct-hosp");
   if (hospTable) { hospTable.addEventListener("change", count); hospTable.addEventListener("input", count); }
