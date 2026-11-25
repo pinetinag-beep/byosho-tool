@@ -161,8 +161,12 @@ class YCond:
         self.pref = qp.get("pref", "").strip()
         self.city = qp.get("city", "").strip() if self.pref else ""
         self.q = qp.get("q", "").strip()
-        self.items = list(dict.fromkeys(int(x) for v in qp.getlist("item") for x in v.split(".") if x.isdigit()))
-        self.mode = "and" if qp.get("mode") == "and" else "or"
+        ids = lambda key: list(dict.fromkeys(int(x) for v in qp.getlist(key) for x in v.split(".") if x.isdigit()))
+        self.items = ids("item")
+        self.ex_items = [i for i in ids("nx") if i not in self.items]               # 届け出ていない（条件）
+        self.sh_items = [i for i in ids("sx") if i not in self.items and i not in self.ex_items]  # 列を出すだけ
+        # 初期値は「すべて」（医科・診療科と同じ）。mode=or のときだけ「いずれか」
+        self.mode = "or" if qp.get("mode") == "or" else "and"
 
     def where(self, search_key) -> tuple[str, list]:
         w, p = [], []
@@ -185,15 +189,43 @@ class YCond:
             else:
                 w.append(f"f.id IN (SELECT facility_id FROM {fl} WHERE kijun_id IN ({q}))")
             p += self.items
+        if self.ex_items:
+            w.append(f"f.id NOT IN (SELECT facility_id FROM {self.K.t('filings')} "
+                     f"WHERE kijun_id IN ({','.join('?' * len(self.ex_items))}))")
+            p += self.ex_items
         return (" WHERE " + " AND ".join(w)) if w else "", p
 
     def query(self, **extra) -> str:
         from urllib.parse import urlencode
         pairs = [("pref", self.pref), ("city", self.city), ("q", self.q)] + [("item", i) for i in self.items]
-        if len(self.items) > 1 and self.mode == "and":
-            pairs.append(("mode", "and"))
+        if len(self.items) > 1 and self.mode == "or":
+            pairs.append(("mode", "or"))
+        pairs += [("nx", i) for i in self.ex_items] + [("sx", i) for i in self.sh_items]
         pairs += list(extra.items())
         return urlencode([(k, v) for k, v in pairs if v not in ("", None)])
+
+
+def _kijun_rows(K: Kind, con, ids: list[int]) -> list[dict]:
+    """届出（id・名前・略称・届け出ている数）を、渡した順で。"""
+    if not ids:
+        return []
+    got = {r["id"]: dict(r) for r in con.execute(
+        f"SELECT id, name, symbol, n_facilities FROM {K.t('kijun')} WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    return [got[i] for i in ids if i in got]
+
+
+def k_items_suggest(K: Kind, q: str):
+    """届出の名前の入力候補（検索結果の「列を追加する」）。"""
+    A = _a()
+    key = A.search_key(q.strip())
+    if not key:
+        return A.JSONResponse([])
+    with A.db() as con:
+        rows = con.execute(f"SELECT id, name, symbol, n_facilities FROM {K.t('kijun')}").fetchall()
+    hits = sorted((r for r in rows if key in A.search_key(f"{r['symbol'] or ''} {r['name']}")),
+                  key=lambda r: -(r["n_facilities"] or 0))[:20]
+    return A.JSONResponse([{"key": f"i{r['id']}", "head": r["symbol"] or r["name"], "title": r["name"],
+                            "n": r["n_facilities"]} for r in hits])
 
 
 def _hits(K: Kind, con, fids: list[str], items: list[int]) -> dict[str, list[str]]:
@@ -253,14 +285,23 @@ def k_search(K: Kind, request: Request, page: int):
         rows = con.execute(
             f"""SELECT f.* FROM {K.t('fac')} f{where} ORDER BY f.pref_code, f.city, f.name LIMIT ? OFFSET ?""",
             params + [PAGE_SIZE, (page - 1) * PAGE_SIZE]).fetchall()
-        hits = _hits(K, con, [r["id"] for r in rows], c.items)
-        sel = [dict(r) for r in con.execute(
-            f"SELECT id, name, symbol FROM {K.t('kijun')} WHERE id IN ({','.join('?' * len(c.items))})", c.items)] if c.items else []
+        fids, kids = [r["id"] for r in rows], c.items + c.sh_items
+        hits: dict[str, set[int]] = {}
+        if fids and kids:
+            for fid, kid in con.execute(
+                    f"""SELECT facility_id, kijun_id FROM {K.t('filings')}
+                        WHERE facility_id IN ({','.join('?' * len(fids))}) AND kijun_id IN ({','.join('?' * len(kids))})""",
+                    fids + kids):
+                hits.setdefault(fid, set()).add(kid)
+        sel, ex, sh = (_kijun_rows(K, con, ids) for ids in (c.items, c.ex_items, c.sh_items))
         pref = con.execute(f"SELECT * FROM {K.t('prefs')} WHERE code = ?", (c.pref,)).fetchone() if c.pref else None
         cities = con.execute(
             f"SELECT city, SUM(n) AS n FROM {K.t('areas')} WHERE pref_code = ? GROUP BY city ORDER BY MIN(city_order)",
             (c.pref,)).fetchall() if c.pref else []
-    return A.render(request, "y_search.html", K=K, c=c, rows=rows, hits=hits, sel=sel, total=total, page=page,
+    sh_chips = [{"key": f"i{x['id']}", "id": x["id"], "head": x["symbol"] or x["name"], "title": x["name"]} for x in sh]
+    cols = [dict(x, role="in") for x in sel] + [dict(x, role="ex") for x in ex] + [dict(x, role="sh") for x in sh]
+    return A.render(request, "y_search.html", K=K, c=c, rows=rows, hits=hits, sel=sel, ex=ex, sh=sh, sh_chips=sh_chips, cols=cols,
+                    total=total, page=page,
                     pages=pages, pref=pref, cities=cities,
                     page_url=lambda p: f"{K.base}/search?" + c.query(page=p if p > 1 else ""),
                     csv_url=f"{K.base}/search.csv?" + c.query())
@@ -273,8 +314,9 @@ def k_search_csv(K: Kind, request: Request):
     con = A.sqlite3.connect(f"file:{A.DB_PATH}?mode=ro", uri=True, check_same_thread=False)
     con.row_factory = A.sqlite3.Row
     where, params = c.where(A.search_key)
-    sel = con.execute(f"SELECT id, name FROM {K.t('kijun')} WHERE id IN ({','.join('?' * len(c.items))})",
-                      c.items).fetchall() if c.items else []
+    sel = _kijun_rows(K, con, c.items + c.ex_items + c.sh_items)
+    ex_names = [s["name"] for s in _kijun_rows(K, con, c.ex_items)]
+    sh_names = [s["name"] for s in _kijun_rows(K, con, c.sh_items)]
     rows = con.execute(f"SELECT f.* FROM {K.t('fac')} f{where} ORDER BY f.pref_code, f.city, f.name", params).fetchall()
     have: dict[str, set[int]] = {}
     if sel:
@@ -291,7 +333,9 @@ def k_search_csv(K: Kind, request: Request):
             yield [r["pref_name"], r["city"] or "", r["area"] or "", r["name"], r["address"] or "", r["id"],
                    r["kihon"] or "", r["chiiki"] or "", r["n_kijun"]] + \
                   ["○" if s["id"] in have.get(r["id"], ()) else "" for s in sel]
-    return A._csv_response(header, gen(), f"{K.word}の届出.csv")
+    notes = ([f"条件：次のどれも届け出ていない{K.word} … " + "、".join(ex_names)] if ex_names else []) + \
+            ([f"列だけ表示した届出（絞り込みには使わず、届け出ていれば○） … " + "、".join(sh_names)] if sh_names else [])
+    return A._csv_response(header, gen(), f"{K.word}の届出.csv", notes=notes or None)
 
 
 def k_kijun(K: Kind, request: Request, name: str):
@@ -434,7 +478,11 @@ def _register(K: Kind) -> None:
     def facility(request: Request, fid: str):
         return k_facility(K, request, fid)
 
+    def items_suggest(q: str = Query("", max_length=60)):
+        return k_items_suggest(K, q)
+
     html = {"methods": ["GET"], "response_class": HTMLResponse}
+    router.add_api_route(f"{b}/items/suggest.json", items_suggest, methods=["GET"])
     router.add_api_route(b, index, **html)
     router.add_api_route(f"{b}/search", search, **html)
     router.add_api_route(f"{b}/search.csv", search_csv, methods=["GET"])

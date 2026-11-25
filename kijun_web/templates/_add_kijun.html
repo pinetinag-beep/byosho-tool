@@ -1,0 +1,49 @@
+{#- 検索結果の「列を追加する」の届出の欄。suggest_url＝候補のJSON、chips＝今の列（{key, id, head, title}）。
+    選んだ届出は sx（届出項目）／skb（区分）で送られ、絞り込まずに○の列が付く -#}
+    <fieldset class="add-kijun"><legend>届出</legend>
+      <div class="add-kijun-body">
+        <div class="add-kijun-chips" id="add-kijun-chips">{% for x in chips %}<span class="chip" data-key="{{ x.key }}" title="{{ x.title }}">{{ x.head }}<input type="hidden" name="{{ 'sx' if x.key[0] == 'i' else 'skb' }}" value="{{ x.id }}"><button type="button" class="chip-x" aria-label="{{ x.head }}を外す">×</button></span>{% endfor %}</div>
+        <div class="add-kijun-in">
+          <input type="search" id="add-kijun-q" data-url="{{ suggest_url }}" placeholder="{{ placeholder or '届出の名前・記号（例：地域包括、緩和ケア）' }}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="add-kijun-sug">
+          <ul class="sx-suggest" id="add-kijun-sug" role="listbox" hidden></ul>
+        </div>
+        <p class="muted small">絞り込みには使わず、届け出ている医療機関に○の列を付けます。</p>
+      </div>
+    </fieldset>
+<script>
+/* 「列を追加する」の届出の列：名前の候補から選ぶとチップを足す（送信すると sx / skb で列が付く） */
+(() => {
+  const q = document.getElementById("add-kijun-q"), sug = document.getElementById("add-kijun-sug"),
+        chips = document.getElementById("add-kijun-chips");
+  if (!q) return;
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  let timer, cand = [];
+  const have = () => new Set([...chips.querySelectorAll(".chip")].map((c) => c.dataset.key));
+  function add(x) {
+    if (have().has(x.key)) return;
+    const el = document.createElement("span");
+    el.className = "chip"; el.dataset.key = x.key; el.title = x.title;
+    el.innerHTML = `${esc(x.head)}<input type="hidden" name="${x.key[0] === "i" ? "sx" : "skb"}" value="${x.key.slice(1)}"><button type="button" class="chip-x" aria-label="外す">×</button>`;
+    chips.appendChild(el);
+  }
+  chips.addEventListener("click", (e) => { if (e.target.classList.contains("chip-x")) e.target.closest(".chip").remove(); });
+  async function load() {
+    const v = q.value.trim();
+    if (!v) { sug.hidden = true; return; }
+    const res = await fetch(`${q.dataset.url}?q=${encodeURIComponent(v)}`);
+    cand = res.ok ? await res.json() : [];
+    const h = have();
+    sug.innerHTML = cand.length
+      ? cand.map((x, i) => `<li role="option"><a href="#" data-i="${i}"><span class="nm">${esc(x.head)}${x.head !== x.title ? `<small>${esc(x.title)}</small>` : ""}</span><span class="ct">${h.has(x.key) ? "追加済み" : (x.n || 0).toLocaleString() + "件"}</span></a></li>`).join("")
+      : `<li class="none">候補はありません</li>`;
+    sug.hidden = false; q.setAttribute("aria-expanded", "true");
+  }
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 150); });
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (cand[0]) { add(cand[0]); q.value = ""; sug.hidden = true; } } });
+  sug.addEventListener("mousedown", (e) => {
+    const a = e.target.closest("a[data-i]"); if (!a) return;
+    e.preventDefault(); add(cand[+a.dataset.i]); q.value = ""; sug.hidden = true; q.focus();
+  });
+  q.addEventListener("blur", () => setTimeout(() => { sug.hidden = true; q.setAttribute("aria-expanded", "false"); }, 150));
+})();
+</script>

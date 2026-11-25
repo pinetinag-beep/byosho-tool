@@ -8,7 +8,8 @@
 <div class="cond-summary">
   <span class="tag">{{ pref.name if pref else "全国" }}{% if c.city %} {{ c.city }}{% endif %}</span>
   {% if c.q %}<span class="tag">「{{ c.q }}」</span>{% endif %}
-  {% if sel %}<span>{{ sel|length }}件の届出の{{ "すべて" if c.mode == "and" and sel|length > 1 else "いずれか" }}：{% for s in sel %}{{ s.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+  {% if sel %}<span>{% if sel|length > 1 %}{{ sel|length }}件の届出の{{ "すべて" if c.mode == "and" else "いずれか" }}：{% else %}届出：{% endif %}{% for s in sel %}{{ s.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+  {% if ex %}<span>届け出ていない：{% for s in ex %}{{ s.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
   <a href="{{ K.base }}?{{ c.query() }}">検索条件を変更する</a>
 </div>
 
@@ -16,7 +17,9 @@
 <form class="sp-opts" action="{{ K.base }}/search" method="get">
   <input type="hidden" name="pref" value="{{ c.pref }}">
   {% for i in c["items"] %}<input type="hidden" name="item" value="{{ i }}">{% endfor %}
-  {% if c.mode == "and" %}<input type="hidden" name="mode" value="and">{% endif %}
+  {% for i in c.ex_items %}<input type="hidden" name="nx" value="{{ i }}">{% endfor %}
+  {% for i in c.sh_items %}<input type="hidden" name="sx" value="{{ i }}">{% endfor %}
+  {% if c.mode == "or" %}<input type="hidden" name="mode" value="or">{% endif %}
   <label class="sx-field"><span class="sx-flabel">市区町村で絞り込む</span>
     <select name="city" class="sp-select" onchange="this.form.submit()"><option value="">{{ pref.name }}のすべて</option>
       {% for ct in cities %}<option value="{{ ct.city }}" {% if ct.city == c.city %}selected{% endif %}>{{ ct.city }}（{{ ct.n }}）</option>{% endfor %}</select></label>
@@ -29,15 +32,29 @@
   <div class="count">{{ "{:,}".format(total) }} 件{% if total > 0 %}（{{ page }} / {{ pages }} ページ）{% endif %}</div>
   {% if total %}<a class="btn" href="{{ csv_url }}">CSVダウンロード（無料）</a>{% endif %}
 </div>
+{% if total %}
+<details class="add-cols"{% if sh %} open{% endif %}>
+  <summary>列を追加する（届出）{% if sh %}<span class="n">{{ sh|length }}</span>{% endif %}</summary>
+  <form method="get" action="{{ K.base }}/search" data-ga-sec="add_cols">
+    {% for k, v in [("pref", c.pref), ("city", c.city), ("q", c.q)] if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% for i in c["items"] %}<input type="hidden" name="item" value="{{ i }}">{% endfor %}
+    {% for i in c.ex_items %}<input type="hidden" name="nx" value="{{ i }}">{% endfor %}
+    {% if c.mode == "or" %}<input type="hidden" name="mode" value="or">{% endif %}
+    {% with suggest_url=K.base ~ "/items/suggest.json", chips=sh_chips, placeholder="届出の名前・略称（例：" ~ ("在宅、感染、歯援診" if K.x == "d" else "在宅、無菌、地域支援") ~ "）" %}{% include "_add_kijun.html" %}{% endwith %}
+    <p class="add-cols-foot"><button type="submit" class="btn">列を表示する</button><span class="muted small">CSVにも同じ列が入ります。</span></p>
+  </form>
+</details>
+{% endif %}
+
 {% if rows %}
 <div class="table-wrap" data-ga-sec="{{ K.x }}_search_results"><table class="y-table">
-  <thead><tr><th>{{ K.word }}名</th><th>所在地</th><th>{{ K.col1 }}</th><th>{{ K.col2 }}</th>{% if sel %}<th>当てはまる届出</th>{% endif %}<th class="num">届出の数</th></tr></thead>
+  <thead><tr><th>{{ K.word }}名</th><th>所在地</th><th>{{ K.col1 }}</th><th>{{ K.col2 }}</th>{% for s in cols %}<th class="ic{% if s.role == 'ex' %} exc{% endif %}" title="{{ s.name }}{% if s.role == 'ex' %}（届け出ていない条件）{% endif %}">{{ s.symbol or s.name }}</th>{% endfor %}<th class="num">届出の数</th></tr></thead>
   <tbody>{% for r in rows %}<tr>
     <td class="y-name"><a href="{{ K.url(r.id) }}">{{ r.name }}</a></td>
     <td class="small nowrap">{{ r.pref_name }}{% if r.city %} <a href="{{ K.city_url(r.pref_name, r.city) }}">{{ r.city }}</a>{% endif %}</td>
     <td class="small nowrap">{{ K.v1(r.kihon) }}</td>
     <td class="small nowrap">{{ K.v2(r.chiiki) }}</td>
-    {% if sel %}<td class="small">{{ hits.get(r.id, [])|join("・") }}</td>{% endif %}
+    {% set got = hits.get(r.id, ()) %}{% for s in cols %}<td class="ic">{% if s.id in got %}<span class="ok" title="{{ s.name }}">○</span>{% endif %}</td>{% endfor %}
     <td class="num">{{ r.n_kijun }}</td>
   </tr>{% endfor %}</tbody>
 </table></div>

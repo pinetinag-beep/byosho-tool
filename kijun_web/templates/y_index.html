@@ -13,8 +13,6 @@
         {% for p in prefs %}<option value="{{ p.code }}" {% if c.pref == p.code %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
     <label class="sx-field sx-grow"><span class="sx-flabel">{{ K.word }}名・住所（一部でよい）</span>
       <input type="text" name="q" value="{{ c.q }}" class="sp-select" placeholder="{{ K.placeholder }}"></label>
-    <div class="sx-field"><span class="sx-flabel">チェックした届出を</span>
-      <div class="ct-checks"><label><input type="radio" name="mode" value="or" {% if c.mode != "and" %}checked{% endif %}>いずれか届け出ている</label><label><input type="radio" name="mode" value="and" {% if c.mode == "and" %}checked{% endif %}>すべて届け出ている</label></div></div>
   </div>
 
   <div class="yk-find">
@@ -33,7 +31,7 @@
   <section class="sp-sec" id="g-{{ g.key }}">
     <div class="sp-head"><h2>{{ g.label }}</h2><span class="muted small">{{ g["items"]|length }}種類</span></div>
     {# 略称・正式名称：医科のトップと同じ受理記号のチェックボックス（検索に送るのはこちら） #}
-    <div class="ct-grid yk-grid">{% for k in g["items"] %}<label title="{{ k.name }}（{{ "{:,}".format(k.n_facilities) }}件）" data-k="{{ k.symbol }} {{ k.name }} {{ k.desc }}"><input type="checkbox" name="item" value="{{ k.id }}" data-label="{{ k.name }}" {% if k.id in c["items"] %}checked{% endif %}><span class="s">{{ k.symbol or k.name }}</span><span class="f">{{ k.name }}</span></label>{% endfor %}</div>
+    <div class="ct-grid yk-grid">{% for k in g["items"] %}<label title="{{ k.name }}（{{ "{:,}".format(k.n_facilities) }}件）" data-k="{{ k.symbol }} {{ k.name }} {{ k.desc }}"><input type="checkbox" name="{{ 'nx' if k.id in c.ex_items else 'item' }}" value="{{ k.id }}" data-label="{{ k.name }}" {% if k.id in c["items"] or k.id in c.ex_items %}checked{% endif %}><span class="s">{{ k.symbol or k.name }}</span><span class="f">{{ k.name }}</span></label>{% endfor %}</div>
     {# 説明つき：区分違いを1行にまとめた表（チェックは上のチェックボックスと連動） #}
     <div class="table-wrap yk-desc"><table class="sp-table">
       <thead><tr><th class="sp-cb"><span class="sr">選ぶ</span></th><th>届出</th><th>どんなものか</th><th class="num">届け出ている{{ K.word }}</th></tr></thead>
@@ -56,8 +54,18 @@
   </div>
 
   <div class="ct-bar">
-    <span class="ct-count" id="sp-count">届出の指定なし</span>
-    <button type="submit" class="btn">リストを抽出する</button>
+    {# 選んだ届出のチップ。チップごとに「あり／なし」（医科のトップと同じ部品） #}
+    <div class="ct-tray" id="ct-tray" hidden>
+      <div class="ct-chips" id="ct-chips" aria-label="選んだ届出"></div>
+      <div class="ct-mode2" id="ct-mode2" hidden>「あり」の届出が複数のとき
+        <label><input type="radio" name="mode" value="and" {% if c.mode != "or" %}checked{% endif %}>すべて届け出ている</label>
+        <label><input type="radio" name="mode" value="or" {% if c.mode == "or" %}checked{% endif %}>いずれかを届け出ている</label>
+      </div>
+    </div>
+    <div class="ct-bar-row">
+      <span class="ct-count" id="sp-count">届出の指定なし</span>
+      <button type="submit" class="btn">リストを抽出する</button>
+    </div>
   </div>
 </form>
 <p class="muted small">説明はMedilenZがまとめたもので、届出の要件そのものではありません。</p>
@@ -69,7 +77,7 @@
 <script>
 (() => {
   const form = document.getElementById("sp"), list = document.getElementById("yk-list");
-  const boxes = [...form.querySelectorAll('input[name="item"]')];   // 検索に送るチェックボックス（略称の一覧）
+  const boxes = [...form.querySelectorAll('.yk-grid input[type=checkbox]')];   // 検索に送るチェックボックス（略称の一覧。name は item＝あり／nx＝なし）
   const byId = Object.fromEntries(boxes.map(b => [b.value, b]));
   const mirrors = [...form.querySelectorAll(".yk-m")], grps = [...form.querySelectorAll(".sp-grp")];
   const count = document.getElementById("sp-count");
@@ -81,15 +89,42 @@
       g.indeterminate = !g.checked && sub.some(b => b.checked);
     });
     const on = boxes.filter(b => b.checked);
+    renderChips(on);
     if (!on.length) { count.textContent = "届出の指定なし"; count.title = ""; return; }
-    const names = on.map(b => b.dataset.label);
-    count.textContent = `${on.length}件：` + names.slice(0, 3).join("、") + (names.length > 3 ? ` ほか${names.length - 3}件` : "");
-    count.title = names.join("\n");
+    const nIn = on.filter(b => b.name === "item").length, nEx = on.length - nIn;
+    count.textContent = [nIn ? `届け出ている ${nIn}` : "", nEx ? `届け出ていない ${nEx}` : ""].filter(Boolean).join("・");
+    count.title = on.map(b => (b.name === "nx" ? "なし：" : "") + b.dataset.label).join("\n");
   };
+  // ── 選んだ届出のチップ。チップごとに「あり／なし」、×で外す ──
+  const tray = document.getElementById("ct-tray"), chipsBox = document.getElementById("ct-chips"),
+        mode2 = document.getElementById("ct-mode2");
+  const setEx = (b, ex) => { b.name = ex ? "nx" : "item"; b.closest("label").classList.toggle("ex", ex); };
+  const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  function renderChips(on) {
+    chipsBox.innerHTML = on.map((b, n) => {
+      const ex = b.name === "nx", lab = b.closest("label");
+      return `<span class="chip2${ex ? " ex" : ""}" data-n="${n}" title="${escH(b.dataset.label)}"><span class="chip2-name">${escH(lab.querySelector(".s").textContent)}</span>` +
+        `<span class="seg" role="group" aria-label="この届出の条件"><button type="button" data-v="in" aria-pressed="${!ex}">あり</button><button type="button" data-v="ex" aria-pressed="${ex}">なし</button></span>` +
+        `<button type="button" class="chip-x" aria-label="外す">×</button></span>`;
+    }).join("");
+    chipsBox._on = on;
+    tray.hidden = !on.length;
+    mode2.hidden = on.filter(b => b.name === "item").length < 2;
+  }
+  chipsBox.addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip2"); if (!chip) return;
+    const b = chipsBox._on[+chip.dataset.n];
+    if (e.target.classList.contains("chip-x")) { b.checked = false; setEx(b, false); }
+    else if (e.target.dataset.v) setEx(b, e.target.dataset.v === "ex");
+    else return;
+    update();
+  });
+  boxes.forEach(b => { if (b.name === "nx") b.closest("label").classList.add("ex"); });
   form.addEventListener("change", (e) => {
     const t = e.target;
     if (t.classList.contains("sp-grp")) t.dataset.ids.split(".").forEach(i => { if (byId[i]) byId[i].checked = t.checked; });
     else if (t.classList.contains("yk-m") && byId[t.dataset.id]) byId[t.dataset.id].checked = t.checked;
+    boxes.forEach(b => { if (!b.checked && b.name === "nx") setEx(b, false); });
     update();
   });
   // 表示のしかた（略称／正式名称／説明つき）。選んだものはこのブラウザに覚えておく

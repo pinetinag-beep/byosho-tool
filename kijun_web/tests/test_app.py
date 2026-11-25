@@ -469,10 +469,16 @@ def test_yakkyoku_pages():
     r = client.get(f"/yakkyoku/kijun/{quote(k2['name'])}")
     assert r.status_code == 200 and "無菌" in r.text
 
-    # いずれか／すべて：すべての方が少ない。CSVは選んだ届出ごとに○の列
+    # いずれか／すべて：すべて（初期値）の方が少ない。CSVは選んだ届出ごとに○の列
     n = lambda html: int(re.search(r'class="count">([\d,]+) 件', html).group(1).replace(",", ""))
-    any_ = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&item={k2['id']}").text)
-    all_ = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&item={k2['id']}&mode=and").text)
+    any_ = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&item={k2['id']}&mode=or").text)
+    all_ = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&item={k2['id']}").text)
+    # 届け出ていない（nx）と列だけ（sx）
+    only1 = n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}").text)
+    assert n(client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&nx={k2['id']}").text) == only1 - all_
+    r = client.get(f"/yakkyoku/search?pref=13&item={k1['id']}&sx={k2['id']}")
+    assert n(r.text) == only1 and 'name="sx" value="%d"' % k2["id"] in r.text
+    assert client.get("/shika/items/suggest.json", params={"q": "在宅"}).json()
     db_all = con.execute("""SELECT COUNT(*) FROM (SELECT f.id FROM y_fac f JOIN y_filings fl ON fl.facility_id = f.id
                             WHERE f.pref_code = '13' AND fl.kijun_id IN (?, ?) GROUP BY f.id HAVING COUNT(DISTINCT fl.kijun_id) = 2)""",
                          (k1["id"], k2["id"])).fetchone()[0]

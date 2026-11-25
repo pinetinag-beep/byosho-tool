@@ -651,7 +651,7 @@ input[type=search] {
 .add-kijun-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .add-kijun-chips:empty { display: none; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--brand-line); border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-size: 0.85rem; font-weight: 700; }
-.chip-x { border: 0; background: none; color: var(--ink-muted); font-size: 0.95rem; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 999px; }
+.chip-x { border: 0; background: none; color: var(--brand-dark); font-size: 0.95rem; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 999px; }
 .chip-x:hover { background: var(--card); color: var(--ink); }
 
 /* トップの下のバー：選んだ届出のチップ（あり／なし）と「すべて／いずれか」 */
