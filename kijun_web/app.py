@@ -32,6 +32,7 @@ from .sources import BASE as KOUSEIKYOKU_BASE, BUREAUS, MHLW_URLS
 from .specialties import build as build_specialties
 from . import yakkyoku as ymod
 from . import changes as cmod
+from .kijun_desc import describe as kijun_describe
 
 HERE = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("KIJUN_DB", DEFAULT_DB))
@@ -179,7 +180,8 @@ templates.env.globals.update(
 GA_PAGE = {
     "index.html": "トップ", "search.html": "検索結果", "facility.html": "医療機関",
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
-    "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
+    "pref.html": "都道府県", "guide.html": "使い方", "guide_byosho.html": "解説", "guide_dpc.html": "解説",
+    "guide_nyuin_kubun.html": "解説", "guide_changes.html": "解説", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
     "404.html": "ページが見つかりません", "compare.html": "比較", "gone.html": "名簿から削除された医療機関", "changes.html": "新規届出・取り下げ", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
     "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
@@ -1488,7 +1490,7 @@ def kijun_detail(request: Request, name: str):
         kd = _kdiff_summary(con, kj["name"])
     type_counts = {r["ftype"]: r["n"] for r in by_type}
     return render(request, "kijun.html", kj=kj, kd=kd, by_pref=by_pref, type_counts=type_counts, kubun=kubun,
-                  hosp=hosp, rel=rel, csv_url=_url("/search.csv", kx=name))
+                  hosp=hosp, rel=rel, desc=kijun_describe(kj["name"]), csv_url=_url("/search.csv", kx=name))
 
 
 
@@ -1521,6 +1523,7 @@ def kijun_pref(request: Request, name: str, pref_name: str, page: int = Query(1,
         ).fetchall()
     return render(
         request, "kijun_pref.html", kj=kj, pref=pref, rows=rows, total=total, page=page, pages=pages,
+        desc=kijun_describe(kj["name"]),
         csv_url=_url("/search.csv", kx=name, pref=pref["code"]),
         page_url=lambda p: kijun_url(name, pref_name) + (f"?page={p}" if p > 1 else ""),
     )
@@ -1708,7 +1711,23 @@ def contact(request: Request):
 def guide(request: Request):
     with db() as con:
         examples = _examples(con)
-    return render(request, "guide.html", examples=examples)
+    return render(request, "guide.html", examples=examples, articles=GUIDES)
+
+
+# 解説ページ（スラッグ → テンプレート・一覧に出す題名）
+GUIDES = {
+    "byosho": ("guide_byosho.html", "病床機能報告の見方（許可病床数・病床機能・病床稼働率）"),
+    "dpc": ("guide_dpc.html", "DPCデータの見方（退院患者数・手術などの件数）"),
+    "nyuin-kubun": ("guide_nyuin_kubun.html", "入院基本料の区分の見方（急性期一般入院料１〜６など）"),
+    "changes": ("guide_changes.html", "新規届出・取り下げの見方"),
+}
+
+
+@app.get("/guide/{slug}", response_class=HTMLResponse)
+def guide_article(request: Request, slug: str):
+    if slug not in GUIDES:
+        raise HTTPException(404)
+    return render(request, GUIDES[slug][0])
 
 
 @app.get("/ads.txt", response_class=PlainTextResponse)
@@ -1787,6 +1806,10 @@ def _loc(path: str) -> str:
     return f"<url><loc>{SITE_URL}{path}</loc></url>"
 
 
+# 中身の薄い医療機関ページ（届出3種類以下で、病床機能報告・診療時間も無い）。noindex にしてサイトマップからも外す
+THIN_SQL = ("f.n_kijun <= 3 AND {byosho} NOT EXISTS (SELECT 1 FROM navi n WHERE n.facility_id = f.id)")
+
+
 @app.get("/sitemap.xml")
 def sitemap_index():
     with db() as con:
@@ -1813,7 +1836,7 @@ def _other_kind(part: str):
 def sitemap_part(part: str):
     with db() as con:
         if part == "static":
-            paths = ["/", "/guide", "/kijun", "/specialty", "/changes", "/about", "/operator", "/contact", "/privacy"]
+            paths = ["/", "/guide"] + [f"/guide/{k}" for k in GUIDES] + ["/kijun", "/specialty", "/changes", "/about", "/operator", "/contact", "/privacy"]
             for base, t in (("/changes", "kdiff"), ("/shika/changes", "d_kdiff"), ("/yakkyoku/changes", "y_kdiff")):
                 if not cmod.has_table(con, t):
                     continue
@@ -1851,16 +1874,20 @@ def sitemap_part(part: str):
                 paths += [K.kijun_url(r["name"]) for r in con.execute(f"SELECT name FROM {K.t('kijun')}")]
             else:
                 i = int(part.rsplit("-", 1)[1])
+                thin = THIN_SQL.format(byosho="")
                 paths = [K.url(r["id"]) for r in con.execute(
-                    f"SELECT id FROM {K.t('fac')} ORDER BY id LIMIT ? OFFSET ?", (SITEMAP_CHUNK, i * SITEMAP_CHUNK))]
+                    f"""SELECT id FROM (SELECT id, n_kijun FROM {K.t('fac')} ORDER BY id LIMIT ? OFFSET ?) f
+                        WHERE NOT ({thin})""", (SITEMAP_CHUNK, i * SITEMAP_CHUNK))]
                 if not paths:
                     raise HTTPException(404)
         elif part.startswith("facilities-") and part[11:].isdigit():
             i = int(part[11:])
             paths = [
                 facility_url(r["id"])
-                for r in con.execute("SELECT id FROM facilities ORDER BY id LIMIT ? OFFSET ?",
-                                     (SITEMAP_CHUNK, i * SITEMAP_CHUNK))
+                for r in con.execute(
+                    f"""SELECT id FROM (SELECT id, n_kijun, byosho_code FROM facilities ORDER BY id LIMIT ? OFFSET ?) f
+                        WHERE NOT ({THIN_SQL.format(byosho="COALESCE(f.byosho_code, '') = '' AND")})""",
+                    (SITEMAP_CHUNK, i * SITEMAP_CHUNK))
             ]
             if not paths:
                 raise HTTPException(404)

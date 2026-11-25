@@ -13,7 +13,7 @@
 {% if empty %}
 <p class="lead">まだ比べられる名簿がありません。毎月の名簿の更新（15日ごろ）から、前回の名簿との比較を載せていきます。</p>
 {% else %}
-<p class="lead">地方厚生局の名簿を前回と比べた、新規届出・区分の変更・取り下げの一覧です。</p>
+<p class="lead">地方厚生局の名簿を前回と比べた、新規届出・区分の変更・取り下げの一覧です。<a href="/guide/changes" class="small">見方</a></p>
 {% if not C.med and months|length == 1 %}<p class="note">{{ C.word }}は{{ ml }}から比較を始めたため、今は{{ by_pref|length }}都道府県分だけです。</p>{% endif %}
 
 <form class="sp-opts" action="{{ C.base }}" method="get">

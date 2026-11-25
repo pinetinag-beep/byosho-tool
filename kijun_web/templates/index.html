@@ -163,7 +163,9 @@
 <ul class="pref-grid">
   {% for name, ps in regions %}{% for p in ps %}<li><a href="/pref/{{ p.name }}">{{ p.name }}</a></li>{% endfor %}{% endfor %}
 </ul>
-<p class="small"><a href="/about">データの詳しい説明と利用条件 →</a></p>
+<h2>MedilenZについて</h2>
+<p>MedilenZは、全国の地方厚生局が公表している施設基準の届出名簿に、厚生労働省の病床機能報告・DPC調査・外来機能報告・医療情報ネットのデータを医療機関ごとにまとめ、地域や届出の条件で探せるようにしたサイトです。名簿は毎月更新し、前の月からの新規届出・取り下げも追っています。</p>
+<p class="small">データの見方：<a href="/guide">施設基準とは</a>・<a href="/guide/byosho">病床機能報告</a>・<a href="/guide/dpc">DPC</a>・<a href="/guide/nyuin-kubun">入院基本料の区分</a>・<a href="/guide/changes">新規届出・取り下げ</a>　<a href="/about">出典と利用条件</a></p>
 {% include "_ad.html" %}
 
 <script>

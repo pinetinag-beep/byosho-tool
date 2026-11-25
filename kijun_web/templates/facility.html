@@ -4,7 +4,9 @@
 {%- set code10 = f.pref_code ~ "1" ~ f.code -%}
 {#- タイトルには市区町村まで入れる（「〇〇クリニック 姫路」のように名前＋市で探されているため。2026年11月、Search Consoleで5〜9位でもクリックされていなかった） -#}
 {% block title %}{% if byosho %}{{ f.name|short_name }}（{{ place }}）の病床数・施設基準{% if dpc %}・DPC実績{% endif %}{% elif navi and navi.groups %}{{ f.name|short_name }}（{{ place }}）の診療時間・診療科・施設基準{% else %}{{ f.name|short_name }}（{{ place }}）の施設基準届出一覧{% endif %}{% endblock %}
-{% block description %}{% if byosho %}{{ place }}の{{ f.ftype }}「{{ f.name }}」の許可病床数{{ "{:,}".format(byosho.total) }}床と病床機能の内訳、届け出ている施設基準{{ f.n_kijun }}種類（区分・算定開始日）{% if dpc and dpc.total %}、DPCの退院患者数（年間{{ "{:,}".format(dpc.total) }}件）{% endif %}。医療機関コード{{ code10 }}。厚生労働省・地方厚生局の公表データから無料で調べられます。{% else %}{{ f.name }}（{{ f.ftype }}）の所在地は{{ (f.address if (f.address or "").startswith(f.pref_name) else f.pref_name ~ f.address) if f.address else place }}。地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。{% if navi and navi.specs %}診療科は{{ navi.specs[:5]|join("・") }}{% if navi.specs|length > 5 %}ほか{% endif %}。{% endif %}{% if navi and navi.closed %}休診日は{{ navi.closed }}。{% endif %}地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧。医療機関コード{{ code10 }}。{% endif %}{% endblock %}
+{% block description %}{% if byosho %}{{ place }}の{{ f.ftype }}「{{ f.name }}」の許可病床数{{ "{:,}".format(byosho.total) }}床と病床機能の内訳、届け出ている施設基準{{ f.n_kijun }}種類（区分・算定開始日）{% if dpc and dpc.total %}、DPCの退院患者数（年間{{ "{:,}".format(dpc.total) }}件）{% endif %}。医療機関コード{{ code10 }}。厚生労働省・地方厚生局の公表データから無料で調べられます。{% else %}{{ f.name }}（{{ f.ftype }}）の所在地は{{ (f.address if (f.address or "").startswith(f.pref_name) else f.pref_name ~ f.address) if f.address else place }}。地方厚生局に届け出ている施設基準{{ f.n_kijun }}種類の一覧（受理番号・算定開始日・区分）。{% if navi and navi.specs %}診療科は{{ navi.specs[:5]|join("・") }}{% if navi.specs|length > 5 %}ほか{% endif %}。{% endif %}{% if navi and navi.closed %}休診日は{{ navi.closed }}。{% endif %}医療機関コード{{ code10 }}。{% endif %}{% endblock %}
+{#- 届出が3種類以下で、病床機能報告・診療時間も無いページは中身が薄いので検索結果に出さない（サイトマップからも外す。app.THIN_SQL） -#}
+{% block robots %}{% if f.n_kijun <= 3 and not byosho and not navi %}<meta name="robots" content="noindex,follow">{% endif %}{% endblock %}
 {% block head_extra %}
 <script type="application/ld+json">{{ {
   "@context": "https://schema.org",
@@ -112,7 +114,7 @@
 {% if has_beds %}<section class="ftab-panel" data-panel="beds">{% endif %}
 {% if byosho %}{% set b = byosho %}
 <h2>病床・人員・設備（病床機能報告）</h2>
-<p class="muted small">{{ b.label }}（{{ b.year }}年7月1日時点）の病床機能報告による。{% if b.name != f.name %}病床機能報告での名称：{{ b.name }}{% endif %}</p>
+<p class="muted small">{{ b.label }}（{{ b.year }}年7月1日時点）の病床機能報告による。{% if b.name != f.name %}病床機能報告での名称：{{ b.name }}{% endif %}　<a href="/guide/byosho">見方</a></p>
 <div class="facts">
   <div class="fact"><div class="k">許可病床数</div><div class="v">{{ "{:,}".format(b.total) }} <small>床</small></div></div>
   <div class="fact"><div class="k">病床稼働率 ※</div><div class="v">{% if b.occ is not none %}{{ b.occ }} <small>%</small>{% else %}—{% endif %}</div></div>
@@ -169,7 +171,7 @@
 
 {% if dpc %}{% set d = dpc %}
 <h2>入院患者の診療実績（DPC）</h2>
-<p class="muted small">{{ d.label }}（{{ d.year }}年4月〜{{ d.year + 1 }}年3月の退院患者）のDPC退院患者調査による。<span class="tag">{{ d.kind }}</span>{% if d.beds %}　DPC算定病床数 {{ "{:,}".format(d.beds) }}床{% endif %}</p>
+<p class="muted small">{{ d.label }}（{{ d.year }}年4月〜{{ d.year + 1 }}年3月の退院患者）のDPC退院患者調査による。<span class="tag">{{ d.kind }}</span>{% if d.beds %}　DPC算定病床数 {{ "{:,}".format(d.beds) }}床{% endif %}　<a href="/guide/dpc">見方</a></p>
 <div class="facts facts-3">
   <div class="fact"><div class="k">退院患者数（年間）</div><div class="v">{{ "{:,}".format(d.total) }} <small>件</small></div></div>
   {% for x in d.procs %}<div class="fact"><div class="k">{{ x.label }}</div><div class="v">{% if x.n is not none %}{{ "{:,}".format(x.n) }} <small>件（{{ x.pct }}%）</small>{% else %}—{% endif %}</div></div>{% endfor %}

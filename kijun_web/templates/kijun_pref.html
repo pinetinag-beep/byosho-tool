@@ -9,6 +9,7 @@
 <p class="crumbs"><a href="/">トップ</a> › <a href="/kijun">施設基準の一覧</a> › <a href="{{ kijun_url(kj.name) }}">{{ kj.name }}</a> › {{ pref.name }}</p>
 <h1>{{ kj.name }}<br><span style="font-size:0.75em">{{ pref.name }}の届出医療機関</span></h1>
 <p class="lead">{{ pref.name }}で「{{ kj.name }}」を届け出ている医療機関は <b>{{ "{:,}".format(total) }} 件</b> です（{{ pref.as_of_label }}時点）。</p>
+{% if desc %}<p class="summary">{{ desc }}<span class="muted small">（説明はMedilenZがまとめたもので、届出の要件そのものではありません）</span></p>{% endif %}
 
 <div class="result-head">
   <div class="count">{{ "{:,}".format(total) }} 件{% if pages > 1 %}（{{ page }} / {{ pages }} ページ）{% endif %}</div>

@@ -2,7 +2,7 @@
 {% block title %}施設基準とは？ 届出の調べ方とこのサイトの使い方{% endblock %}
 {% block description %}診療報酬の「施設基準」とは何か、地方厚生局が公表している届出受理状況の見方、MedilenZで医療機関の届出を調べてCSVでダウンロードする方法を解説します。{% endblock %}
 {% block content %}
-<p class="crumbs"><a href="/">トップ</a> › 施設基準とこのサイトの使い方</p>
+<p class="crumbs"><a href="/">トップ</a> › 使い方と解説</p>
 <h1>施設基準とは？ 届出の調べ方とこのサイトの使い方</h1>
 
 <h2>施設基準とは</h2>
@@ -46,6 +46,12 @@
   {% endfor %}
 </ul>
 {% endif %}
+
+<h2 id="articles">データの見方の解説</h2>
+<ul>
+  {% for slug, a in articles.items() %}<li><a href="/guide/{{ slug }}">{{ a[1] }}</a></li>
+  {% endfor %}
+</ul>
 
 <h2>使うときの注意</h2>
 <ul>

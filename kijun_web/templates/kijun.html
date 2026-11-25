@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ kj.name }}を届け出ている病院・診療所一覧（全国{{ "{:,}".format(kj.n_facilities) }}件・都道府県別）{% endblock %}
-{% block description %}施設基準「{{ kj.name }}」を届け出ている医療機関は全国で{{ "{:,}".format(kj.n_facilities) }}件。都道府県別の届出数と医療機関の一覧を無料で確認・CSVダウンロードできます。{% endblock %}
+{% block description %}施設基準「{{ kj.name }}」を届け出ている医療機関は全国で{{ "{:,}".format(kj.n_facilities) }}件。{{ desc }}都道府県別の届出数と医療機関の一覧を無料で確認・CSVダウンロードできます。{% endblock %}
 {% block ga_events %}
   gtag("event", "view_kijun", { kijun_name: {{ kj.name|tojson }} });
 {% endblock %}
 {% block content %}
 <p class="crumbs"><a href="/">トップ</a> › <a href="/kijun">施設基準の一覧</a> › {{ kj.name }}</p>
 <h1>{{ kj.name }}</h1>
+{% if desc %}<p class="summary">{{ desc }}</p>
+<p class="muted small">説明はMedilenZがまとめたもので、届出の要件そのものではありません。</p>{% endif %}
 
 <div class="facts">
   <div class="fact"><div class="k">届出医療機関（全国）</div><div class="v">{{ "{:,}".format(kj.n_facilities) }} 件</div></div>

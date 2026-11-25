@@ -755,3 +755,29 @@ def test_similar_and_compare():
     assert t[0].startswith("項目,") and any(line.startswith("届出：") for line in t)
     assert client.get("/compare", params={"id": "000000000"}).status_code == 404
     assert "Disallow: /compare" in client.get("/robots.txt").text
+
+
+def test_guide_articles_and_kijun_desc():
+    for slug in appmod.GUIDES:
+        r = client.get(f"/guide/{slug}")
+        assert r.status_code == 200 and "<h1>" in r.text
+        assert f"/guide/{slug}" in client.get("/sitemap-static.xml").text
+    assert client.get("/guide/nothing").status_code == 404
+    from kijun_web.kijun_desc import describe
+    assert describe("外来感染対策向上加算") and describe("電子的診療情報連携体制整備加算２")
+    r = client.get("/kijun/" + "外来感染対策向上加算")
+    assert "class=\"summary\"" in r.text and "MedilenZがまとめた" in r.text
+
+
+def test_thin_facility_pages_noindex_and_out_of_sitemap():
+    import sqlite3
+    con = sqlite3.connect(appmod.DB_PATH)
+    thin = con.execute(
+        """SELECT f.id FROM facilities f WHERE f.n_kijun <= 3 AND COALESCE(f.byosho_code, '') = ''
+           AND NOT EXISTS (SELECT 1 FROM navi n WHERE n.facility_id = f.id) ORDER BY f.id LIMIT 1""").fetchone()[0]
+    rich = con.execute("SELECT id FROM facilities WHERE n_kijun > 20 ORDER BY id LIMIT 1").fetchone()[0]
+    assert 'content="noindex' in client.get(f"/facility/{thin}").text
+    assert 'content="noindex' not in client.get(f"/facility/{rich}").text
+    i = con.execute("SELECT COUNT(*) FROM facilities WHERE id < ?", (thin,)).fetchone()[0] // appmod.SITEMAP_CHUNK
+    sm = client.get(f"/sitemap-facilities-{i}.xml").text
+    assert "<url>" in sm and f"/facility/{thin}<" not in sm
