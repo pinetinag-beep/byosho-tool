@@ -181,7 +181,7 @@ GA_PAGE = {
     "kijun_index.html": "施設基準の一覧", "kijun.html": "施設基準", "kijun_pref.html": "施設基準×都道府県",
     "pref.html": "都道府県", "guide.html": "使い方", "about.html": "データについて",
     "city.html": "市区町村", "area.html": "二次医療圏", "specialty.html": "診療科から探す",
-    "404.html": "ページが見つかりません", "gone.html": "名簿から削除された医療機関", "changes.html": "新規届出・取り下げ", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
+    "404.html": "ページが見つかりません", "compare.html": "比較", "gone.html": "名簿から削除された医療機関", "changes.html": "新規届出・取り下げ", "y_index.html": "薬局トップ", "y_search.html": "薬局の検索結果", "y_facility.html": "薬局",
     "y_kijun.html": "薬局の施設基準", "y_pref.html": "薬局×都道府県", "y_city.html": "薬局×市区町村",
     # 歯科（/shika）も同じ y_*.html を使い、render() で「薬局」を「歯科」に置き換える
 }
@@ -1117,7 +1117,8 @@ def facility(request: Request, fid: str):
             return render(request, "gone.html", g=gone, status_code=410)
         c = _facility_data(con, fid)
         near = _nearby(con, c["f"])
-    return render(request, "facility.html", near=near, **c)
+        similar = _similar(con, fid)
+    return render(request, "facility.html", near=near, similar=similar, **c)
 
 
 # ── 診療科・診療時間（医療情報ネットのオープンデータ。build_navi.py → navi テーブル） ─────────
@@ -1182,6 +1183,85 @@ def _nearby(con, f) -> dict:
         out["area_n"] = con.execute(
             "SELECT COUNT(*) FROM facilities f " + where, args).fetchone()[0]
     return out
+
+
+def _similar(con, fid: str) -> dict:
+    """「似ている医療機関」（build_db._build_similar）。届出の重なりの大きい順。"""
+    try:
+        rows = con.execute(
+            """SELECT s.scope, s.n_common, f.id, f.name, f.pref_name, f.city, f.area, f.ftype, f.n_kijun, h.beds
+               FROM similar s JOIN facilities f ON f.id = s.other_id LEFT JOIN hstats h ON h.facility_id = f.id
+               WHERE s.facility_id = ? ORDER BY s.scope, s.rk""", (fid,)).fetchall()
+    except sqlite3.OperationalError:  # 古いDB
+        return {"area": [], "wide": []}
+    return {"area": [r for r in rows if r["scope"] == "area"], "wide": [r for r in rows if r["scope"] == "wide"]}
+
+
+# ── 比較（2〜5の医療機関を並べる） ─────────────────────────────
+COMPARE_MAX = 5
+COMPARE_ROWS = [  # (hstats の列, 表示名, 単位)
+    ("beds", "許可病床数", "床"), ("b_hk", "高度急性期", "床"), ("b_ak", "急性期", "床"), ("b_kf", "回復期", "床"),
+    ("b_mk", "慢性期", "床"), ("occ", "病床稼働率", "%"), ("doc", "常勤医師数", "人"), ("nurse", "常勤看護師数", "人"),
+    ("amb", "救急車の受入件数", "件"), ("dpc_total", "DPC退院患者数", "件"), ("dpc_surg", "DPC手術あり", "件"),
+    ("referral", "紹介率", "%"),
+]
+
+
+def _compare_data(con, ids: list[str]) -> dict:
+    ids = list(dict.fromkeys(i for i in ids if i))[:COMPARE_MAX]
+    facs = []
+    for i in ids:
+        f = con.execute("SELECT * FROM facilities WHERE id = ?", (i,)).fetchone()
+        if f:
+            facs.append(f)
+    if not facs:
+        raise HTTPException(404)
+    ids = [f["id"] for f in facs]
+    marks = ",".join("?" * len(ids))
+    hs = {r["facility_id"]: r for r in con.execute(f"SELECT * FROM hstats WHERE facility_id IN ({marks})", ids)}
+    have: dict[int, set] = {}
+    for fid, kid in con.execute(f"SELECT DISTINCT facility_id, kijun_id FROM filings WHERE facility_id IN ({marks})", ids):
+        have.setdefault(kid, set()).add(fid)
+    kids = list(have)
+    kj = []
+    if kids:
+        kj = con.execute(
+            f"""SELECT kj.id, kj.name, MIN(COALESCE(i.id, 1e9)) AS o, COALESCE(MIN(i.section), 'その他の届出') AS section,
+                       MIN(i.symbol) AS symbol
+                FROM kijun kj LEFT JOIN items i ON i.kijun_id = kj.id
+                WHERE kj.id IN ({','.join('?' * len(kids))}) GROUP BY kj.id ORDER BY o, kj.name""", kids).fetchall()
+    rows = [{"name": k["name"], "symbol": k["symbol"] or "", "section": k["section"],
+             "has": [f["id"] in have[k["id"]] for f in facs]} for k in kj]
+    for r in rows:
+        r["diff"] = len(set(r["has"])) > 1
+    stats = [{"label": lab, "unit": unit, "vals": [hs[f["id"]][col] if f["id"] in hs else None for f in facs]}
+             for col, lab, unit in COMPARE_ROWS]
+    stats = [s for s in stats if any(v is not None for v in s["vals"])]
+    return {"facs": facs, "stats": stats, "rows": rows, "n_diff": sum(r["diff"] for r in rows),
+            "n_common": sum(all(r["has"]) for r in rows)}
+
+
+@app.get("/compare", response_class=HTMLResponse)
+def compare(request: Request):
+    ids = request.query_params.getlist("id")
+    with db() as con:
+        d = _compare_data(con, ids)
+    q = urlencode([("id", f["id"]) for f in d["facs"]])
+    return render(request, "compare.html", csv_url="/compare.csv?" + q, hosp_fmt=_hosp_fmt, **d)
+
+
+@app.get("/compare.csv")
+def compare_csv(request: Request):
+    ids = request.query_params.getlist("id")
+    with db() as con:
+        d = _compare_data(con, ids)
+        years = _hosp_years(con) if d["stats"] else None
+    names = [f["name"] for f in d["facs"]]
+    rows = [["都道府県"] + [f["pref_name"] for f in d["facs"]], ["所在地"] + [f["address"] or "" for f in d["facs"]],
+            ["種類"] + [f["ftype"] for f in d["facs"]], ["届出の数"] + [f["n_kijun"] for f in d["facs"]]]
+    rows += [[f"{s['label']}（{s['unit']}）"] + ["" if v is None else _hosp_fmt(v, s["unit"]) for v in s["vals"]] for s in d["stats"]]
+    rows += [[f"届出：{r['name']}"] + ["○" if h else "" for h in r["has"]] for r in d["rows"]]
+    return _csv_response(["項目"] + names, iter(rows), "医療機関の比較.csv", hosp_years=years)
 
 
 # ── 病床機能報告（厚生労働省）。病院ページに出す ─────────────────────
@@ -1672,6 +1752,7 @@ def robots():
         "User-agent: *\n"
         "Disallow: /search\n"
         "Disallow: /*.csv\n"
+        "Disallow: /compare\n"
         "Disallow: /*.pdf\n"
         f"Sitemap: {SITE_URL}/sitemap.xml\n"
     )

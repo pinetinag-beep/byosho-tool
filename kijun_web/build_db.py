@@ -672,6 +672,59 @@ def _build_kijun_rel(con, top: int = 12) -> int:
     return con.execute("SELECT COUNT(*) FROM kijun_rel").fetchone()[0]
 
 
+def _build_similar(con, top: int = 5, min_kijun: int = 5) -> int:
+    """医療機関ページの「似ている医療機関」。届け出ている施設基準（受理届出名称）が重なる割合
+    （共通する届出の数 ÷ どちらかが届け出ている届出の数）の大きい順に、同じ種類（病院／有床診療所／無床診療所）
+    から選ぶ。この割合は並べ方だけに使い、画面には共通する届出の数を出す（独自の指標は出さない）。
+      scope='area' … 同じ二次医療圏から top 件
+      scope='wide' … それ以外（病院・有床診療所は全国、無床診療所は同じ都道府県）から top 件
+    届出が min_kijun 件未満の医療機関は、似ている相手が決めにくいので作らない。"""
+    import numpy as np
+    fac = pd.read_sql("SELECT id, pref_code, area, ftype FROM facilities", con)
+    fk = pd.read_sql("SELECT DISTINCT facility_id, kijun_id FROM filings", con)
+    fk = fk[fk["facility_id"].isin(fac["id"])]
+    cnt = fk.groupby("facility_id").size()
+    fac = fac[fac["id"].map(cnt).fillna(0) >= min_kijun].reset_index(drop=True)
+    kid = {k: i for i, k in enumerate(sorted(fk["kijun_id"].unique()))}
+    rows = []
+    groups = [(t, fac[fac["ftype"] == t]) for t in ("病院", "有床診療所")]
+    nos = fac[fac["ftype"] == "無床診療所"]
+    groups += [("無床診療所", g) for _, g in nos.groupby("pref_code")]
+    for _, g in groups:
+        g = g.reset_index(drop=True)
+        if len(g) < 2:
+            continue
+        idx = {f: i for i, f in enumerate(g["id"])}
+        sub = fk[fk["facility_id"].isin(idx)]
+        m = np.zeros((len(g), len(kid)), dtype=np.float32)
+        m[sub["facility_id"].map(idx).to_numpy(), sub["kijun_id"].map(kid).to_numpy()] = 1
+        size = m.sum(1)
+        ids, areas, prefs = g["id"].to_numpy(), g["area"].to_numpy(), g["pref_code"].to_numpy()
+        for s0 in range(0, len(g), 1000):
+            blk = m[s0:s0 + 1000]
+            inter = blk @ m.T
+            jac = inter / (size[s0:s0 + 1000, None] + size[None, :] - inter)
+            for r in range(len(blk)):
+                i = s0 + r
+                j = jac[r].copy()
+                j[i] = -1
+                j[inter[r] < 3] = -1
+                order = np.argsort(-j, kind="stable")
+                same = areas == areas[i]
+                if areas[i] == AREA_UNKNOWN:
+                    same = np.zeros(len(g), dtype=bool)
+                for scope, mask in (("area", same), ("wide", ~same)):
+                    picked = [o for o in order[:400] if mask[o] and j[o] > 0][:top]
+                    if len(picked) < top and mask.sum() > 400:
+                        picked = [o for o in order if mask[o] and j[o] > 0][:top]
+                    for rk, o in enumerate(picked, 1):
+                        rows.append((ids[i], scope, rk, ids[o], int(inter[r, o])))
+    con.execute("CREATE TABLE similar (facility_id TEXT, scope TEXT, rk INTEGER, other_id TEXT, n_common INTEGER)")
+    con.executemany("INSERT INTO similar VALUES (?,?,?,?,?)", rows)
+    con.execute("CREATE INDEX ix_sim ON similar(facility_id, scope, rk)")
+    return len(rows)
+
+
 def _jlabel(iso: str) -> str:
     try:
         return f"{int(iso[:4])}年{int(iso[5:7])}月{int(iso[8:10])}日"
@@ -964,6 +1017,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
     n_gairai_rows = _build_gairai(con)
     n_hstats = _build_hstats(con)
     n_kijun_rel = _build_kijun_rel(con)
+    n_similar = _build_similar(con)
     n_yakkyoku = _build_yakkyoku(con)
     n_shika = _build_shika(con)
     n_kdiff = _build_kdiff(con)
@@ -988,6 +1042,7 @@ def build(src: Path = SRC, out: Path = OUT) -> dict:
         "n_gairai_rows": str(n_gairai_rows),
         "n_hstats": str(n_hstats),
         "n_kijun_rel": str(n_kijun_rel),
+        "n_similar": str(n_similar),
         "n_yakkyoku": str(n_yakkyoku),
         "n_shika": str(n_shika),
         "n_kdiff": str(n_kdiff),

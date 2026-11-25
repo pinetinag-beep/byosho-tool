@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{% for f in facs %}{{ f.name|short_name }}{% if not loop.last %}・{% endif %}{% endfor %}の比較{% endblock %}
+{% block robots %}<meta name="robots" content="noindex,follow">{% endblock %}
+{% block ga_events %}gtag("event", "view_compare", { n_facilities: {{ facs|length }}, content_group: "比較" });{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">トップ</a> › <a href="{{ facility_url(facs[0].id) }}">{{ facs[0].name|short_name }}</a> › 比較</p>
+<h1>医療機関を比べる</h1>
+<p class="lead">届出 {{ rows|length }}種類のうち、{{ facs|length }}施設とも届け出ているのは{{ n_common }}種類、違いがあるのは{{ n_diff }}種類です。</p>
+<div class="result-head">
+  <label class="cmp-toggle"><input type="checkbox" id="cmp-diff" checked>違いのある届出だけ表示</label>
+  <a class="btn secondary" href="{{ csv_url }}">CSVダウンロード（無料）</a>
+</div>
+<div class="table-wrap" data-ga-sec="compare"><table class="cmp" id="cmp">
+  <thead><tr><th></th>{% for f in facs %}<th><a href="{{ facility_url(f.id) }}">{{ f.name|short_name }}</a><small>{{ f.pref_name }}{{ f.city or '' }}・{{ f.ftype }}</small></th>{% endfor %}</tr></thead>
+  <tbody>
+    <tr class="cmp-sec"><th colspan="{{ facs|length + 1 }}">基本</th></tr>
+    <tr><th>二次医療圏</th>{% for f in facs %}<td>{{ f.area if f.area and not f.area.startswith('（') else '—' }}</td>{% endfor %}</tr>
+    <tr><th>届け出ている施設基準</th>{% for f in facs %}<td class="num">{{ f.n_kijun }}種類</td>{% endfor %}</tr>
+    {% for s in stats %}<tr><th>{{ s.label }}</th>{% for v in s.vals %}<td class="num">{% if v is none %}<span class="muted">—</span>{% else %}{{ hosp_fmt(v, s.unit) }}<small class="muted">{{ s.unit }}</small>{% endif %}</td>{% endfor %}</tr>{% endfor %}
+    {% set ns = namespace(sec="") %}
+    {% for r in rows %}
+      {% if r.section != ns.sec %}{% set ns.sec = r.section %}<tr class="cmp-sec" data-sec="{{ r.section }}"><th colspan="{{ facs|length + 1 }}">{{ r.section }}</th></tr>{% endif %}
+      <tr class="cmp-k{% if not r.diff %} same{% endif %}" data-sec="{{ r.section }}"><th>{{ r.name }}{% if r.symbol %}<small class="muted">{{ r.symbol }}</small>{% endif %}</th>{% for h in r.has %}<td class="ic">{% if h %}<span class="ok">○</span>{% endif %}</td>{% endfor %}</tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{% if stats %}<p class="note small">病床・職員・救急車の受入件数は厚生労働省「病床機能報告」（{{ reiwa(meta.hstats_byosho_year|int) }}）、DPCは「{{ dpc_source(meta.hstats_dpc_year|int) }}」、紹介率は「外来機能報告」（{{ reiwa(meta.hstats_gairai_year|int) }}）の値です（いずれも厚生労働省、加工して作成）。病床稼働率は在棟延べ数÷（許可病床数×365）で、在棟延べ数は前年度1年間の実績、許可病床数は7月1日時点です。「—」は報告されていない、または公表されていない値です。</p>{% endif %}
+<p class="source">出典：各地方厚生局「施設基準の届出受理状況」を加工して作成（各厚生局のページと利用した日は<a href="/about#sources">データについて</a>）</p>
+<script>
+(() => {
+  const t = document.getElementById("cmp"), cb = document.getElementById("cmp-diff");
+  const apply = () => {
+    const only = cb.checked;
+    t.querySelectorAll("tr.cmp-k").forEach((tr) => { tr.hidden = only && tr.classList.contains("same"); });
+    t.querySelectorAll("tr.cmp-sec[data-sec]").forEach((h) => {
+      h.hidden = ![...t.querySelectorAll(`tr.cmp-k[data-sec="${CSS.escape(h.dataset.sec)}"]`)].some((tr) => !tr.hidden);
+    });
+  };
+  cb.addEventListener("change", apply); apply();
+})();
+</script>
+{% include "_ad.html" %}
+{% endblock %}

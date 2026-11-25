@@ -737,3 +737,21 @@ def test_ga_events_have_no_raw_template_code():
     for u in ["/shika/search?pref=39", "/yakkyoku/search?pref=13", "/search?pref=39"]:
         t = client.get(u).text
         assert "K.word ~" not in t and "content_group: K." not in t
+
+
+def test_similar_and_compare():
+    """医療機関ページの「似ている医療機関」と、比較ページ（表・CSV）。"""
+    import sqlite3
+    con = sqlite3.connect(str(appmod.DB_PATH))
+    row = con.execute("""SELECT s.facility_id, s.other_id FROM similar s JOIN facilities f ON f.id = s.facility_id
+                         WHERE f.ftype = '病院' AND s.scope = 'area' AND s.rk = 1 LIMIT 1""").fetchone()
+    assert row
+    a, b = row
+    r = client.get(f"/facility/{a}")
+    assert "似ている医療機関" in r.text and f'name="id" value="{b}"' in r.text
+    r = client.get("/compare", params=[("id", a), ("id", b)])
+    assert r.status_code == 200 and "医療機関を比べる" in r.text and "noindex" in r.text
+    t = client.get("/compare.csv", params=[("id", a), ("id", b)]).text.lstrip("﻿").splitlines()
+    assert t[0].startswith("項目,") and any(line.startswith("届出：") for line in t)
+    assert client.get("/compare", params={"id": "000000000"}).status_code == 404
+    assert "Disallow: /compare" in client.get("/robots.txt").text
