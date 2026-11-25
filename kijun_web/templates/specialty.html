@@ -15,7 +15,7 @@
     <div class="sx-field"><span class="sx-flabel">施設の種類</span>
       <div class="ct-checks">{% for t in ftypes %}<label><input type="checkbox" name="ftype" value="{{ t }}" {% if t == "病院" %}checked{% endif %}>{{ t }}</label>{% endfor %}</div></div>
     <div class="sx-field"><span class="sx-flabel">チェックした届出を</span>
-      <div class="ct-checks"><label><input type="radio" name="mode" value="or" checked>いずれか届け出ている</label><label><input type="radio" name="mode" value="and">すべて届け出ている</label></div></div>
+      <div class="ct-checks"><label><input type="radio" name="mode" value="and" checked>すべて届け出ている</label><label><input type="radio" name="mode" value="or">いずれかを届け出ている</label></div></div>
   </div>
 
   <div class="yk-find">

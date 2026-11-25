@@ -252,6 +252,9 @@ class Cond:
     ftypes: list[str] = field(default_factory=list)
     q: str = ""
     items: list[int] = field(default_factory=list)
+    # 届出項目のまとまり（「診療科から探す」で区分違いを1行にまとめたもの。item=12.13.14）。
+    # まとまりの中は「いずれか」、まとまりどうしは mode に従う。1つだけの項目は1つのまとまり
+    groups: list[list[int]] = field(default_factory=list)
     kubuns: list[int] = field(default_factory=list)   # 入院基本料の区分（急性期一般入院料１など、kubuns.id）
     mode: str = "and"          # 届出項目・区分を「すべて」届け出ている(and) / 「いずれか」(or)
     ex_items: list[int] = field(default_factory=list)   # 届け出ていない届出項目（どれも届け出ていない施設）
@@ -280,7 +283,12 @@ class Cond:
     def from_request(cls, request: Request) -> "Cond":
         qp = request.query_params
         # item=12.13.14 のように「.」でまとめた値も受け付ける（「診療科から探す」の1行＝複数の届出項目）
-        items = [int(x) for v in qp.getlist("item") for x in v.split(".") if x.isdigit()]
+        groups = []
+        for v in qp.getlist("item"):
+            g = list(dict.fromkeys(int(x) for x in v.split(".") if x.isdigit()))
+            if g and g not in groups:
+                groups.append(g)
+        items = [i for g in groups for i in g]
         kubuns = [int(v) for v in qp.getlist("kb") if v.isdigit()]
         ex_items = [int(x) for v in qp.getlist("nx") for x in v.split(".") if x.isdigit()]
         ex_kubuns = [int(v) for v in qp.getlist("nkb") if v.isdigit()]
@@ -295,6 +303,7 @@ class Cond:
             ftypes=[v for v in qp.getlist("ftype") if v in FTYPES],
             q=qp.get("q", "").strip(),
             items=list(dict.fromkeys(items)),
+            groups=groups,
             kubuns=list(dict.fromkeys(kubuns)),
             mode="or" if qp.get("mode") == "or" else "and",
             ex_items=[i for i in dict.fromkeys(ex_items) if i not in items],
@@ -316,7 +325,7 @@ class Cond:
 
     def pairs(self, add: bool = True, **extra) -> list[tuple[str, str]]:
         pairs = [("pref", p) for p in self.prefs] + [("area", a) for a in self.areas] + [("city", c) for c in self.cities]
-        pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", i) for i in self.items]
+        pairs += [("ftype", t) for t in self.ftypes] + [("q", self.q)] + [("item", ".".join(map(str, g))) for g in self._groups()]
         pairs += [("kb", i) for i in self.kubuns]
         pairs += [("nx", i) for i in self.ex_items] + [("nkb", i) for i in self.ex_kubuns]
         if add:
@@ -331,6 +340,11 @@ class Cond:
             pairs += [("add", a) for a in self.adds]
         pairs += list(extra.items())
         return [(k, v) for k, v in pairs if v not in ("", None)]
+
+    def _groups(self) -> list[list[int]]:
+        """まとまり（無ければ項目1つずつ）。"""
+        seen = {i for g in self.groups for i in g}
+        return [g for g in self.groups if g] + [[i] for i in self.items if i not in seen]
 
     @property
     def n_selected(self) -> int:
@@ -462,9 +476,15 @@ def _search_sql(con, c: Cond) -> tuple[str, list, str, list]:
     sel, sel_params = [], []
     if c.items:
         marks = ",".join("?" * len(c.items))
+        groups = c._groups()
         if c.mode == "or" or len(c.items) == 1:
             sel.append(f"f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks}))")
             sel_params += c.items
+        elif any(len(g) > 1 for g in groups):
+            # まとまりの中はいずれか、まとまりどうしはすべて
+            for g in groups:
+                sel.append(f"f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({','.join('?' * len(g))}))")
+                sel_params += g
         else:
             sel.append(f"""f.id IN (SELECT facility_id FROM filings WHERE item_id IN ({marks})
                                     GROUP BY facility_id HAVING COUNT(DISTINCT item_id) = ?)""")
@@ -889,7 +909,7 @@ def search(request: Request, page: int = Query(1, ge=1)):
         has_kubun=any(col["kubun"] for col in sel_cols) or bool(matched_kubun),
         csv_url="/search.csv?" + c.query(),
         ex_labels=ex_labels, add_groups=H_ADD_GROUPS,
-        sh_labels=sh_labels, add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
+        sh_labels=sh_labels, grouped=any(len(g) > 1 for g in c._groups()), add_hidden=c.pairs(add=False), add_url=lambda: "/search?" + c.query(),
         has_occ=any(h["col"] == "occ" for h in hosp_cols),
         page_url=lambda p: "/search?" + c.query(page=p),
         narrow_url=lambda name: "/search?" + Cond(prefs=c.prefs, areas=c.areas, cities=c.cities, ftypes=c.ftypes,

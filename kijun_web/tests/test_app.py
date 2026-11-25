@@ -705,3 +705,22 @@ def test_gone_and_old_urls():
         assert r.status_code == 410 and "名簿から削除されました" in r.text
     r = client.get("/no-such-page")
     assert r.status_code == 404 and "page_not_found" in r.text
+
+
+def test_grouped_items_any_within_group():
+    """診療科から探すのまとめた行（item=12.13.14）は、行の中はいずれか、行どうしはすべて。"""
+    import sqlite3
+    con = sqlite3.connect(str(appmod.DB_PATH))
+    ids = [r[0] for r in con.execute(
+        """SELECT i.id FROM items i JOIN kijun kj ON kj.id = i.kijun_id
+           WHERE kj.name LIKE '脳血管疾患等リハビリテーション料%' ORDER BY i.id""")]
+    assert len(ids) >= 2
+    g = ".".join(map(str, ids))
+
+    def n(q):
+        return int(re.search(r"([\d,]+) 件", client.get("/search", params=q).text).group(1).replace(",", ""))
+
+    base = [("pref", "13"), ("ftype", "病院"), ("mode", "and")]
+    assert n(base + [("item", g)]) == n(base + [("item", g), ("mode", "or")]) > 0
+    assert n(base + [("item", str(i)) for i in ids]) < n(base + [("item", g)])
+    assert f"item={g.replace('.', '.')}" in client.get("/search", params=base + [("item", g)]).text.replace("%2E", ".")

@@ -23,7 +23,7 @@
   {% for h in cond.hosp_labels %}<span class="v">{{ h }}</span>{% endfor %}
   {% if sel_cols|length == 1 %}<span class="v">{% if sel_cols[0].kubun %}区分{% else %}届出項目{% endif %}：<abbr title="{{ sel_cols[0].title }}">{{ sel_cols[0].head }}</abbr></span>
   {% elif sel_cols %}<span class="v">{{ sel_cols|length }}件の{% if cond.mode == 'or' %}いずれか{% else %}すべて{% endif %}に当てはまる：
-    {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
+    {% for s in sel_cols %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}{% if grouped and cond.mode != 'or' %}<small class="muted">（区分違いをまとめた行は、そのいずれか）</small>{% endif %}</span>{% endif %}
   {% if ex_labels %}<span class="v ex">届け出ていない：{% for s in ex_labels %}<abbr title="{{ s.title }}">{{ s.head }}</abbr>{% if not loop.last %}・{% endif %}{% endfor %}</span>{% endif %}
   <a class="cs-edit" href="/?{{ cond.query() }}">条件を変更する</a>
 </div>
