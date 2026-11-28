@@ -751,7 +751,7 @@ def test_similar_and_compare():
     a, b = row
     r = client.get(f"/facility/{a}")
     assert "似ている医療機関" in r.text and f'name="id" value="{b}"' in r.text
-    for label in ("届出が似ている", "病床機能が似ている", "診療実績が似ている"):
+    for label in ("届出が似ている", "病床の区分が似ている", "診療実績が似ている"):
         assert label in r.text
     assert 'data-simgo="beds"' in r.text  # 上部の案内
     # 病床機能報告の医療機関コードは、1つの医療機関にだけつながる

@@ -1189,7 +1189,7 @@ def _nearby(con, f) -> dict:
 
 SIMILAR_BASES = [  # (basis, タブの名前, 何で比べたかの説明)
     ("kijun", "届出", "届け出ている施設基準の重なりが大きい順です。"),
-    ("beds", "病床機能", "病床機能報告の4つの機能（高度急性期・急性期・回復期・慢性期）ごとの許可病床数が近い順です。"),
+    ("beds", "病床の区分", "病床機能報告で病棟ごとに報告された入院料の区分（急性期一般入院料１・地域包括ケア病棟入院料１など）ごとの許可病床数が近い順です。"),
     ("dpc", "診療実績", "DPC調査の疾患の分野（18分野）ごとの退院患者数が近い順です。"),
 ]
 
@@ -1205,9 +1205,29 @@ def _similar(con, fid: str) -> dict:
                WHERE s.facility_id = ? ORDER BY s.basis, s.scope, s.rk""", (fid,)).fetchall()
     except sqlite3.OperationalError:  # 古いDB（basis の列が無い）
         return out
+    wards = _ward_kubun(con, [r["id"] for r in rows if r["basis"] == "beds"] + [fid])
     for r in rows:
         if r["basis"] in out:
+            r = dict(r)
+            r["kubun"] = wards.get(r["id"], [])
             out[r["basis"]][r["scope"]].append(r)
+    out["self_kubun"] = wards.get(fid, [])
+    return out
+
+
+def _ward_kubun(con, ids: list[str]) -> dict[str, list[tuple[str, int]]]:
+    """医療機関ごとの、病床機能報告（最新年度）の入院料の区分と許可病床数（病床数の多い順）。"""
+    if not ids:
+        return {}
+    q = ",".join("?" * len(ids))
+    out: dict[str, list] = {}
+    for fid, k, n in con.execute(
+            f"""SELECT f.id, w.入院基本料, SUM(w.許可病床数) FROM facilities f
+                JOIN byosho_ward w ON w.code = substr('0000000000' || f.byosho_code, -10)
+                WHERE f.id IN ({q}) AND w.year = (SELECT MAX(year) FROM byosho_ward v WHERE v.code = w.code)
+                  AND COALESCE(w.入院基本料, '-') NOT IN ('-', '')
+                GROUP BY f.id, w.入院基本料 ORDER BY f.id, 3 DESC""", ids):
+        out.setdefault(fid, []).append((unicodedata.normalize("NFKC", k), int(n or 0)))
     return out
 
 

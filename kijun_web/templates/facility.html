@@ -238,6 +238,7 @@
 {% if has_beds %}</section>{% endif %}
 
 {%- set sim_any = similar.kijun.area or similar.kijun.wide or similar.beds.area or similar.beds.wide or similar.dpc.area or similar.dpc.wide -%}
+{%- macro kubun_list(ks) -%}{% for k, n in ks[:3] %}{{ k }} {{ "{:,}".format(n) }}床{% if not loop.last %}<br>{% endif %}{% endfor %}{% if ks|length > 3 %}<br><span class="muted">ほか{{ ks|length - 3 }}区分</span>{% endif %}{%- endmacro -%}
 {% if sim_any %}
 <h2 id="similar">似ている医療機関</h2>
 <form class="sim-form" action="/compare" method="get" data-ga-sec="facility_similar">
@@ -250,12 +251,13 @@
   {% for b, label, note in sim_bases %}{% if similar[b].area or similar[b].wide %}
   <section class="sim-panel" data-simpanel="{{ b }}">
   <p class="muted small">{{ note }}{% if b == "kijun" %}同じ種類（{{ f.ftype }}）の医療機関から選んでいます。{% endif %}</p>
+  {% if b == "beds" and similar.self_kubun %}<p class="small sim-self">この医療機関：{% for k, n in similar.self_kubun %}{{ k }} {{ "{:,}".format(n) }}床{% if not loop.last %}・{% endif %}{% endfor %}</p>{% endif %}
   {% for scope, title in [("area", "同じ二次医療圏" ~ ("（" ~ f.area ~ "）" if f.area and not f.area.startswith("（") else "")), ("wide", ("全国" if f.ftype != "無床診療所" or b != "kijun" else f.pref_name ~ "内のほかの地域"))] %}{% set rs = similar[b][scope] %}{% if rs %}
   <h3>{{ title }}</h3>
   <div class="table-wrap"><table class="near">
     <thead><tr><th class="sim-cb"><span class="sr">比べる</span></th><th>医療機関</th><th>所在地</th>
       {% if b == "kijun" %}<th class="num">許可病床数</th><th class="num">共通する届出</th>
-      {% elif b == "beds" %}<th class="num">許可病床数</th><th>内訳（高度急性期・急性期・回復期・慢性期）</th>
+      {% elif b == "beds" %}<th class="num">許可病床数</th><th>主な入院料の区分</th>
       {% else %}<th class="num">DPC退院患者数</th><th class="num">許可病床数</th>{% endif %}</tr></thead>
     <tbody>{% for r in rs %}<tr>
       <td class="sim-cb"><input type="checkbox" name="id" value="{{ r.id }}" aria-label="{{ r.name }}を比べる"></td>
@@ -266,7 +268,7 @@
       <td class="num">{{ r.n_common }}<small class="muted">／{{ r.n_kijun }}種類</small></td>
       {% elif b == "beds" %}
       <td class="num">{{ "{:,}".format(r.beds or 0) }}床</td>
-      <td class="small nowrap">{{ r.b_hk or 0 }}・{{ r.b_ak or 0 }}・{{ r.b_kf or 0 }}・{{ r.b_mk or 0 }}</td>
+      <td class="small kubun-cell">{{ kubun_list(r.kubun) }}</td>
       {% else %}
       <td class="num">{% if r.dpc_total %}{{ "{:,}".format(r.dpc_total|int) }}件{% else %}—{% endif %}</td>
       <td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td>

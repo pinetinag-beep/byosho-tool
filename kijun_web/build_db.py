@@ -689,24 +689,30 @@ def _pick_top(ids, areas, i, score, valid, top, rows, basis, extra):
     import numpy as np
     order = np.argsort(-score, kind="stable")
     same = areas == areas[i] if areas[i] != AREA_UNKNOWN else np.zeros(len(areas), dtype=bool)
+    ok = valid[order]
     for scope, mask in (("area", same), ("wide", ~same)):
-        picked = [o for o in order[:400] if mask[o] and valid[o]][:top]
-        if len(picked) < top and mask.sum() > 400:
-            picked = [o for o in order if mask[o] and valid[o]][:top]
+        picked = order[ok & mask[order]][:top]
         for rk, o in enumerate(picked, 1):
             rows.append((ids[i], basis, scope, rk, ids[o], extra(o)))
 
 
 def _build_similar_vec(con, rows: list, basis: str, top: int = 5) -> None:
-    """病床機能（basis='beds'：4機能ごとの許可病床数）・診療実績（basis='dpc'：DPCの18分野ごとの退院患者数）が
+    """病床の区分（basis='beds'：病床機能報告の病棟ごとの入院料の区分ごとの許可病床数）・診療実績（basis='dpc'：DPCの18分野ごとの退院患者数）が
     似ている病院。ブレイ・カーティスの非類似度（Σ|a−b| ÷ Σ(a+b)。規模と内訳の両方が近いほど小さい）の小さい順。
     この値は並べ方だけに使い、画面には元の数字（病床数・退院患者数）を出す（独自の指標は出さない）。"""
     import numpy as np
     if basis == "beds":
-        d = pd.read_sql("""SELECT f.id, f.area, h.b_hk, h.b_ak, h.b_kf, h.b_mk FROM facilities f
-                           JOIN hstats h ON h.facility_id = f.id WHERE h.beds >= 20""", con)
-        cols = ["b_hk", "b_ak", "b_kf", "b_mk"]
-        m = d[cols].fillna(0).to_numpy(np.float32)
+        # 病床機能報告（その病院の最新年度）で病棟ごとに報告された入院料の区分ごとの許可病床数
+        bw = pd.read_sql("""SELECT f.id, f.area, w.入院基本料 AS k, w.許可病床数 AS n
+                            FROM byosho_ward w JOIN facilities f ON substr('0000000000' || f.byosho_code, -10) = w.code
+                            WHERE w.year = (SELECT MAX(year) FROM byosho_ward v WHERE v.code = w.code)
+                              AND COALESCE(w.入院基本料, '-') NOT IN ('-', '')""", con)
+        if bw.empty:
+            return
+        w = bw.pivot_table(index=["id", "area"], columns="k", values="n", aggfunc="sum", fill_value=0)
+        w = w[w.sum(1) >= 20]
+        d = w.index.to_frame(index=False)
+        m = w.to_numpy(np.float32)
     else:
         mdc = pd.read_sql("""SELECT f.id, f.area, x.mdc, COALESCE(x.n_surg, 0) + COALESCE(x.n_nosurg, 0) AS n
                              FROM dpc_mdc x JOIN facilities f ON f.byosho_code = x.code
@@ -727,7 +733,7 @@ def _build_similar_vec(con, rows: list, basis: str, top: int = 5) -> None:
         for r in range(len(blk)):
             i = s0 + r
             score = -dist[r]
-            valid = np.ones(len(d), dtype=bool)
+            valid = dist[r] < 1   # 1は共通する区分・分野が1つも無い
             valid[i] = False
             _pick_top(ids, areas, i, score, valid, top, rows, basis, lambda o: None)
 
