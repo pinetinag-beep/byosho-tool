@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{#- 1〜2件しか載らない一覧は、同じ形の薄いページとして検索結果に出さない（サイトマップからも外す。app.THIN_LIST_MIN） -#}
+{% block robots %}{% if rows|length < 3 %}<meta name="robots" content="noindex,follow">{% endif %}{% endblock %}
 {% block title %}{{ pref.name }}{{ city }}の{{ K.word }}一覧（{{ rows|length }}件・施設基準の届出）{% endblock %}
 {% block description %}{{ pref.name }}{{ city }}の{{ K.word }}{{ rows|length }}件の一覧。{{ K.col1 }}、{{ K.col2 }}、届け出ている施設基準の数を無料で確認できます。{% endblock %}
 {% block head_extra %}

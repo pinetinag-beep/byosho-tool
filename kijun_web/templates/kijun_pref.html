@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{#- 1〜2件しか載らない一覧は、同じ形の薄いページとして検索結果に出さない（サイトマップからも外す。app.THIN_LIST_MIN） -#}
+{% block robots %}{% if total < 3 %}<meta name="robots" content="noindex,follow">{% endif %}{% endblock %}
 {% block title %}{{ kj.name }}を届け出ている{{ pref.name }}の医療機関一覧（{{ "{:,}".format(total) }}件）{% endblock %}
 {% block description %}{{ pref.name }}で施設基準「{{ kj.name }}」を届け出ている病院・診療所{{ "{:,}".format(total) }}件の一覧。算定開始日・区分つきで、CSVも無料でダウンロードできます。{% endblock %}
 {% block canonical %}{{ request.url.path }}{% if page > 1 %}?page={{ page }}{% endif %}{% endblock %}

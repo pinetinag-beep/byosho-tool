@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{#- 1〜2件しか載らない一覧は、同じ形の薄いページとして検索結果に出さない（サイトマップからも外す。app.THIN_LIST_MIN） -#}
+{% block robots %}{% if (hosp|length + clinics|length) < 3 %}<meta name="robots" content="noindex,follow">{% endif %}{% endblock %}
 {% block title %}{{ pref.name }}{{ city }}の病院・診療所一覧（病床数・施設基準）{% endblock %}
 {% block description %}{{ pref.name }}{{ city }}の病院{{ hosp|length }}件・診療所{{ "{:,}".format(clinics|length) }}件の一覧。病院の許可病床数・病床機能（病床機能報告）、DPCの退院患者数、届け出ている施設基準の数を無料で比べられます。{% endblock %}
 {% block head_extra %}

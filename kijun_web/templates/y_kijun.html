@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{#- 1〜2件しか載らない一覧は、同じ形の薄いページとして検索結果に出さない（サイトマップからも外す。app.THIN_LIST_MIN） -#}
+{% block robots %}{% if K.x == "d" and kj.n_facilities < 3 %}<meta name="robots" content="noindex,follow">{% endif %}{% endblock %}
 {% block title %}{{ kj.name }}を届け出ている{{ K.word }}（全国{{ "{:,}".format(kj.n_facilities) }}件・都道府県別）{% endblock %}
 {% block description %}{{ kj.name }}を地方厚生局に届け出ている{{ K.word }}は全国{{ "{:,}".format(kj.n_facilities) }}件。{{ desc }}都道府県別の件数と、届け出ている{{ K.word }}のリスト（CSV）を無料で確認できます。{% endblock %}
 {% block content %}

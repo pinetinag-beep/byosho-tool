@@ -789,3 +789,24 @@ def test_thin_facility_pages_noindex_and_out_of_sitemap():
     i = con.execute("SELECT COUNT(*) FROM facilities WHERE id < ?", (thin,)).fetchone()[0] // appmod.SITEMAP_CHUNK
     sm = client.get(f"/sitemap-facilities-{i}.xml").text
     assert "<url>" in sm and f"/facility/{thin}<" not in sm
+
+
+def test_thin_list_pages_noindex_and_out_of_sitemap():
+    """1〜2件しか載らない一覧（施設基準×都道府県・市区町村・歯科の届出）は noindex で、サイトマップに無い。"""
+    import sqlite3
+    from urllib.parse import quote
+    con = sqlite3.connect(appmod.DB_PATH)
+    k, p = con.execute("""SELECT kj.name, pr.name FROM kijun_pref kp JOIN kijun kj ON kj.id = kp.kijun_id
+                          JOIN prefs pr ON pr.code = kp.pref_code WHERE kp.n = 1 LIMIT 1""").fetchone()
+    k2, p2 = con.execute("""SELECT kj.name, pr.name FROM kijun_pref kp JOIN kijun kj ON kj.id = kp.kijun_id
+                            JOIN prefs pr ON pr.code = kp.pref_code WHERE kp.n >= 10 LIMIT 1""").fetchone()
+    assert 'content="noindex' in client.get(appmod.kijun_url(k, p)).text
+    assert 'content="noindex' not in client.get(appmod.kijun_url(k2, p2)).text
+    sm = client.get("/sitemap-kijun.xml").text
+    assert appmod.kijun_url(k, p) not in sm and appmod.kijun_url(k2, p2) in sm
+    pc, c = con.execute("""SELECT p.name, f.city FROM facilities f JOIN prefs p ON p.code = f.pref_code
+                           WHERE f.city IS NOT NULL GROUP BY f.pref_code, f.city HAVING COUNT(*) = 1 LIMIT 1""").fetchone()
+    assert 'content="noindex' in client.get(appmod.city_url(pc, c)).text
+    st = client.get("/sitemap-static.xml").text
+    assert appmod.city_url(pc, c) not in st and appmod.city_url("高知県", "高知市") in st
+    assert "/area/" in st

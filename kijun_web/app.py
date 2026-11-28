@@ -1838,6 +1838,10 @@ def _loc(path: str) -> str:
     return f"<url><loc>{SITE_URL}{path}</loc></url>"
 
 
+# 載っている医療機関が1〜2件だけの一覧ページ（施設基準×都道府県・市区町村・歯科の届出）は、同じ形の薄いページとして
+# noindex にしてサイトマップからも外す（2026年11月のコアアップデートの後、検索の表示がほぼ0になったため）
+THIN_LIST_MIN = 3
+
 # 中身の薄い医療機関ページ（届出3種類以下で、病床機能報告・診療時間も無い）。noindex にしてサイトマップからも外す
 THIN_SQL = ("f.n_kijun <= 3 AND {byosho} NOT EXISTS (SELECT 1 FROM navi n WHERE n.facility_id = f.id)")
 
@@ -1878,8 +1882,9 @@ def sitemap_part(part: str):
                     paths.append(f"{base}?pref={r[0]}")
             paths += [f"/pref/{quote(p['name'])}" for p in _prefs(con)]
             for r in con.execute(
-                """SELECT DISTINCT p.name AS pref, f.area, f.city FROM facilities f
-                   JOIN prefs p ON p.code = f.pref_code ORDER BY f.pref_code, f.area, f.city"""):
+                """SELECT p.name AS pref, f.city FROM facilities f JOIN prefs p ON p.code = f.pref_code
+                   WHERE f.city IS NOT NULL GROUP BY f.pref_code, f.city HAVING COUNT(*) >= ?
+                   ORDER BY f.pref_code, f.city""", (THIN_LIST_MIN,)):
                 if r["city"]:
                     paths.append(city_url(r["pref"], r["city"]))
             for r in con.execute(
@@ -1893,7 +1898,8 @@ def sitemap_part(part: str):
                 kijun_url(r["kname"], r["pname"])
                 for r in con.execute(
                     """SELECT kj.name AS kname, p.name AS pname FROM kijun_pref kp
-                       JOIN kijun kj ON kj.id = kp.kijun_id JOIN prefs p ON p.code = kp.pref_code"""
+                       JOIN kijun kj ON kj.id = kp.kijun_id JOIN prefs p ON p.code = kp.pref_code
+                       WHERE kp.n >= ?""", (THIN_LIST_MIN,)
                 )
             ]
         elif (K := _other_kind(part)) is not None:
@@ -1901,9 +1907,12 @@ def sitemap_part(part: str):
                 paths = [K.base]
                 paths += [K.pref_url(r["name"]) for r in con.execute(f"SELECT name FROM {K.t('prefs')} ORDER BY code")]
                 paths += [K.city_url(r["pref"], r["city"]) for r in con.execute(
-                    f"""SELECT DISTINCT p.name AS pref, f.city FROM {K.t('fac')} f JOIN {K.t('prefs')} p ON p.code = f.pref_code
-                       WHERE f.city IS NOT NULL ORDER BY f.pref_code, f.city""")]
-                paths += [K.kijun_url(r["name"]) for r in con.execute(f"SELECT name FROM {K.t('kijun')}")]
+                    f"""SELECT p.name AS pref, f.city FROM {K.t('fac')} f JOIN {K.t('prefs')} p ON p.code = f.pref_code
+                       WHERE f.city IS NOT NULL GROUP BY f.pref_code, f.city HAVING COUNT(*) >= ?
+                       ORDER BY f.pref_code, f.city""", (THIN_LIST_MIN,))]
+                kmin = THIN_LIST_MIN if K.x == "d" else 0   # 歯科の名簿にまばらに載る医科の届出
+                paths += [K.kijun_url(r["name"]) for r in con.execute(
+                    f"SELECT name FROM {K.t('kijun')} WHERE n_facilities >= ?", (kmin,))]
             else:
                 i = int(part.rsplit("-", 1)[1])
                 thin = THIN_SQL.format(byosho="")
