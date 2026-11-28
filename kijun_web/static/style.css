@@ -688,3 +688,15 @@ table.cmp td.ic { text-align: center; }
 .sim-form .sim-act { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0 0; }
 .sim-form td.sim-cb { width: 2.2em; text-align: center; }
 .sim-form input[type=checkbox] { accent-color: var(--brand); }
+
+/* 似ている医療機関：上部の1行と、届出・病床機能・診療実績のタブ */
+.sim-top { margin: 4px 0 18px; font-size: 0.92rem; color: var(--ink-muted); }
+.sim-top a { font-weight: 700; margin: 0 2px; }
+.sim-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.sim-tabs button { font: inherit; font-size: 0.9rem; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--field-line);
+  background: #fff; color: var(--ink); cursor: pointer; }
+.sim-tabs button[aria-selected="true"] { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+@media (max-width: 640px) {
+  .sim-form table.near td.sim-cb { min-width: 0; width: 2.2em; }
+  .sim-form table.near td:nth-child(2) { min-width: 9.5em; }
+}

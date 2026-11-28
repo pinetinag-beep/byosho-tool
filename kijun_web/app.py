@@ -1120,7 +1120,7 @@ def facility(request: Request, fid: str):
         c = _facility_data(con, fid)
         near = _nearby(con, c["f"])
         similar = _similar(con, fid)
-    return render(request, "facility.html", near=near, similar=similar, **c)
+    return render(request, "facility.html", near=near, similar=similar, sim_bases=SIMILAR_BASES, **c)
 
 
 # ── 診療科・診療時間（医療情報ネットのオープンデータ。build_navi.py → navi テーブル） ─────────
@@ -1187,16 +1187,28 @@ def _nearby(con, f) -> dict:
     return out
 
 
+SIMILAR_BASES = [  # (basis, タブの名前, 何で比べたかの説明)
+    ("kijun", "届出", "届け出ている施設基準の重なりが大きい順です。"),
+    ("beds", "病床機能", "病床機能報告の4つの機能（高度急性期・急性期・回復期・慢性期）ごとの許可病床数が近い順です。"),
+    ("dpc", "診療実績", "DPC調査の疾患の分野（18分野）ごとの退院患者数が近い順です。"),
+]
+
+
 def _similar(con, fid: str) -> dict:
-    """「似ている医療機関」（build_db._build_similar）。届出の重なりの大きい順。"""
+    """「似ている医療機関」（build_db._build_similar）。basis（届出・病床機能・診療実績）ごとに area / wide の一覧。"""
+    out = {b: {"area": [], "wide": []} for b, _, _ in SIMILAR_BASES}
     try:
         rows = con.execute(
-            """SELECT s.scope, s.n_common, f.id, f.name, f.pref_name, f.city, f.area, f.ftype, f.n_kijun, h.beds
+            """SELECT s.basis, s.scope, s.n_common, f.id, f.name, f.pref_name, f.city, f.area, f.ftype, f.n_kijun,
+                      h.beds, h.b_hk, h.b_ak, h.b_kf, h.b_mk, h.dpc_total
                FROM similar s JOIN facilities f ON f.id = s.other_id LEFT JOIN hstats h ON h.facility_id = f.id
-               WHERE s.facility_id = ? ORDER BY s.scope, s.rk""", (fid,)).fetchall()
-    except sqlite3.OperationalError:  # 古いDB
-        return {"area": [], "wide": []}
-    return {"area": [r for r in rows if r["scope"] == "area"], "wide": [r for r in rows if r["scope"] == "wide"]}
+               WHERE s.facility_id = ? ORDER BY s.basis, s.scope, s.rk""", (fid,)).fetchall()
+    except sqlite3.OperationalError:  # 古いDB（basis の列が無い）
+        return out
+    for r in rows:
+        if r["basis"] in out:
+            out[r["basis"]][r["scope"]].append(r)
+    return out
 
 
 # ── 比較（2〜5の医療機関を並べる） ─────────────────────────────

@@ -236,11 +236,23 @@ def _byosho_link(fac: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     # 病床機能報告と同じオープンデータの医療機関コードが両方載っているので、まずそれでつなぐ
     # （名前の突合だと「宇都宮病院」同士など別の病院につながることがあった。2026年11月に31件見つかった）
     by_code = {k: v for k, v in _gairai_codes().items() if v in latest_name.index}
-    codes = pd.Series(
-        [by_code.get(fid) or match(p, n, t)
-         for fid, p, n, t in fac[["facility_id", "pref_name", "name", "ftype"]].itertuples(index=False)],
-        index=fac.index, dtype=object,
-    )
+    # つなぎ方の確かさの順（コード → 名前の完全一致 → 名前の後ろの一致）。名前によるつなぎは、
+    # 確かさが上のつなぎで使われたコードや、同じ確かさで複数の医療機関が取り合うコードには使わない
+    # （「南埼玉病院」が「国立病院機構埼玉病院」に、同じ県の別の「佐藤病院」同士がつながるなど、2026年11月に21件あった）
+    tiers = [{}, {}, {}]
+    for idx, fid, p, n, t in fac[["facility_id", "pref_name", "name", "ftype"]].itertuples(name=None):
+        if fid in by_code:
+            tiers[0][idx] = by_code[fid]
+        elif t in ("病院", "有床診療所") and (c := exact.get((p, _normalize_hospital(n)))):
+            tiers[1][idx] = c
+        elif (c := match(p, n, t)):
+            tiers[2][idx] = c
+    firm = dict(tiers[0])
+    for tier in tiers[1:]:
+        taken = set(firm.values())
+        cnt = pd.Series(list(tier.values())).value_counts() if tier else pd.Series(dtype=int)
+        firm.update({i: c for i, c in tier.items() if c not in taken and cnt.get(c, 0) == 1})
+    codes = pd.Series([firm.get(i) for i in fac.index], index=fac.index, dtype=object)
     return codes, codes.map(latest_name)
 
 
@@ -672,8 +684,57 @@ def _build_kijun_rel(con, top: int = 12) -> int:
     return con.execute("SELECT COUNT(*) FROM kijun_rel").fetchone()[0]
 
 
+def _pick_top(ids, areas, i, score, valid, top, rows, basis, extra):
+    """score の大きい順に、同じ二次医療圏（area）とそれ以外（wide）から top 件ずつ rows に足す。"""
+    import numpy as np
+    order = np.argsort(-score, kind="stable")
+    same = areas == areas[i] if areas[i] != AREA_UNKNOWN else np.zeros(len(areas), dtype=bool)
+    for scope, mask in (("area", same), ("wide", ~same)):
+        picked = [o for o in order[:400] if mask[o] and valid[o]][:top]
+        if len(picked) < top and mask.sum() > 400:
+            picked = [o for o in order if mask[o] and valid[o]][:top]
+        for rk, o in enumerate(picked, 1):
+            rows.append((ids[i], basis, scope, rk, ids[o], extra(o)))
+
+
+def _build_similar_vec(con, rows: list, basis: str, top: int = 5) -> None:
+    """病床機能（basis='beds'：4機能ごとの許可病床数）・診療実績（basis='dpc'：DPCの18分野ごとの退院患者数）が
+    似ている病院。ブレイ・カーティスの非類似度（Σ|a−b| ÷ Σ(a+b)。規模と内訳の両方が近いほど小さい）の小さい順。
+    この値は並べ方だけに使い、画面には元の数字（病床数・退院患者数）を出す（独自の指標は出さない）。"""
+    import numpy as np
+    if basis == "beds":
+        d = pd.read_sql("""SELECT f.id, f.area, h.b_hk, h.b_ak, h.b_kf, h.b_mk FROM facilities f
+                           JOIN hstats h ON h.facility_id = f.id WHERE h.beds >= 20""", con)
+        cols = ["b_hk", "b_ak", "b_kf", "b_mk"]
+        m = d[cols].fillna(0).to_numpy(np.float32)
+    else:
+        mdc = pd.read_sql("""SELECT f.id, f.area, x.mdc, COALESCE(x.n_surg, 0) + COALESCE(x.n_nosurg, 0) AS n
+                             FROM dpc_mdc x JOIN facilities f ON f.byosho_code = x.code
+                             WHERE x.year = (SELECT MAX(year) FROM dpc_mdc y WHERE y.code = x.code)""", con)
+        if mdc.empty:
+            return
+        w = mdc.pivot_table(index=["id", "area"], columns="mdc", values="n", aggfunc="sum", fill_value=0)
+        w = w[w.sum(1) > 0]
+        d = w.index.to_frame(index=False)
+        m = w.to_numpy(np.float32)
+    if len(d) < 2:
+        return
+    ids, areas = d["id"].to_numpy(), d["area"].fillna(AREA_UNKNOWN).to_numpy()
+    tot = m.sum(1)
+    for s0 in range(0, len(d), 200):
+        blk = m[s0:s0 + 200]
+        dist = np.abs(blk[:, None, :] - m[None, :, :]).sum(-1) / np.maximum(tot[s0:s0 + 200, None] + tot[None, :], 1)
+        for r in range(len(blk)):
+            i = s0 + r
+            score = -dist[r]
+            valid = np.ones(len(d), dtype=bool)
+            valid[i] = False
+            _pick_top(ids, areas, i, score, valid, top, rows, basis, lambda o: None)
+
+
 def _build_similar(con, top: int = 5, min_kijun: int = 5) -> int:
-    """医療機関ページの「似ている医療機関」。届け出ている施設基準（受理届出名称）が重なる割合
+    """医療機関ページの「似ている医療機関」（basis='kijun'：届出、'beds'：病床機能、'dpc'：診療実績）。
+    以下は届出（kijun）の作り方。届け出ている施設基準（受理届出名称）が重なる割合
     （共通する届出の数 ÷ どちらかが届け出ている届出の数）の大きい順に、同じ種類（病院／有床診療所／無床診療所）
     から選ぶ。この割合は並べ方だけに使い、画面には共通する届出の数を出す（独自の指標は出さない）。
       scope='area' … 同じ二次医療圏から top 件
@@ -709,19 +770,12 @@ def _build_similar(con, top: int = 5, min_kijun: int = 5) -> int:
                 j = jac[r].copy()
                 j[i] = -1
                 j[inter[r] < 3] = -1
-                order = np.argsort(-j, kind="stable")
-                same = areas == areas[i]
-                if areas[i] == AREA_UNKNOWN:
-                    same = np.zeros(len(g), dtype=bool)
-                for scope, mask in (("area", same), ("wide", ~same)):
-                    picked = [o for o in order[:400] if mask[o] and j[o] > 0][:top]
-                    if len(picked) < top and mask.sum() > 400:
-                        picked = [o for o in order if mask[o] and j[o] > 0][:top]
-                    for rk, o in enumerate(picked, 1):
-                        rows.append((ids[i], scope, rk, ids[o], int(inter[r, o])))
-    con.execute("CREATE TABLE similar (facility_id TEXT, scope TEXT, rk INTEGER, other_id TEXT, n_common INTEGER)")
-    con.executemany("INSERT INTO similar VALUES (?,?,?,?,?)", rows)
-    con.execute("CREATE INDEX ix_sim ON similar(facility_id, scope, rk)")
+                _pick_top(ids, areas, i, j, j > 0, top, rows, "kijun", lambda o, r=r: int(inter[r, o]))
+    _build_similar_vec(con, rows, "beds", top)
+    _build_similar_vec(con, rows, "dpc", top)
+    con.execute("CREATE TABLE similar (facility_id TEXT, basis TEXT, scope TEXT, rk INTEGER, other_id TEXT, n_common INTEGER)")
+    con.executemany("INSERT INTO similar VALUES (?,?,?,?,?,?)", rows)
+    con.execute("CREATE INDEX ix_sim ON similar(facility_id, basis, scope, rk)")
     return len(rows)
 
 

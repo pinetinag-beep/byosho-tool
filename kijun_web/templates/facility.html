@@ -60,6 +60,11 @@
   <div class="fact"><div class="k">データ時点</div><div class="v">{{ pref.as_of_label }}</div></div>
 </div>
 <p class="pdf-link"><a class="btn secondary" href="/facility/{{ f.id }}.pdf" target="_blank" rel="nofollow" data-pdf>PDFで保存（QRコード付き）</a></p>
+{#- 似ている医療機関への案内を上にも1行（ページの一番下だけでは気づかれず、比較ページがほぼ使われなかったため） -#}
+{%- set sim_links = [] -%}
+{%- for b, label, _ in sim_bases %}{% if similar[b].area or similar[b].wide %}{% set _ = sim_links.append((b, label)) %}{% endif %}{% endfor -%}
+{% if sim_links %}<p class="sim-top" data-ga-sec="facility_similar_top">似ている医療機関を探す：
+  {%- for b, label in sim_links %}<a href="#similar" data-simgo="{{ b }}">{{ label }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</p>{% endif %}
 
 {%- set has_beds = byosho or dpc or gairai -%}
 {%- set has_hours = navi is not none -%}
@@ -232,23 +237,44 @@
 
 {% if has_beds %}</section>{% endif %}
 
-{% if similar.area or similar.wide %}
-<h2>似ている医療機関</h2>
-<p class="muted small">届け出ている施設基準の重なりが大きい順です（同じ種類の医療機関から）。チェックして並べて比べられます。</p>
+{%- set sim_any = similar.kijun.area or similar.kijun.wide or similar.beds.area or similar.beds.wide or similar.dpc.area or similar.dpc.wide -%}
+{% if sim_any %}
+<h2 id="similar">似ている医療機関</h2>
 <form class="sim-form" action="/compare" method="get" data-ga-sec="facility_similar">
   <input type="hidden" name="id" value="{{ f.id }}">
-  {% for scope, title in [("area", "同じ二次医療圏" ~ ("（" ~ f.area ~ "）" if f.area and not f.area.startswith("（") else "")), ("wide", "全国" if f.ftype != "無床診療所" else f.pref_name ~ "内のほかの地域")] %}{% set rs = similar[scope] %}{% if rs %}
+  <div class="sim-tabs" role="tablist">
+  {%- for b, label, _ in sim_bases %}{% if similar[b].area or similar[b].wide %}
+    <button type="button" role="tab" data-simtab="{{ b }}">{{ label }}が似ている</button>
+  {%- endif %}{% endfor %}
+  </div>
+  {% for b, label, note in sim_bases %}{% if similar[b].area or similar[b].wide %}
+  <section class="sim-panel" data-simpanel="{{ b }}">
+  <p class="muted small">{{ note }}{% if b == "kijun" %}同じ種類（{{ f.ftype }}）の医療機関から選んでいます。{% endif %}</p>
+  {% for scope, title in [("area", "同じ二次医療圏" ~ ("（" ~ f.area ~ "）" if f.area and not f.area.startswith("（") else "")), ("wide", ("全国" if f.ftype != "無床診療所" or b != "kijun" else f.pref_name ~ "内のほかの地域"))] %}{% set rs = similar[b][scope] %}{% if rs %}
   <h3>{{ title }}</h3>
   <div class="table-wrap"><table class="near">
-    <thead><tr><th class="sim-cb"><span class="sr">比べる</span></th><th>医療機関</th><th>所在地</th><th class="num">許可病床数</th><th class="num">共通する届出</th></tr></thead>
+    <thead><tr><th class="sim-cb"><span class="sr">比べる</span></th><th>医療機関</th><th>所在地</th>
+      {% if b == "kijun" %}<th class="num">許可病床数</th><th class="num">共通する届出</th>
+      {% elif b == "beds" %}<th class="num">許可病床数</th><th>内訳（高度急性期・急性期・回復期・慢性期）</th>
+      {% else %}<th class="num">DPC退院患者数</th><th class="num">許可病床数</th>{% endif %}</tr></thead>
     <tbody>{% for r in rs %}<tr>
-      <td class="sim-cb"><input type="checkbox" name="id" value="{{ r.id }}" aria-label="{{ r.name }}を比べる" {% if scope == "area" and loop.index <= 2 or (not similar.area and loop.index <= 2) %}checked{% endif %}></td>
+      <td class="sim-cb"><input type="checkbox" name="id" value="{{ r.id }}" aria-label="{{ r.name }}を比べる"></td>
       <td><a href="{{ facility_url(r.id) }}">{{ r.name }}</a></td>
       <td class="small nowrap">{{ r.pref_name }}{{ r.city or '' }}</td>
+      {% if b == "kijun" %}
       <td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td>
       <td class="num">{{ r.n_common }}<small class="muted">／{{ r.n_kijun }}種類</small></td>
+      {% elif b == "beds" %}
+      <td class="num">{{ "{:,}".format(r.beds or 0) }}床</td>
+      <td class="small nowrap">{{ r.b_hk or 0 }}・{{ r.b_ak or 0 }}・{{ r.b_kf or 0 }}・{{ r.b_mk or 0 }}</td>
+      {% else %}
+      <td class="num">{% if r.dpc_total %}{{ "{:,}".format(r.dpc_total|int) }}件{% else %}—{% endif %}</td>
+      <td class="num">{% if r.beds %}{{ "{:,}".format(r.beds) }}床{% else %}—{% endif %}</td>
+      {% endif %}
     </tr>{% endfor %}</tbody>
   </table></div>
+  {% endif %}{% endfor %}
+  </section>
   {% endif %}{% endfor %}
   <p class="sim-act"><button type="submit" class="btn">チェックした医療機関と比べる</button><span class="muted small">この医療機関＋最大4件</span></p>
 </form>
@@ -256,7 +282,22 @@
 (() => { const f = document.querySelector(".sim-form"); if (!f) return;
   const boxes = [...f.querySelectorAll("input[type=checkbox]")];
   const lim = () => { const n = boxes.filter((b) => b.checked).length; boxes.forEach((b) => { b.disabled = !b.checked && n >= 4; }); };
-  f.addEventListener("change", lim); lim(); })();
+  const tabs = [...f.querySelectorAll("[data-simtab]")], panels = [...f.querySelectorAll("[data-simpanel]")];
+  const show = (name, user) => {
+    tabs.forEach((t) => t.setAttribute("aria-selected", t.dataset.simtab === name));
+    panels.forEach((p) => { p.hidden = p.dataset.simpanel !== name; });
+    // 開いているタブの上位2件（同じ二次医療圏が無ければ全国）にはじめからチェック。ほかのタブのチェックは外す
+    boxes.forEach((b) => { b.checked = false; });
+    const p = panels.find((x) => x.dataset.simpanel === name);
+    if (p) [...p.querySelectorAll("input[type=checkbox]")].slice(0, 2).forEach((b) => { b.checked = true; });
+    lim();
+    if (user && window.gtag) gtag("event", "similar_tab", { basis: name });
+  };
+  tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.simtab, true)));
+  f.addEventListener("change", lim);
+  document.querySelectorAll("[data-simgo]").forEach((a) => a.addEventListener("click", () => show(a.dataset.simgo, true)));
+  if (tabs.length) show(tabs[0].dataset.simtab);
+})();
 </script>
 {% endif %}
 

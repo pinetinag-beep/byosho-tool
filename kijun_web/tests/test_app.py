@@ -744,11 +744,19 @@ def test_similar_and_compare():
     import sqlite3
     con = sqlite3.connect(str(appmod.DB_PATH))
     row = con.execute("""SELECT s.facility_id, s.other_id FROM similar s JOIN facilities f ON f.id = s.facility_id
-                         WHERE f.ftype = '病院' AND s.scope = 'area' AND s.rk = 1 LIMIT 1""").fetchone()
+                         WHERE f.ftype = '病院' AND s.basis = 'kijun' AND s.scope = 'area' AND s.rk = 1
+                         AND EXISTS (SELECT 1 FROM similar t WHERE t.facility_id = s.facility_id AND t.basis = 'dpc')
+                         LIMIT 1""").fetchone()
     assert row
     a, b = row
     r = client.get(f"/facility/{a}")
     assert "似ている医療機関" in r.text and f'name="id" value="{b}"' in r.text
+    for label in ("届出が似ている", "病床機能が似ている", "診療実績が似ている"):
+        assert label in r.text
+    assert 'data-simgo="beds"' in r.text  # 上部の案内
+    # 病床機能報告の医療機関コードは、1つの医療機関にだけつながる
+    assert not con.execute("""SELECT byosho_code FROM facilities WHERE COALESCE(byosho_code, '') <> ''
+                              GROUP BY byosho_code HAVING COUNT(*) > 1""").fetchall()
     r = client.get("/compare", params=[("id", a), ("id", b)])
     assert r.status_code == 200 and "医療機関を比べる" in r.text and "noindex" in r.text
     t = client.get("/compare.csv", params=[("id", a), ("id", b)]).text.lstrip("﻿").splitlines()
