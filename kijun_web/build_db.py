@@ -727,9 +727,10 @@ def _build_similar_vec(con, rows: list, basis: str, top: int = 5) -> None:
         return
     ids, areas = d["id"].to_numpy(), d["area"].fillna(AREA_UNKNOWN).to_numpy()
     tot = m.sum(1)
-    for s0 in range(0, len(d), 200):
-        blk = m[s0:s0 + 200]
-        dist = np.abs(blk[:, None, :] - m[None, :, :]).sum(-1) / np.maximum(tot[s0:s0 + 200, None] + tot[None, :], 1)
+    step = max(1, int(4e7 // max(1, len(d) * m.shape[1])))   # 一度に作る配列を約160MBまでに抑える（サーバーは2GB）
+    for s0 in range(0, len(d), step):
+        blk = m[s0:s0 + step]
+        dist = np.abs(blk[:, None, :] - m[None, :, :]).sum(-1) / np.maximum(tot[s0:s0 + step, None] + tot[None, :], 1)
         for r in range(len(blk)):
             i = s0 + r
             score = -dist[r]

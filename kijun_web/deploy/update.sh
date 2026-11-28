@@ -18,7 +18,11 @@ if [ "$(sudo -u kijun git rev-parse HEAD)" != "$(sudo -u kijun git rev-parse FET
   rm -f "$REPO_DIR"/kijun_web/data/visits.sqlite*
   sudo -u kijun "$APP/venv/bin/pip" install -q -r kijun_web/requirements.txt
   # DBは一時ファイルに作ってから置き換えるので、作り直し中もサイトは古いDBで動き続ける
-  sudo -u kijun "$APP/venv/bin/python" kijun_web/build_db.py
+  # DBの作り直しが失敗しても再起動はする（プログラムとページのひな形が食い違ったまま動き続けないように。
+  # 新しいプログラムは古いDBでも動くように作る）
+  if ! sudo -u kijun "$APP/venv/bin/python" kijun_web/build_db.py; then
+    echo "DBの作り直しに失敗（古いDBのまま再起動）" >&2
+  fi
   systemctl restart kijun-web
 else
   echo "更新なし"

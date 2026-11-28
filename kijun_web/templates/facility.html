@@ -62,7 +62,7 @@
 <p class="pdf-link"><a class="btn secondary" href="/facility/{{ f.id }}.pdf" target="_blank" rel="nofollow" data-pdf>PDFで保存（QRコード付き）</a></p>
 {#- 似ている医療機関への案内を上にも1行（ページの一番下だけでは気づかれず、比較ページがほぼ使われなかったため） -#}
 {%- set sim_links = [] -%}
-{%- for b, label, _ in sim_bases %}{% if similar[b].area or similar[b].wide %}{% set _ = sim_links.append((b, label)) %}{% endif %}{% endfor -%}
+{%- for b, label, _ in (sim_bases if sim_bases is defined else []) %}{% if b in similar and (similar[b].area or similar[b].wide) %}{% set _ = sim_links.append((b, label)) %}{% endif %}{% endfor -%}
 {% if sim_links %}<p class="sim-top" data-ga-sec="facility_similar_top">似ている医療機関を探す：
   {%- for b, label in sim_links %}<a href="#similar" data-simgo="{{ b }}">{{ label }}</a>{% if not loop.last %}・{% endif %}{% endfor %}</p>{% endif %}
 
@@ -237,7 +237,11 @@
 
 {% if has_beds %}</section>{% endif %}
 
-{%- set sim_any = similar.kijun.area or similar.kijun.wide or similar.beds.area or similar.beds.wide or similar.dpc.area or similar.dpc.wide -%}
+{#- similar・sim_bases が無い（古いプログラムのまま新しいひな形を読んだ）時も落ちないように -#}
+{%- set sim_bases = sim_bases if sim_bases is defined else [] -%}
+{%- set ns_sim = namespace(any=false) -%}
+{%- for b, _l, _n in sim_bases %}{% if b in similar and (similar[b].area or similar[b].wide) %}{% set ns_sim.any = true %}{% endif %}{% endfor -%}
+{%- set sim_any = ns_sim.any -%}
 {%- macro kubun_list(ks) -%}{% for k, n in ks[:3] %}{{ k }} {{ "{:,}".format(n) }}床{% if not loop.last %}<br>{% endif %}{% endfor %}{% if ks|length > 3 %}<br><span class="muted">ほか{{ ks|length - 3 }}区分</span>{% endif %}{%- endmacro -%}
 {% if sim_any %}
 <h2 id="similar">似ている医療機関</h2>
